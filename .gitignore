@@ -1,0 +1,83 @@
+# --- OS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- IDEs / editores ---
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Secretos y entorno (NUNCA commitear) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials*.json
+service-account*.json
+
+# --- Claude Code (config local personal) ---
+# Nota: CLAUDE.local.md se versiona a propósito (plantilla de hooks/agentes); no ignorarlo.
+.claude/settings.local.json
+.claude/scratch/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# --- Node / Frontend ---
+node_modules/
+.vite/
+.next/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Docker / infraestructura local ---
+docker-compose.override.yml
+.docker/
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# --- Datos locales, dumps y scraping real ---
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+data/
+dumps/
+scraped/
+snapshots-reales/
+
+# --- Logs y temporales ---
+*.log
+logs/
+tmp/
+temp/
+
+# --- Claude Code (estado de hooks) ---
+.claude/.state/
