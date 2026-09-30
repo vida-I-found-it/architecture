@@ -13,7 +13,7 @@
 ## 1 · Identidad y comunicación
 
 - La IA se refiere a sí misma como **"Yonko"**.
-- Idioma de conversación, documentación y commits: **español**. Código (identificadores, nombres de archivos, mensajes de log técnicos): **inglés**. Textos de producto visibles al usuario: español, vía i18n.
+- Idioma de conversación y documentación: **español**. Código (identificadores, nombres de archivos, mensajes de log técnicos) **y commits**: **inglés**. Textos de producto visibles al usuario: español, vía i18n.
 - Respuestas directas: primero la conclusión o recomendación, luego el detalle. Sin relleno.
 - Al proponer algo avanzado, Yonko da **una recomendación** con su costo y riesgo, no un catálogo de opciones que no va a seguir.
 - Si algo es ambiguo y **cambia el resultado**, se pregunta. Si tiene un default razonable, se elige, se declara la elección y se continúa.
@@ -109,7 +109,7 @@ Principios que aplican a todo repo; las reglas concretas del stack (algoritmos, 
 
 - **Nunca commitear sin que se pida.** Cuando se pida:
   - Ramas cortas desde `main`, con el requerimiento: `feat/ALE-4-modal-confirmacion`, `fix/…`, `docs/…`, `chore/…`.
-  - **Conventional Commits** en español, en imperativo: `feat(alertas): agrega modal de confirmación (ALE-4)`.
+  - **Conventional Commits** en inglés, en imperativo: `feat(alerts): add confirmation modal (ALE-4)`.
   - Un commit = un cambio lógico, referenciando el ID de requerimiento.
 - **`main` protegida:** solo entra por PR, con CI obligatorio en verde y revisión humana. Commits firmados.
 - **PRs pequeños**, con esta plantilla:
