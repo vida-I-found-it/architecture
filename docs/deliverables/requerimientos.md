@@ -89,7 +89,7 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 | ID | Requerimiento | Prioridad | Track | Estado | Notas |
 |----|---------------|-----------|-------|--------|-------|
 | ALE-1 | **Modelo de datos de Alerta** con campos: Título de alerta, Nombre producto/servicio, Etiquetas/categorías (múltiples), URLs (**1..N**), Observaciones, **`estado` (activa/inactiva)**, + metadata: `creado_en` (fecha+hora) y `creado_por` | 🔴 P0 | 🖥️ BE | ⬜ | Ver [doc 03](../03-modelo-datos.md) |
-| ALE-2 | Crear alerta **modo URL directa** con **una o muchas URLs** | 🔴 P0 | 🔗 FE+BE | ⬜ | IA (modo tema) → Fase 2 |
+| ALE-2 | Crear alerta **modo URL directa** con **una o muchas URLs** | 🔴 P0 | 🔗 FE+BE | ⬜ | IA (modo tema) → Fase 2. Cada URL se valida contra SCR-18 (anti-SSRF) |
 | ALE-3 | **Etiquetas múltiples normalizadas** (minúscula, **sin tildes**) para facilitar filtros/búsquedas futuras | 🟡 P1 | 🖥️ BE | ⬜ | Normalización en BE al guardar |
 | ALE-4 | **Alertas inmutables**: no se editan. Al guardar, **modal de confirmación** advirtiendo que la acción es **definitiva** ("¿está seguro de su configuración?") | 🔴 P0 | 🔗 FE+BE | ⬜ | BE rechaza modificaciones; la *config* de la alerta no cambia (su **schedule** sí es editable, ver SCH-4) |
 | ALE-5 | Consultar alertas: **todos ven todas (solo lectura)** | 🟡 P1 | 🔗 FE+BE | ⬜ | Sin edición para nadie |
@@ -103,15 +103,19 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 | ID | Requerimiento | Prioridad | Track | Estado | Notas |
 |----|---------------|-----------|-------|--------|-------|
 | SCH-1 | **Modelo de datos de programación por alerta** (schedule ↔ alerta). Config por defecto: **2×/día** (una diurna, una nocturna) | 🔴 P0 | 🖥️ BE | ⬜ | Se crea un schedule por defecto al dar de alta la alerta (ALE-8) |
-| SCH-2 | Scheduler **100% background** en la operación normal (sin botón para el flujo cotidiano) | 🔴 P0 | 🖥️ BE | ⬜ | Encola trabajos según SCH-1; **solo alertas con `estado=activa`** (ALE-9) |
+| SCH-2 | Scheduler **100% background** en la operación normal (sin botón para el flujo cotidiano) | 🔴 P0 | 🖥️ BE | ⬜ | El repo `schedule` mantiene un motor de jobs **en memoria** (tipo APScheduler): al crear/actualizar un job vía SCH-12 queda **programado**, y un **worker interno lo dispara** solo cuando corresponde (**solo alertas con `estado=activa`**, ALE-9) |
 | SCH-3 | Ejecución **escalonada** dentro de las ventanas horarias | 🔴 P0 | 🖥️ BE | ⬜ | Reparte carga; horas distintas por alerta |
-| SCH-4 | **Módulo de administración de schedules (admin)**: ver **todos** los schedules con su configuración, estado, última/próxima corrida | 🟡 P1 | 🔗 FE+BE | ⬜ | Cada schedule asociado a una alerta |
+| SCH-4 | **Módulo de administración de schedules (admin)**: ver **todos** los schedules con su configuración, estado, última/próxima corrida | 🟡 P1 | 🔗 FE+BE | ⬜ | Cada schedule asociado a una alerta. **`schedule` no tiene ruta pública** (SCH-11): el frontend lo consulta vía `core`, que internamente llama a la API de `schedule` (SCH-12) |
 | SCH-5 | Admin **edita cualquier schedule** (frecuencia, hora, pausar), **sin importar quién lo creó** | 🟡 P1 | 🔗 FE+BE | ⬜ | Puede pausar todos si desea; la config de la alerta sigue inmutable |
 | SCH-6 | **Límite máx 2 corridas/día por alerta** | 🟡 P1 | 🖥️ BE | ⬜ | Respeta rate limiting; tope duro |
 | SCH-7 | **Ventanas horarias parametrizables**: por defecto **04:00–06:00** y **18:00–20:00**, configurables por **variables de entorno** | 🟡 P1 | 🖥️ BE | ⬜ | Valores fáciles de cambiar sin tocar código |
 | SCH-8 | **Lanzamiento manual de un schedule para pruebas (solo admin)** | 🟡 P1 | 🔗 FE+BE | ⬜ | Excepción a SCH-2, exclusiva del admin para testing |
 | SCH-9 | **Vista de progreso en tiempo real**: al abrir un schedule en ejecución, ver la **etapa de la tarea background por sitio** (leído → persistido → analizado → ok/mal) | 🟡 P1 | 🔗 FE+BE | ⬜ | Consume las etapas observables del job (SCR-16) |
 | SCH-10 | Corre **sin la PC encendida** (desplegado en free tier) | 🟡 P1 | ⚙️ INFRA | ⬜ | Ver INF-7 |
+| SCH-11 | **`schedule` es de acceso exclusivamente interno**: sin ruta pública en el Gateway; solo lo llaman otros servicios backend (`core`), autenticados como servicio (JWT `aud=system`), nunca el navegador | 🔴 P0 | 🖥️ BE | ⬜ | El admin gestiona schedules desde el frontend, pero **a través de `core`** (SCH-4); reduce la superficie expuesta, igual que el scraper sin puertos entrantes (SCR-18) |
+| SCH-12 | **API interna CRUD sobre `jobs`** en `schedule`: **crear** (config de disparo — intervalo o fecha fija — y de acción, ver SCH-13), **consultar**, **actualizar** (frecuencia, ventana, pausar) y **eliminar** — la eliminación es **en memoria** (saca el job del motor en ejecución; no borra su historial de corridas) | 🔴 P0 | 🖥️ BE | ⬜ | `core` la llama al crear una alerta (ALE-8) y al pausarla/reactivarla (ALE-9); base de SCH-4/5/8. Consistencia `core`↔`schedule` — ver doc 09, D7 |
+| SCH-13 | **Tipos de acción al disparar un job** (Strategy, reemplazable): `api_call` (llama un endpoint HTTP con reintentos) y `python_script` (ejecuta una función interna registrada) en Fase 1; `topic_message` (publica en un tópico pub/sub de un proveedor) **diferido a Fase 2/3** | 🔴 P0 *(P2 el tipo `topic_message`)* | 🖥️ BE | ⬜ | El callback hacia quien creó el job (`core`, ver SCH-14) es una instancia de `api_call`; interfaz lista para que otros proyectos reutilicen `schedule` con sus propias acciones |
+| SCH-14 | **El callback es parte de la configuración del job, no un conocimiento de `schedule`**: quien crea el job vía SCH-12 (`core`, en ALE-8) indica la URL de `api_call` a la que `schedule` debe llamar cuando el resultado esté listo | 🔴 P0 | 🖥️ BE | ⬜ | Así `schedule` queda **100 % desacoplado** de `core`: nunca conoce su dominio de negocio, solo dispara la acción configurada. Resuelve cómo `core` recibe el precio para normalizar/validar/decidir (PRO-1..6) |
 
 ## 5 · Scraping / ingesta (SCR)
 
@@ -123,17 +127,20 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 | SCR-4 | Fetcher **fallback Playwright** cuando el precio requiere JS | 🟡 P1 | 🖥️ BE | ⬜ | Solo cuando HTTP no basta |
 | SCR-5 | Respeto a **robots.txt** + `Crawl-delay` | 🟡 P1 | 🖥️ BE | ⬜ | Política [doc 07](../07-consideraciones-legales.md) |
 | SCR-6 | **Rate limiting** + backoff ante 403/429 | 🟡 P1 | 🖥️ BE | ⬜ | User-agent honesto |
-| SCR-7 | Reintentos idempotentes (no duplicar historial) | 🟡 P1 | 🖥️ BE | ⬜ | `hash_captura` |
+| SCR-7 | Reintentos idempotentes (no duplicar historial) | 🟡 P1 | 🖥️ BE | ⬜ | Idempotencia por diseño: snapshot **solo si cambia** el precio/stock, con bloqueo de fila (ver [doc 03](../03-modelo-datos.md)) |
 | SCR-8 | **Modelo de reintentos controlados**: máx **3** (parametrizable), con espera de **10–15 min** entre intentos, tras agotar HTTP + Playwright. Al agotarse → marcar el sitio como "sin precio hoy" + log con `transactionId` | 🟡 P1 | 🖥️ BE | ⬜ | Re-encola el sitio fallido, no bloquea la corrida del resto |
 | SCR-9 | **Fallback #2**: extracción por **Microdata / RDFa / meta** + **heurística regex** de precio | 🟡 P1 | 🖥️ BE | ⬜ | Gratis; complementa lo genérico |
 | SCR-10 | **Fallback #4**: **interceptar XHR/JSON interno** (vía Playwright) — el precio suele venir de una API oculta | 🟡 P1 | 🖥️ BE | ⬜ | Gratis; alta estabilidad |
 | SCR-11 | **Registro de adaptadores por dominio**: extractor específico **persistido** y **reutilizado automáticamente** en futuras corridas del mismo sitio; se **consulta ANTES** de la cascada genérica | 🟡 P1 | 🖥️ BE | ⬜ | "Scraping sin re-trabajo": aprende una vez, reutiliza siempre |
 | SCR-12 | **Constructor manual de adapters (admin)**: UI que ayuda a crear el extractor de un sitio (probar selectores, ver preview) y **guardarlo** (SCR-11) | 🟡 P1 | 🔗 FE+BE | ⬜ | Camino B: sin IA en Fase 1. Asistencia IA → Fase 2 |
 | SCR-13 | **Fallback final #7**: al agotar todas las estrategias, **notificar al admin por email** para que construya el adapter (SCR-12) | 🟡 P1 | 🖥️ BE | ⬜ | Solo email en Fase 1; SMS opcional/futuro por costo |
-| SCR-14 | **Resumen de corrida por alerta** (sitios ok/fallidos, `transactionId`, duración, nº snapshots) almacenado en **NoSQL** (solo consulta) | 🟡 P1 | 🖥️ BE | ⬜ | Reusa el store documental; mantiene PostgreSQL liviano. Insumo del panel de salud |
-| SCR-15 | **Guardar HTML/JSON crudo SOLO cuando falla toda la extracción** de un sitio, disponible para el admin como insumo del constructor de adapters (SCR-12) | 🟡 P1 | 🖥️ BE | ⬜ | En NoSQL/blob; no se guarda crudo en corridas exitosas (ahorro de espacio). Retención acotada |
-| SCR-16 | **Máquina de estados granular del job** de scraping: registrar **la mayor cantidad de estados posible, cada uno con su hora** (timestamp). Ej.: `encolado → resolviendo adapter → descargando(HTTP) → render Playwright → extrayendo → normalizando → convirtiendo moneda → validando → persistiendo → analizando(mejor precio) → completado/fallido` (por sitio). Almacenada en **NoSQL** (solo consulta) | 🟡 P1 | 🖥️ BE | ⬜ | Cuanto más detalle con su hora, mejor. Alimenta la vista de progreso en tiempo real (SCH-9) |
-| SCR-17 | **Módulo de detalle del scraper (admin)**: panel técnico con adapters guardados/rotos, **tasa de éxito por sitio**, sitios "sin precio", últimas corridas y sus etapas (SCR-16) | 🟢 P2 | 🔗 FE+BE | ⬜ | Diagnóstico técnico; complementa la observabilidad (INF-8) |
+| SCR-14 | **Resumen de corrida por alerta** (sitios ok/fallidos, `transactionId`, duración, nº snapshots) almacenado en **NoSQL** (solo consulta) | 🟡 P1 | 🖥️ BE | ⬜ | Vive en la Mongo de **`schedule`** (dueño del `run`), no en la de `core`. Insumo del panel de salud (`core` la consulta por API, SCR-17) |
+| SCR-15 | **Guardar HTML/JSON crudo SOLO cuando falla toda la extracción** de un sitio, disponible para el admin como insumo del constructor de adapters (SCR-12) | 🟡 P1 | 🖥️ BE | ⬜ | En la Mongo de **`schedule`**; no se guarda crudo en corridas exitosas (ahorro de espacio). Comprimido y depurado (sin `<style>`, SVG inline ni imágenes base64); **TTL 14 días y máx. 3 por dominio** (ver [doc 03](../03-modelo-datos.md)) |
+| SCR-16 | **Máquina de estados granular del job** de scraping: registrar **la mayor cantidad de estados posible, cada uno con su hora** (timestamp). Ej.: `encolado → resolviendo adapter → descargando(HTTP) → render Playwright → extrayendo → normalizando → convirtiendo moneda → validando → persistiendo → analizando(mejor precio) → completado/fallido` (por sitio). Almacenada en **NoSQL** (solo consulta) | 🟡 P1 | 🖥️ BE | ⬜ | Vive en la Mongo de **`schedule`**. Cuanto más detalle con su hora, mejor. Alimenta la vista de progreso en tiempo real (SCH-9) |
+| SCR-17 | **Módulo de detalle del scraper (admin)**: panel técnico con adapters guardados/rotos, **tasa de éxito por sitio**, sitios "sin precio", últimas corridas y sus etapas (SCR-16) | 🟢 P2 | 🔗 FE+BE | ⬜ | Diagnóstico técnico; complementa la observabilidad (INF-8). Adapters/tasa de éxito son de `core`; últimas corridas y etapas (SCR-14/16) se piden por API a `schedule` |
+| SCR-20 | **El scraper nunca llama a `core`.** Entrega su resultado (precio, stock, título, metadata) a `schedule`, en la **misma llamada** con la que reporta el estado final del *run* (una sola llamada combinada, no dos) | 🔴 P0 | 🖥️ BE | ⬜ | El resultado queda comprimido en la Mongo de `schedule` (colección nueva, ver [doc 03](../03-modelo-datos.md)); `schedule` es quien reenvía el precio a `core` vía el callback configurado (SCH-14) |
+| SCR-18 | **Protección anti-SSRF del fetcher**: toda URL se valida **al crear la alerta y en CADA fetch, incluidos los redirects**. Solo `http`/`https` (puertos 80/443) y sin credenciales embebidas (`user:pass@`). Se **resuelve el DNS** y se **rechaza** toda IP privada, loopback, link-local, multicast o reservada (10/8, 172.16/12, 192.168/16, 127/8, `169.254.0.0/16` —incluido el endpoint de metadata de la VM—, `::1`, `fc00::/7`, `fe80::/10`, IPv4 mapeada en IPv6). Se **fija la IP validada** en la conexión (anti DNS rebinding). Máx. de redirects acotado, revalidando cada salto; **límite de tamaño de respuesta y timeouts**. En el fallback Playwright (SCR-4/SCR-10) se **intercepta y bloquea** toda request del navegador a destinos no permitidos | 🔴 P0 | 🖥️ BE | ⬜ | **Seguridad crítica:** el worker descarga URLs elegidas por usuarios y las VMs free tier exponen metadata con credenciales. Debe estar **antes** de habilitar el fetcher (SCR-2). Validación temprana en ALE-2 (UX), **autoridad en el fetcher**. **Defensa en profundidad:** bloquear también el egreso a rangos privados/metadata a nivel de red/contenedor (INF-15). Tests obligatorios: `localhost`, IP en decimal/octal/hex, DNS que resuelve a IP interna, redirect a interno, IPv6 mapeada |
+| SCR-19 | **Visualización segura del contenido crudo y de los adapters (admin)**: el HTML/JSON de `raw_capture` y el preview del constructor (SCR-12) se muestran **como texto escapado o en un `iframe` con `sandbox`** (sin scripts, sin acceso al origen de la app), nunca inyectados como HTML. La `definition` de un adapter es **declarativa** (selectores/JSONPath) y validada por esquema: **sin `eval` ni código ejecutable**; regex con **timeout** (anti-ReDoS) | 🟡 P1 | 🔗 FE+BE | ⬜ | Contenido de terceros = **dato no confiable**; el admin tiene los máximos privilegios, así que un XSS aquí es crítico. Ver [doc 03](../03-modelo-datos.md) (`site_adapter.definition`). Tests: HTML con `<script>`, `onerror=` y regex catastrófica |
 
 ## 6 · Procesamiento y decisión (PRO)
 
@@ -215,10 +222,10 @@ graph LR
 ```
 
 - **Hito 1 (🔴 P0):** INF-1..4, INF-14, AUTH-1..3, AUTH-6, AUTH-10, USR-1, FE-1..2 → *puedo entrar al sistema con roles.*
-- **Hito 2 (🔴 P0):** ALE-1..2, ALE-4, ALE-8, SCR-1..3, PRO-1..2 → *creo una alerta (inmutable) por URL y el sistema captura su precio.*
-- **Hito 3 (🔴 P0):** SCH-1..3 → *corre solo, en background, programado por alerta.*
+- **Hito 2 (🔴 P0):** ALE-1..2, ALE-4, ALE-8, SCR-1..3, SCR-18, PRO-1..2 → *creo una alerta (inmutable) por URL y el sistema captura su precio.*
+- **Hito 3 (🔴 P0):** SCH-1..3, SCH-11..14, SCR-20 → *corre solo, en background, programado por alerta.*
 - **Hito 4 (🔴 P0):** VIS-1 → *veo el precio capturado en la UI.* ✅ **core estable completo.**
-- **Hito 5 (🟡 P1):** PRO-3..6, NOT-1..5, SUB-1..3, SCH-4..9, SCR-4..16 → *detecta mejor precio, avisa por email; scraping robusto observable; admin gestiona schedules.*
+- **Hito 5 (🟡 P1):** PRO-3..6, NOT-1..5, SUB-1..3, SCH-4..9, SCR-4..16, SCR-19 → *detecta mejor precio, avisa por email; scraping robusto observable; admin gestiona schedules.*
 - **Hito 6 (🟡/🟢):** USR-2..4, ALE-3/5/6/7/9, VIS-2..4, FE-3..8, AUTH-4/5/7/8/9/11 → *módulos completos y pulido.*
 
 ---
@@ -236,6 +243,7 @@ graph LR
 - 🚫 **Acciones basadas en stock / metadata** (nombre, disponibilidad, etc.): en Fase 1 solo se **almacenan y muestran**; el **único disparador** de notificación es el **precio** (mejor precio móvil).
 - 🚫 **Notificación "vuelve a stock"** → Fase futura.
 - 🚫 Otros canales de notificación (Telegram/Slack).
+- 🚫 Acción `topic_message` (publicar en un tópico pub/sub) en `schedule` → Fase 2/3 (SCH-13). Fase 1 solo con `api_call`/`python_script`.
 - 🚫 Conversión multi-moneda más allá de USD→COP.
 - 🚫 Predicción/estacionalidad de precios; comparación avanzada entre sitios.
 - 🚫 PWA offline avanzada; i18n inglés completo.

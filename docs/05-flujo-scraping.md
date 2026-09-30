@@ -122,7 +122,7 @@ graph TD
 
 ## Idempotencia y trazabilidad
 
-- `capture_hash` evita snapshots duplicados idénticos.
+- El snapshot se inserta **solo si cambia** el precio/stock respecto al último (bloqueo de fila en `alert_url`); evita duplicados sin `capture_hash` (ver [doc 03](03-modelo-datos.md)).
 - Snapshots **append-only**: el historial nunca se corrompe.
 - Si la corrida se cae, se reintenta sin duplicar (los sitios ya completados no se reprocesan).
 - Todo se correlaciona por `transaction_id` (PG ↔ MongoDB) y se observa vía OpenTelemetry/Sentry.
