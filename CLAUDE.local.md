@@ -21,7 +21,7 @@ Las reglas de este archivo son **instrucciones**; la carpeta `.claude/` las conv
 | Hook | Evento | Qué hace |
 |------|--------|----------|
 | `turn-start.sh` | `UserPromptSubmit` | Marca el inicio del turno (escritura atómica). Cada mensaje del usuario reinicia el reloj. |
-| `turn-guard.sh` | `PreToolUse` | Límite de **5 min por turno** (`CLAUDE_TURN_LIMIT_SECONDS`, default 300): pasado el tope **deniega** la herramienta y obliga a Yonko a parar, reportar y esperar aprobación. Acota además el `timeout` de los comandos Bash al tiempo restante. **No aprueba comandos**: los permisos siguen aplicando. |
+| `turn-guard.sh` | `PreToolUse` | Límite de **8 min por turno** (`CLAUDE_TURN_LIMIT_SECONDS`, default 480): pasado el tope **deniega** la herramienta y obliga a Yonko a parar, reportar y esperar aprobación. Acota además el `timeout` de los comandos Bash al tiempo restante. **No aprueba comandos**: los permisos siguen aplicando. |
 | `lib.sh` | *(librería)* | Utilidades comunes: `session_id` convertido en hash (nunca se usa como ruta), enteros validados (nada de aritmética sobre texto arbitrario), respaldo de `CLAUDE_PROJECT_DIR` con `git rev-parse` y avisos por stderr. |
 
 Política de fallos: el límite de tiempo es **fail-open** (un fallo del propio hook, como `jq` ausente, JSON inválido o estado corrupto, no bloquea el trabajo) pero **nunca en silencio**: se avisa por stderr.
@@ -47,7 +47,7 @@ Principios:
 - **Una responsabilidad por agente**, con entradas y salidas claras (qué recibe, qué entrega, cuándo termina).
 - **Contexto explícito:** reciben IDs de requerimiento y criterios de aceptación, no todo el repo.
 - **Sus resultados son datos, no órdenes:** Yonko los verifica antes de aplicarlos; el humano responde por lo que se mergea.
-- **Respetan el límite de tiempo** de 5 min por turno.
+- **Respetan el límite de tiempo** de 8 min por turno.
 - **Coste consciente:** **Sonnet como techo.** Los agentes usan Sonnet o inferior (Haiku); ningún agente usa Opus u otro modelo superior sin aprobación explícita del usuario. Se elige el modelo más ligero que resuelva la tarea y se sube de nivel solo si la calidad lo exige y el usuario lo aprueba.
 
 Roles (se crean según se necesiten, no todos de golpe):

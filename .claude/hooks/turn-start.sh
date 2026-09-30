@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UserPromptSubmit: marca el inicio del turno (cada prompt del usuario reinicia el reloj de 5 min).
+# UserPromptSubmit: marca el inicio del turno (cada prompt del usuario reinicia el reloj de 8 min).
 set -u
 source "${0%/*}/lib.sh"
 hook_require_jq || exit 0
