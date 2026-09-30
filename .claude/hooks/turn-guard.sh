@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse: límite máximo por turno (default 300 s = 5 min; override con CLAUDE_TURN_LIMIT_SECONDS).
+# PreToolUse: límite máximo por turno (default 480 s = 8 min; override con CLAUDE_TURN_LIMIT_SECONDS).
 #  - Si el turno ya superó el límite: deniega la herramienta y ordena a Yonko parar y reportar.
 #  - Si es un comando Bash en primer plano: acota su timeout al tiempo restante del turno
 #    (solo modifica el input; NO aprueba el comando, así que no se saltan los permisos).
@@ -7,8 +7,8 @@ set -u
 source "${0%/*}/lib.sh"
 hook_require_jq || exit 0
 dir=$(hook_state_dir) || exit 0
-limit=$(hook_uint_or "${CLAUDE_TURN_LIMIT_SECONDS:-300}" 300)
-[ "$limit" -gt 0 ] || limit=300   # 0 denegaría todas las herramientas (autobloqueo)
+limit=$(hook_uint_or "${CLAUDE_TURN_LIMIT_SECONDS:-480}" 480)
+[ "$limit" -gt 0 ] || limit=480   # 0 denegaría todas las herramientas (autobloqueo)
 input=$(cat)
 
 sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null) || sid=""
