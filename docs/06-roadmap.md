@@ -14,6 +14,7 @@ graph LR
 - [x] Visión y objetivos (01), arquitectura (02), modelo de datos (03), stack (04), flujo (05), legal (07).
 - [x] Alcance 1 acotado (08) + requerimientos priorizados con Track y DoD.
 - [ ] Cerrar decisión de **despliegue** (provider VM / host frontend — [INF-15](deliverables/requerimientos.md)).
+- [ ] Resolver el backlog de [pendientes de arquitectura e infraestructura](09-pendientes.md) (ADR de repos, proveedor de BD, PoC de Oracle, contratos entre servicios).
 
 ## Fase 1 — Alcance 1 (MVP funcional de punta a punta)
 
