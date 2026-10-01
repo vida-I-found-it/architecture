@@ -54,7 +54,7 @@ Roles (se crean según se necesiten, no todos de golpe):
 
 | Agente | Rol | Herramientas | Modelo | Estado | Cuándo se usa |
 |--------|-----|--------------|--------|--------|---------------|
-| `arquitecto` | Diseña, propone y registra ADR; valida cambios contra la arquitectura | Lectura + edición de `docs/` | Sonnet | Propuesto | Decisiones de diseño, cambios entre repos |
+| `arquitecto` | Analiza y propone mejoras de arquitectura (rápido, abierto, seguro, flexible, confiable); registra ADR en estado Propuesta | Lectura + edición de `docs/` (solo crea ADR nuevos; nunca aplica decisiones cerradas) | Sonnet | ✅ Creado | Evaluar un componente/cambio, o antes de cerrar una decisión de diseño |
 | `revisor-seguridad` | Revisa diffs buscando brechas y riesgos (sección 4) | Solo lectura | Sonnet | ✅ Creado | Antes de cada PR |
 | `dev-backend` | Implementa API, workers y migraciones | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos BE |
 | `dev-frontend` | Implementa UI, i18n y estados de carga/error | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos FE |
@@ -81,10 +81,10 @@ El repo `architecture-i-found-it` es la **plantilla canónica**: los cambios se 
 
 Los agentes y hooks **se quedan en este repo** y se incorporan a los demás de forma gradual, empezando por lo que cada repo necesite.
 
-| Repo | Hooks | `revisor-seguridad` | `qa` | Otros agentes |
-|------|-------|---------------------|------|---------------|
-| `architecture-i-found-it` *(plantilla canónica)* | ✅ | ✅ | ✅ | — |
-| Repos futuros (api, workers, frontend…) | ⬜ | ⬜ | ⬜ | ⬜ |
+| Repo | Hooks | `revisor-seguridad` | `qa` | `arquitecto` | Otros agentes |
+|------|-------|---------------------|------|--------------|---------------|
+| `architecture-i-found-it` *(plantilla canónica)* | ✅ | ✅ | ✅ | ✅ | — |
+| Repos futuros (api, workers, frontend…) | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 
 Actualiza esta tabla cada vez que se incorpore algo a un repo.
 

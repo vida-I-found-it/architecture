@@ -45,6 +45,20 @@ La documentación vive en [`docs/`](docs/) y está pensada para leerse en orden:
 
 Las reglas para trabajar con IA en este proyecto están en [`CLAUDE.md`](CLAUDE.md) (se copia a cada repositorio).
 
+## Agentes de Claude Code
+
+Este repo trae agentes especializados en `.claude/agents/` (ficha completa y roster en [`CLAUDE.local.md`](CLAUDE.local.md)). No son un comando aparte: se piden en el chat y Claude Code los ejecuta como subagente, con su propio contexto, herramientas y modelo.
+
+| Agente | Para qué | Cómo invocarlo |
+|--------|----------|-----------------|
+| **`arquitecto`** | Analiza un componente o una decisión y propone mejoras de arquitectura —más rápida, abierta, segura, flexible y confiable—, con lenguaje técnico y opinión propia. Generalista y **portable** a cualquier repo. | *"Usa el agente arquitecto para revisar/evaluar `<alcance concreto>`."* |
+| `revisor-seguridad` | Busca brechas de seguridad en un diff o configuración (solo lectura). | *"Lanza revisor-seguridad sobre `<archivos/diff>`."* |
+| `qa` | Escribe/ejecuta tests y valida criterios de aceptación. | *"Que qa valide `<requerimiento>`."* |
+
+Con `arquitecto`, dale un alcance concreto (un componente, un ADR, una pregunta de [doc 09](docs/09-pendientes.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
+
+> Si acabas de crear o editar un agente, abre `/hooks` (o reinicia la sesión) para que Claude Code lo cargue.
+
 ## Decisiones vigentes
 
 - **Backend:** Python 3.12+ · FastAPI · SQLAlchemy + Alembic · Playwright/httpx · Redis + Arq · APScheduler.
