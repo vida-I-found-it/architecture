@@ -1,163 +1,148 @@
 -- =====================================================================
--- core · esquema `core`
--- Se corre con el rol `core_service` (provision-roles.sql), que es dueño
--- EXCLUSIVO de este esquema. Un campo `*_by` es un `uuid` de solo valor
--- hacia auth.app_user, y `run_id` es un `bigint` de solo valor hacia
--- schedule.run — SIN FK real entre esquemas; la integridad la garantiza
--- `core` al escribir, no la base de datos. Ver ../README.md.
+-- CORE · esquema `CORE`
+-- Se corre con el rol `CORE_SERVICE` (provision-roles.sql), que es dueño
+-- EXCLUSIVO de este esquema. Un campo `*_BY` es un `uuid` de solo valor
+-- hacia AUTH.APP_USER, y `RUN_ID` es un `bigint` de solo valor hacia
+-- SCHEDULE.RUN — SIN FK real entre esquemas; la integridad la garantiza
+-- `CORE` al escribir, no la base de datos. Ver ../README.md.
 -- =====================================================================
 
-CREATE SCHEMA IF NOT EXISTS core;
-SET search_path TO core;
+CREATE SCHEMA IF NOT EXISTS CORE;
+SET search_path TO CORE;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- A) Referencia (informativa, sin FK) -----------------------------------
 
-CREATE TABLE currency (
-    code    text PRIMARY KEY,  -- ISO 4217: COP, USD, EUR…
-    name_es text NOT NULL
+CREATE TABLE CURRENCY (
+    CODE    text PRIMARY KEY,  -- ISO 4217: COP, USD, EUR…
+    NAME_ES text NOT NULL
 );
-INSERT INTO currency (code, name_es) VALUES ('COP', 'Peso colombiano'), ('USD', 'Dólar'), ('EUR', 'Euro');
+INSERT INTO CURRENCY (CODE, NAME_ES) VALUES ('COP', 'Peso colombiano'), ('USD', 'Dólar'), ('EUR', 'Euro');
 
 -- Estados de negocio: código directo + CHECK, sin tabla catálogo:
---   alert.status         'active' | 'inactive'
---   subscription.status  'active' | 'unsubscribed'
---   run.status           'queued' | 'running' | 'completed' | 'failed'
---   site_adapter.status  'active' | 'broken'
---   notification.status  'queued' | 'sent' | 'failed'
+--   ALERT.STATUS         'active' | 'inactive'
+--   SUBSCRIPTION.STATUS  'active' | 'unsubscribed'
+--   RUN.STATUS           'queued' | 'running' | 'completed' | 'failed' (vive en SCHEDULE)
+--   SITE_ADAPTER.STATUS  'active' | 'broken'
+--   NOTIFICATION.STATUS  'queued' | 'sent' | 'failed' (vive en NOTIFY, no aquí)
 
--- C) Alertas, etiquetas, schedules y adapters ----------------------------
+-- C) Alertas, etiquetas y adapters ----------------------------------------
 
-CREATE TABLE alert (
-    id                      int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    title                   text NOT NULL,
-    product_name            text NOT NULL,
-    notes                   text,
-    status                  text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
-    created_by              uuid NOT NULL,        -- id de auth.app_user, sin FK
-    created_at              timestamptz NOT NULL DEFAULT now(),
-    updated_at              timestamptz NOT NULL DEFAULT now(),
-    best_price_cop          numeric(14,2),         -- mejor precio GLOBAL vigente (materializado)
-    best_price_at           timestamptz,
-    best_price_alert_url_id int                    -- FK compuesta, ver abajo
+CREATE TABLE ALERT (
+    ID                      int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    TITLE                   text NOT NULL,
+    PRODUCT_NAME            text NOT NULL,
+    NOTES                   text,
+    STATUS                  text NOT NULL DEFAULT 'active' CHECK (STATUS IN ('active', 'inactive')),
+    CREATED_BY              uuid NOT NULL,        -- id de auth.app_user, sin FK
+    CREATED_AT              timestamptz NOT NULL DEFAULT now(),
+    UPDATED_AT              timestamptz NOT NULL DEFAULT now(),
+    BEST_PRICE_COP          numeric(14,2),         -- mejor precio GLOBAL vigente (materializado)
+    BEST_PRICE_AT           timestamptz,
+    BEST_PRICE_ALERT_URL_ID int                    -- FK compuesta, ver abajo
 );
 
-CREATE TABLE alert_url (
-    id              int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    alert_id        int NOT NULL REFERENCES alert(id),
-    url             text NOT NULL,           -- validada anti-SSRF (SCR-18)
-    domain          text NOT NULL,           -- normalizado, lookup de adapter
-    is_active       boolean NOT NULL DEFAULT true,
-    best_price_cop  numeric(14,2),           -- mejor precio POR SITIO (materializado)
-    best_price_at   timestamptz,
-    last_price_cop  numeric(14,2),           -- último precio vigente (VIS-1 sin escanear snapshots)
-    last_in_stock   boolean,
-    last_checked_at timestamptz,             -- último chequeo, cambie o no el precio
-    last_title      text,                    -- no se historiza
-    last_metadata   jsonb,                   -- vendedor, envío… (no se historiza)
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    updated_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (alert_id, id)                    -- soporta la FK compuesta de `alert`
+CREATE TABLE ALERT_URL (
+    ID              int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ALERT_ID        int NOT NULL REFERENCES ALERT(ID),
+    URL             text NOT NULL,           -- validada anti-SSRF (SCR-18)
+    DOMAIN          text NOT NULL,           -- normalizado, lookup de adapter
+    IS_ACTIVE       boolean NOT NULL DEFAULT true,
+    BEST_PRICE_COP  numeric(14,2),           -- mejor precio POR SITIO (materializado)
+    BEST_PRICE_AT   timestamptz,
+    LAST_PRICE_COP  numeric(14,2),           -- último precio vigente (VIS-1 sin escanear snapshots)
+    LAST_IN_STOCK   boolean,
+    LAST_CHECKED_AT timestamptz,             -- último chequeo, cambie o no el precio
+    LAST_TITLE      text,                    -- no se historiza
+    LAST_METADATA   jsonb,                   -- vendedor, envío… (no se historiza)
+    CREATED_AT      timestamptz NOT NULL DEFAULT now(),
+    UPDATED_AT      timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (ALERT_ID, ID)                    -- soporta la FK compuesta de `ALERT`
 );
-CREATE INDEX ix_alert_url_alert ON alert_url(alert_id);
-CREATE INDEX ix_alert_url_domain ON alert_url(domain);
+CREATE INDEX IX_ALERT_URL_ALERT ON ALERT_URL(ALERT_ID);
+CREATE INDEX IX_ALERT_URL_DOMAIN ON ALERT_URL(DOMAIN);
 
 -- Garantiza que el "mejor sitio" pertenece a esa misma alerta (evita la
 -- referencia circular ingenua).
-ALTER TABLE alert
-    ADD CONSTRAINT fk_alert_best_price_url
-    FOREIGN KEY (id, best_price_alert_url_id) REFERENCES alert_url (alert_id, id);
+ALTER TABLE ALERT
+    ADD CONSTRAINT FK_ALERT_BEST_PRICE_URL
+    FOREIGN KEY (ID, BEST_PRICE_ALERT_URL_ID) REFERENCES ALERT_URL (ALERT_ID, ID);
 
-CREATE TABLE tag (
-    id   int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name text UNIQUE NOT NULL   -- normalizada: minúscula, sin tildes
+CREATE TABLE TAG (
+    ID   int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    NAME text UNIQUE NOT NULL   -- normalizada: minúscula, sin tildes
 );
 
-CREATE TABLE alert_tag (
-    alert_id int NOT NULL REFERENCES alert(id),
-    tag_id   int NOT NULL REFERENCES tag(id),
-    PRIMARY KEY (alert_id, tag_id)
+CREATE TABLE ALERT_TAG (
+    ALERT_ID int NOT NULL REFERENCES ALERT(ID),
+    TAG_ID   int NOT NULL REFERENCES TAG(ID),
+    PRIMARY KEY (ALERT_ID, TAG_ID)
 );
 
--- `schedule` y `run` viven en el esquema `schedule` (schedule/schema.sql),
+-- `SCHEDULE` y `RUN` viven en el esquema `SCHEDULE` (schedule/schema.sql),
 -- no aquí — ver ../README.md.
 
-CREATE TABLE site_adapter (
-    id              int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    domain          text UNIQUE NOT NULL,
-    definition      jsonb NOT NULL,     -- DECLARATIVO (selectores/JSONPath); nunca código ejecutable
-    version         int NOT NULL DEFAULT 1,
-    status          text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'broken')),
-    last_success_at timestamptz,
-    created_by      uuid NOT NULL,      -- id de auth.app_user, sin FK
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    updated_at      timestamptz NOT NULL DEFAULT now()
+CREATE TABLE SITE_ADAPTER (
+    ID              int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    DOMAIN          text UNIQUE NOT NULL,
+    DEFINITION      jsonb NOT NULL,     -- DECLARATIVO (selectores/JSONPath); nunca código ejecutable
+    VERSION         int NOT NULL DEFAULT 1,
+    STATUS          text NOT NULL DEFAULT 'active' CHECK (STATUS IN ('active', 'broken')),
+    LAST_SUCCESS_AT timestamptz,
+    CREATED_BY      uuid NOT NULL,      -- id de auth.app_user, sin FK
+    CREATED_AT      timestamptz NOT NULL DEFAULT now(),
+    UPDATED_AT      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE site_stats_daily (
-    domain       text NOT NULL,
-    day          date NOT NULL,
-    ok_count     int NOT NULL DEFAULT 0,
-    failed_count int NOT NULL DEFAULT 0,
-    by_strategy  jsonb,               -- conteo por estrategia ganadora
-    PRIMARY KEY (domain, day)
+CREATE TABLE SITE_STATS_DAILY (
+    DOMAIN       text NOT NULL,
+    DAY          date NOT NULL,
+    OK_COUNT     int NOT NULL DEFAULT 0,
+    FAILED_COUNT int NOT NULL DEFAULT 0,
+    BY_STRATEGY  jsonb,               -- conteo por estrategia ganadora
+    PRIMARY KEY (DOMAIN, DAY)
 );
 
--- D) Corridas, snapshots, suscripciones y notificaciones ------------------
--- (la tabla `run` vive en el esquema `schedule`, no aquí — ver ../README.md)
+-- D) Corridas y snapshots --------------------------------------------------
+-- (la tabla `RUN` vive en el esquema `SCHEDULE`, no aquí — ver ../README.md)
 
 -- Particionada por año. Solo se inserta un snapshot cuando cambia el
 -- precio/stock respecto al último (idempotencia por diseño, SCR-7); un
 -- job crea la partición del año siguiente (pendiente, ver docs/deliverables/db/README.md).
-CREATE TABLE price_snapshot (
-    alert_url_id        int NOT NULL REFERENCES alert_url(id),
-    captured_at         timestamptz NOT NULL,   -- clave de partición
-    run_id              bigint NOT NULL,        -- id de schedule.run, sin FK (otro esquema)
-    price_cop           numeric(14,2) NOT NULL CHECK (price_cop > 0),
-    price_original      numeric(14,2),          -- null si ya es COP
-    currency            text REFERENCES currency(code), -- null si COP
-    exchange_rate_date  date,                   -- 🔗 Mongo exchange_rate (null si COP)
-    in_stock            boolean NOT NULL,
-    is_anomalous        boolean NOT NULL DEFAULT false,
-    PRIMARY KEY (alert_url_id, captured_at)
-) PARTITION BY RANGE (captured_at);
+CREATE TABLE PRICE_SNAPSHOT (
+    ALERT_URL_ID        int NOT NULL REFERENCES ALERT_URL(ID),
+    CAPTURED_AT         timestamptz NOT NULL,   -- clave de partición
+    RUN_ID              bigint NOT NULL,        -- id de schedule.job_execution, sin FK (otro esquema)
+    PRICE_COP           numeric(14,2) NOT NULL CHECK (PRICE_COP > 0),
+    PRICE_ORIGINAL      numeric(14,2),          -- null si ya es COP
+    CURRENCY            text REFERENCES CURRENCY(CODE), -- null si COP
+    EXCHANGE_RATE_DATE  date,                   -- 🔗 Mongo exchange_rate (null si COP)
+    IN_STOCK            boolean NOT NULL,
+    IS_ANOMALOUS        boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (ALERT_URL_ID, CAPTURED_AT)
+) PARTITION BY RANGE (CAPTURED_AT);
 
-CREATE TABLE price_snapshot_2026 PARTITION OF price_snapshot
+CREATE TABLE PRICE_SNAPSHOT_2026 PARTITION OF PRICE_SNAPSHOT
     FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
 
-CREATE TABLE subscription (
-    id                     int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    alert_id               int NOT NULL REFERENCES alert(id),
-    email                  citext NOT NULL,     -- normalizado, case-insensitive
-    status                 text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'unsubscribed')),
-    created_by             uuid,                -- id de auth.app_user, sin FK (nullable)
-    unsubscribe_token_hash bytea NOT NULL,       -- nunca en claro
-    created_at             timestamptz NOT NULL DEFAULT now(),
-    updated_at             timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (alert_id, email)
+-- CREATED_BY es obligatorio (2026-09-30, D13): toda suscripción exige
+-- cuenta — se retiró el rol incógnito y notify.notification exige
+-- app_user_id, así que ya no existe la suscripción "solo por email".
+CREATE TABLE SUBSCRIPTION (
+    ID                     int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ALERT_ID               int NOT NULL REFERENCES ALERT(ID),
+    EMAIL                  citext NOT NULL,     -- normalizado, case-insensitive; se precarga con el de la cuenta (SUB-1)
+    STATUS                 text NOT NULL DEFAULT 'active' CHECK (STATUS IN ('active', 'unsubscribed')),
+    CREATED_BY             uuid NOT NULL,       -- id de auth.app_user, sin FK — usuario dueño de la suscripción
+    UNSUBSCRIBE_TOKEN_HASH bytea NOT NULL,       -- nunca en claro
+    CREATED_AT             timestamptz NOT NULL DEFAULT now(),
+    UPDATED_AT             timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (ALERT_ID, EMAIL)
 );
-CREATE INDEX ix_subscription_alert ON subscription(alert_id);
+CREATE INDEX IX_SUBSCRIPTION_ALERT ON SUBSCRIPTION(ALERT_ID);
 
--- Outbox transaccional: el motor de decisión la escribe en la misma
--- transacción que actualiza best_price_*. `core` llama a `notify` con
--- este `id`; `notify` guarda el detalle (sin HTML) en su propio
--- notification_log (Mongo, otro servicio) — mecanismo exacto pendiente,
--- ver docs/deliverables/db/README.md.
-CREATE TABLE notification (
-    id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    alert_id             int NOT NULL REFERENCES alert(id),
-    run_id               bigint NOT NULL,        -- id de schedule.run, sin FK (otro esquema)
-    subscription_id      int NOT NULL REFERENCES subscription(id),
-    channel              text NOT NULL DEFAULT 'email',
-    status               text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'sent', 'failed')),
-    attempts             smallint NOT NULL DEFAULT 0,
-    trigger_alert_url_id int NOT NULL REFERENCES alert_url(id),
-    trigger_price_cop    numeric(14,2) NOT NULL,
-    created_at           timestamptz NOT NULL DEFAULT now(),
-    sent_at              timestamptz,
-    updated_at           timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (run_id, subscription_id)
-);
-CREATE INDEX ix_notification_queued ON notification(status) WHERE status = 'queued';
-CREATE INDEX ix_notification_subscription ON notification(subscription_id);
+-- `NOTIFICATION` (outbox transaccional) YA NO vive aquí: se movió al
+-- esquema `NOTIFY` (2026-09-30) — la notificación es el dato que `NOTIFY`
+-- posee de punta a punta, no `CORE`. Ver notify/schema.sql y
+-- docs/03-modelo-datos.md#d2-notificaciones-servicio-notify.

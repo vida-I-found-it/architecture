@@ -1,113 +1,113 @@
 -- =====================================================================
--- auth · esquema `auth`
--- Se corre con el rol `auth_service` (provision-roles.sql), que es dueño
+-- AUTH · esquema `AUTH`
+-- Se corre con el rol `AUTH_SERVICE` (provision-roles.sql), que es dueño
 -- EXCLUSIVO de este esquema. Ningún otro rol/servicio tiene acceso.
--- `core`/`schedule`/`notify` referencian un app_user solo por `uuid` en
--- SU PROPIO esquema (p. ej. alert.created_by), sin FK real entre
+-- `CORE`/`SCHEDULE`/`NOTIFY` referencian un APP_USER solo por `uuid` en
+-- SU PROPIO esquema (p. ej. ALERT.CREATED_BY), sin FK real entre
 -- esquemas — ver ../README.md y docs/03-modelo-datos.md.
 -- =====================================================================
 
-CREATE SCHEMA IF NOT EXISTS auth;
-SET search_path TO auth;
+CREATE SCHEMA IF NOT EXISTS AUTH;
+SET search_path TO AUTH;
 
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS pgcrypto; -- gen_random_uuid()
 
 -- A) Referencia (informativa, sin FK) -----------------------------------
 
-CREATE TABLE gender (
-    code    text PRIMARY KEY,   -- 'H', 'M', … código mínimo representativo
-    name_es text NOT NULL
+CREATE TABLE GENDER (
+    CODE    text PRIMARY KEY,   -- 'H', 'M', … código mínimo representativo
+    NAME_ES text NOT NULL
 );
-INSERT INTO gender (code, name_es) VALUES ('H', 'Hombre'), ('M', 'Mujer');
+INSERT INTO GENDER (CODE, NAME_ES) VALUES ('H', 'Hombre'), ('M', 'Mujer');
 
 -- B) Seguridad y cuentas -------------------------------------------------
 
-CREATE TABLE person (
-    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    first_name text NOT NULL,
-    last_name  text NOT NULL,
-    birth_date date NOT NULL,
-    gender     text REFERENCES gender(code), -- código informativo (opcional)
-    phone      text,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+CREATE TABLE PERSON (
+    ID         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    FIRST_NAME text NOT NULL,
+    LAST_NAME  text NOT NULL,
+    BIRTH_DATE date NOT NULL,
+    GENDER     text REFERENCES GENDER(CODE), -- código informativo (opcional)
+    PHONE      text,
+    CREATED_AT timestamptz NOT NULL DEFAULT now(),
+    UPDATED_AT timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE role (
-    id          smallint PRIMARY KEY,
-    code        text UNIQUE NOT NULL,          -- admin | user | incognito
-    name_es     text NOT NULL,
-    is_active   boolean NOT NULL DEFAULT true,  -- incognito=false en Fase 1
-    description text
+CREATE TABLE ROLE (
+    ID          smallint PRIMARY KEY,
+    CODE        text UNIQUE NOT NULL,          -- admin | user
+    NAME_ES     text NOT NULL,
+    IS_ACTIVE   boolean NOT NULL DEFAULT true,
+    DESCRIPTION text
 );
 
-CREATE TABLE permission (
-    id          smallint PRIMARY KEY,
-    code        text UNIQUE NOT NULL,           -- p.ej. alert.create
-    description text
+CREATE TABLE PERMISSION (
+    ID          smallint PRIMARY KEY,
+    CODE        text UNIQUE NOT NULL,           -- p.ej. alert.create
+    DESCRIPTION text
 );
 
-CREATE TABLE role_permission (
-    role_id       smallint NOT NULL REFERENCES role(id),
-    permission_id smallint NOT NULL REFERENCES permission(id),
-    PRIMARY KEY (role_id, permission_id)
+CREATE TABLE ROLE_PERMISSION (
+    ROLE_ID       smallint NOT NULL REFERENCES ROLE(ID),
+    PERMISSION_ID smallint NOT NULL REFERENCES PERMISSION(ID),
+    PRIMARY KEY (ROLE_ID, PERMISSION_ID)
 );
 
-CREATE TABLE app_user (
-    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    person_id     uuid NOT NULL UNIQUE REFERENCES person(id), -- 1:1
-    email         citext NOT NULL UNIQUE,        -- normalizado, case-insensitive
-    password_hash text NOT NULL,                 -- argon2/bcrypt
-    role_id       smallint NOT NULL REFERENCES role(id),
-    is_active     boolean NOT NULL DEFAULT true,
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    updated_at    timestamptz NOT NULL DEFAULT now()
+CREATE TABLE APP_USER (
+    ID            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    PERSON_ID     uuid NOT NULL UNIQUE REFERENCES PERSON(ID), -- 1:1
+    EMAIL         citext NOT NULL UNIQUE,        -- normalizado, case-insensitive
+    PASSWORD_HASH text NOT NULL,                 -- argon2/bcrypt
+    ROLE_ID       smallint NOT NULL REFERENCES ROLE(ID),
+    IS_ACTIVE     boolean NOT NULL DEFAULT true,
+    CREATED_AT    timestamptz NOT NULL DEFAULT now(),
+    UPDATED_AT    timestamptz NOT NULL DEFAULT now()
 );
 
--- Sistemas/apps que consumen `auth`/`notify` (aud=system en el JWT de
+-- Sistemas/apps que consumen `AUTH`/`NOTIFY` (aud=system en el JWT de
 -- servicio). Diseño mínimo; detalle completo pendiente — doc 09, D1.
-CREATE TABLE system (
-    code       text PRIMARY KEY,   -- p.ej. 'ifoundit'
-    name       text NOT NULL,
-    is_active  boolean NOT NULL DEFAULT true,
-    created_at timestamptz NOT NULL DEFAULT now()
+CREATE TABLE SYSTEM (
+    CODE       text PRIMARY KEY,   -- p.ej. 'ifoundit'
+    NAME       text NOT NULL,
+    IS_ACTIVE  boolean NOT NULL DEFAULT true,
+    CREATED_AT timestamptz NOT NULL DEFAULT now()
 );
-INSERT INTO system (code, name) VALUES ('ifoundit', 'I Found It');
+INSERT INTO SYSTEM (CODE, NAME) VALUES ('ifoundit', 'I Found It');
 
-CREATE TABLE refresh_token (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     uuid NOT NULL REFERENCES app_user(id),
-    family_id   uuid NOT NULL,               -- cadena de rotación
-    replaced_by uuid,                        -- token que lo sustituyó (null si vigente)
-    token_hash  bytea NOT NULL UNIQUE,        -- SHA-256 (32 bytes)
-    expires_at  timestamptz NOT NULL,         -- ~7 días
-    is_revoked  boolean NOT NULL DEFAULT false, -- rotación/logout/reutilización detectada
-    created_at  timestamptz NOT NULL DEFAULT now()
+CREATE TABLE REFRESH_TOKEN (
+    ID          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    USER_ID     uuid NOT NULL REFERENCES APP_USER(ID),
+    FAMILY_ID   uuid NOT NULL,               -- cadena de rotación
+    REPLACED_BY uuid,                        -- token que lo sustituyó (null si vigente)
+    TOKEN_HASH  bytea NOT NULL UNIQUE,        -- SHA-256 (32 bytes)
+    EXPIRES_AT  timestamptz NOT NULL,         -- ~7 días
+    IS_REVOKED  boolean NOT NULL DEFAULT false, -- rotación/logout/reutilización detectada
+    CREATED_AT  timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_refresh_token_user ON refresh_token(user_id);
+CREATE INDEX IX_REFRESH_TOKEN_USER ON REFRESH_TOKEN(USER_ID);
 
-CREATE TABLE password_reset (
-    user_id      uuid PRIMARY KEY REFERENCES app_user(id), -- 1 fila por usuario
-    code_hash    bytea NOT NULL,
-    expires_at   timestamptz NOT NULL,        -- 15 min
-    is_used      boolean NOT NULL DEFAULT false,
-    requested_at timestamptz NOT NULL DEFAULT now() -- throttle 15 min
+CREATE TABLE PASSWORD_RESET (
+    USER_ID      uuid PRIMARY KEY REFERENCES APP_USER(ID), -- 1 fila por usuario
+    CODE_HASH    bytea NOT NULL,
+    EXPIRES_AT   timestamptz NOT NULL,        -- 15 min
+    IS_USED      boolean NOT NULL DEFAULT false,
+    REQUESTED_AT timestamptz NOT NULL DEFAULT now() -- throttle 15 min
 );
 
-CREATE TABLE audit_log (
-    id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    actor_user_id  uuid NOT NULL REFERENCES app_user(id),
-    action         text NOT NULL,
-    entity         text NOT NULL,
-    entity_id      text NOT NULL,
-    transaction_id uuid,                      -- correlación con la solicitud/corrida (opcional)
-    occurred_at    timestamptz NOT NULL DEFAULT now()
+CREATE TABLE AUDIT_LOG (
+    ID             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ACTOR_USER_ID  uuid NOT NULL REFERENCES APP_USER(ID),
+    ACTION         text NOT NULL,
+    ENTITY         text NOT NULL,
+    ENTITY_ID      text NOT NULL,
+    TRANSACTION_ID uuid,                      -- correlación con la solicitud/corrida (opcional)
+    OCCURRED_AT    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_audit_log_actor ON audit_log(actor_user_id, occurred_at);
+CREATE INDEX IX_AUDIT_LOG_ACTOR ON AUDIT_LOG(ACTOR_USER_ID, OCCURRED_AT);
 
--- Seed de roles (AUTH-10) ------------------------------------------------
-INSERT INTO role (id, code, name_es, is_active, description) VALUES
-    (1, 'admin',     'Administrador', true,  'Gestión completa del sistema'),
-    (2, 'user',      'Usuario',       true,  'Crea/consulta alertas, se suscribe'),
-    (3, 'incognito', 'Incógnito',     false, 'Definido pero inactivo en Fase 1');
+-- Seed de roles (AUTH-10). Solo 2 roles: toda funcionalidad exige usuario
+-- registrado — se retiró el rol incógnito (2026-09-30).
+INSERT INTO ROLE (ID, CODE, NAME_ES, IS_ACTIVE, DESCRIPTION) VALUES
+    (1, 'admin', 'Administrador', true, 'Gestión completa del sistema'),
+    (2, 'user',  'Usuario',       true, 'Crea/consulta alertas, se suscribe');

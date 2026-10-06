@@ -4,7 +4,7 @@
 > Si una regla estorba, no se ignora en silencio: se discute y se **actualiza aquí** (y se propaga a los demás repos).
 > Yonko tiene libertad para **proponer** estrategias avanzadas y robustas; lo que no puede es **aplicar** sin aprobación algo que toque los límites de la sección 2.
 
-**Fuente de verdad del proyecto:** el repo `architecture-i-found-it` (`docs/` y `docs/deliverables/requerimientos.md`). Los demás repos no duplican esa documentación; la consultan allí.
+**Fuente de verdad del proyecto:** el repo `architecture` (`docs/` y `docs/deliverables/requerimientos.md`). Los demás repos no duplican esa documentación; la consultan allí.
 
 **Configuración de Claude Code (hooks, agentes y su adopción por repo):** ver [`CLAUDE.local.md`](CLAUDE.local.md). Se incorpora de forma progresiva a cada repo.
 

@@ -2,6 +2,26 @@
 
 > Desglose accionable del [Alcance 1](../08-alcance-1-preguntas.md). Cada requerimiento tiene ID, prioridad y notas. Pensado para **ver resultados en pocos días** priorizando un *vertical slice* funcional.
 
+## Tabla de contenido
+
+- [Leyenda de prioridades](#leyenda-de-prioridades)
+- [Leyenda de *Track* (separación de tareas)](#leyenda-de-track-separación-de-tareas)
+- [✅ Definition of Done (DoD) — global y obligatorio](#definition-of-done-dod--global-y-obligatorio)
+- [0 · Infraestructura y base del proyecto (INF)](#0--infraestructura-y-base-del-proyecto-inf)
+- [1 · Autenticación y cuentas (AUTH)](#1--autenticación-y-cuentas-auth)
+- [2 · Gestión de usuarios — módulo solo-admin (USR)](#2--gestión-de-usuarios--módulo-solo-admin-usr)
+- [3 · Alertas (ALE)](#3--alertas-ale)
+- [4 · Programación / scheduling (SCH)](#4--programación--scheduling-sch)
+- [5 · Scraping / ingesta (SCR)](#5--scraping--ingesta-scr)
+- [6 · Procesamiento y decisión (PRO)](#6--procesamiento-y-decisión-pro)
+- [7 · Suscripciones (SUB)](#7--suscripciones-sub)
+- [8 · Notificaciones email (NOT)](#8--notificaciones-email-not)
+- [9 · Consulta / estadísticas / comparador (VIS)](#9--consulta--estadísticas--comparador-vis)
+- [10 · Frontend PWA (FE)](#10--frontend-pwa-fe)
+- [11 · No funcionales (RNF)](#11--no-funcionales-rnf)
+- [Orden sugerido de construcción (para ver resultados pronto)](#orden-sugerido-de-construcción-para-ver-resultados-pronto)
+- [Fuera de alcance de la Fase 1 (para fases futuras)](#fuera-de-alcance-de-la-fase-1-para-fases-futuras)
+
 ## Leyenda de prioridades
 
 | Prioridad | Significado |
@@ -65,14 +85,14 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 |----|---------------|-----------|-------|--------|-------|
 | AUTH-1 | **Admin sembrado** (seed) al instalar, credenciales por env | 🔴 P0 | 🖥️ BE | ⬜ | Resuelve el primer admin |
 | AUTH-2 | Login con usuario/contraseña → **JWT** | 🔴 P0 | 🔗 FE+BE | ⬜ | Contraseñas con hash (bcrypt/argon2) |
-| AUTH-3 | Middleware de autorización por rol (admin / usuario / incógnito) | 🔴 P0 | 🖥️ BE | ⬜ | Protege módulos; se apoya en AUTH-10 |
+| AUTH-3 | Middleware de autorización por rol (admin / usuario) | 🔴 P0 | 🖥️ BE | ⬜ | Protege módulos; se apoya en AUTH-10 |
 | AUTH-4 | Reset de contraseña: solicitud → **email con código de 6 dígitos** | 🟡 P1 | 🔗 FE+BE | ⬜ | Depende de NOT-1 (envío email) |
 | AUTH-5 | Reset: código **válido 15 min** + **throttle 15 min** entre solicitudes | 🟡 P1 | 🖥️ BE | ⬜ | Mensaje "espere hasta cierta hora" |
 | AUTH-6 | **Estrategia de tokens**: access **~15 min** (stateless) + refresh **~7 días** con **rotación y revocación** (cookie `httpOnly`) | 🔴 P0 | 🔗 FE+BE | ⬜ | Óptimo para alta demanda: mínima exposición + no golpea BD por request |
 | AUTH-7 | **Complejidad de contraseña** validada al **crear usuario** y al **hacer reset** | 🟡 P1 | 🔗 FE+BE | ⬜ | Longitud mín., mayús/minús/número/símbolo; validación en FE (UX) y BE (autoridad) |
 | AUTH-8 | **Registro de auditoría**: quién ejecutó la acción y cuándo | 🟡 P1 | 🖥️ BE | ⬜ | Solo actor + timestamp de la acción; **sin histórico completo** por ahora |
 | AUTH-9 | **Logout** + invalidación/expiración de sesión | 🟡 P1 | 🔗 FE+BE | ⬜ | Revoca el refresh token |
-| AUTH-10 | **Modelo de datos de roles y permisos (RBAC)** + **árbol de accesos** evaluado en login para validar acceso a cada funcionalidad | 🔴 P0 | 🖥️ BE | ⬜ | **Estructura dinámica** (tablas `rol`, `permiso`, `rol_permiso`) **sembrada con los 3 roles**; el rol **incógnito** queda **definido pero inactivo** en Fase 1 (se retoma en Fase 2). UI de gestión de roles: después |
+| AUTH-10 | **Modelo de datos de roles y permisos (RBAC)** + **árbol de accesos** evaluado en login para validar acceso a cada funcionalidad | 🔴 P0 | 🖥️ BE | ⬜ | **Estructura dinámica** (tablas `rol`, `permiso`, `rol_permiso`) **sembrada con 2 roles** (admin, usuario) — se retiró el rol incógnito (2026-09-30), toda funcionalidad exige cuenta. UI de gestión de roles: después |
 | AUTH-11 | Bloqueo/backoff por **intentos fallidos** de login (anti fuerza bruta) | 🟢 P2 · **Opcional** | 🖥️ BE | ⬜ | Nice-to-have; puede no entrar en Fase 1 |
 
 ## 2 · Gestión de usuarios — módulo solo-admin (USR)
@@ -112,7 +132,7 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 | SCH-8 | **Lanzamiento manual de un schedule para pruebas (solo admin)** | 🟡 P1 | 🔗 FE+BE | ⬜ | Excepción a SCH-2, exclusiva del admin para testing |
 | SCH-9 | **Vista de progreso en tiempo real**: al abrir un schedule en ejecución, ver la **etapa de la tarea background por sitio** (leído → persistido → analizado → ok/mal) | 🟡 P1 | 🔗 FE+BE | ⬜ | Consume las etapas observables del job (SCR-16) |
 | SCH-10 | Corre **sin la PC encendida** (desplegado en free tier) | 🟡 P1 | ⚙️ INFRA | ⬜ | Ver INF-7 |
-| SCH-11 | **`schedule` es de acceso exclusivamente interno**: sin ruta pública en el Gateway; solo lo llaman otros servicios backend (`core`), autenticados como servicio (JWT `aud=system`), nunca el navegador | 🔴 P0 | 🖥️ BE | ⬜ | El admin gestiona schedules desde el frontend, pero **a través de `core`** (SCH-4); reduce la superficie expuesta, igual que el scraper sin puertos entrantes (SCR-18) |
+| SCH-11 | **`schedule` es de acceso exclusivamente interno**: sin ruta pública en el Gateway; solo lo llaman otros servicios backend (`core` y el `scraper`, este último solo su API de *pull*, SCR-20), autenticados como servicio (JWT `aud=system`), nunca el navegador | 🔴 P0 | 🖥️ BE | ⬜ | El admin gestiona schedules desde el frontend, pero **a través de `core`** (SCH-4); reduce la superficie expuesta, igual que el scraper sin puertos entrantes (SCR-18) |
 | SCH-12 | **API interna CRUD sobre `jobs`** en `schedule`: **crear** (config de disparo — intervalo o fecha fija — y de acción, ver SCH-13), **consultar**, **actualizar** (frecuencia, ventana, pausar) y **eliminar** — la eliminación es **en memoria** (saca el job del motor en ejecución; no borra su historial de corridas) | 🔴 P0 | 🖥️ BE | ⬜ | `core` la llama al crear una alerta (ALE-8) y al pausarla/reactivarla (ALE-9); base de SCH-4/5/8. Consistencia `core`↔`schedule` — ver doc 09, D7 |
 | SCH-13 | **Tipos de acción al disparar un job** (Strategy, reemplazable): `api_call` (llama un endpoint HTTP con reintentos) y `python_script` (ejecuta una función interna registrada) en Fase 1; `topic_message` (publica en un tópico pub/sub de un proveedor) **diferido a Fase 2/3** | 🔴 P0 *(P2 el tipo `topic_message`)* | 🖥️ BE | ⬜ | El callback hacia quien creó el job (`core`, ver SCH-14) es una instancia de `api_call`; interfaz lista para que otros proyectos reutilicen `schedule` con sus propias acciones |
 | SCH-14 | **El callback es parte de la configuración del job, no un conocimiento de `schedule`**: quien crea el job vía SCH-12 (`core`, en ALE-8) indica la URL de `api_call` a la que `schedule` debe llamar cuando el resultado esté listo | 🔴 P0 | 🖥️ BE | ⬜ | Así `schedule` queda **100 % desacoplado** de `core`: nunca conoce su dominio de negocio, solo dispara la acción configurada. Resuelve cómo `core` recibe el precio para normalizar/validar/decidir (PRO-1..6) |
@@ -157,7 +177,7 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 
 | ID | Requerimiento | Prioridad | Track | Estado | Notas |
 |----|---------------|-----------|-------|--------|-------|
-| SUB-1 | Modelo de suscripción `{alerta, email, estado}`. Un usuario puede suscribir **varios correos**; por defecto se suscribe el **correo de su cuenta** | 🟡 P1 | 🖥️ BE | ⬜ | Asocia correos (no necesariamente cuentas) a una alerta |
+| SUB-1 | Modelo de suscripción `{alerta, email, estado, created_by}`. Un usuario puede suscribir **varios correos**; por defecto se suscribe el **correo de su cuenta** | 🟡 P1 | 🖥️ BE | ⬜ | Toda suscripción exige cuenta (`created_by` obligatorio, D13, 2026-09-30) — no hay suscripción anónima. El correo asociado puede diferir del de la cuenta, pero hoy `notify` solo le avisa al dueño de la cuenta (`app_user_id`); avisar a otro correo distinto queda sin mecanismo de entrega |
 | SUB-2 | Módulo "Suscribirse a una alerta" (precarga el correo de la cuenta; permite agregar más) | 🟡 P1 | 🔗 FE+BE | ⬜ | |
 | SUB-3 | **Baja / unsubscribe** mediante **enlace en cada email** → da de baja automáticamente de esa alerta | 🟡 P1 | 🔗 FE+BE | ⬜ | Buena práctica de privacidad; enlace en la plantilla (NOT-2) |
 
@@ -238,7 +258,6 @@ graph LR
 - 🚫 **Extractor automático con IA por request (#5)** y **notificación al admin por SMS** → Fase 2/futuro (SMS por costo de pasarela).
 - 🚫 **Validación de que las URLs de una alerta correspondan al mismo producto** → Fase 2 (con IA). En Fase 1 **se confía en el usuario**.
 - 🚫 **Doble opt-in (confirmación de suscripción por email)** → Fase futura.
-- 🚫 **Módulo para usuario incógnito** → se retira de Fase 1; se abordará de otra manera más adelante.
 - 🚫 Módulo "notificaciones enviadas al suscriptor X" → Fase 2 (aunque el log NoSQL se empieza en NOT-4).
 - 🚫 **Acciones basadas en stock / metadata** (nombre, disponibilidad, etc.): en Fase 1 solo se **almacenan y muestran**; el **único disparador** de notificación es el **precio** (mejor precio móvil).
 - 🚫 **Notificación "vuelve a stock"** → Fase futura.

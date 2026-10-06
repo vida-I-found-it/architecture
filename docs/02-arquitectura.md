@@ -2,6 +2,27 @@
 
 > Consolidado con el [Alcance 1](08-alcance-1-preguntas.md), los [requerimientos](deliverables/requerimientos.md), el [modelo de datos](03-modelo-datos.md) y el [flujo diario](05-flujo-scraping.md). Refleja roles/RBAC, ejecución background con cola+workers, la **cascada de scraping con adapters aprendidos**, la máquina de estados del job, persistencia políglota, observabilidad y despliegue polyrepo portable a la nube.
 
+## Tabla de contenido
+
+- [Principios de diseño](#principios-de-diseño)
+- [Diagrama de contexto (C4 · nivel 1)](#diagrama-de-contexto-c4--nivel-1)
+- [Diagrama de contenedores (C4 · nivel 2)](#diagrama-de-contenedores-c4--nivel-2)
+- [Diagrama de componentes (C4 · nivel 3)](#diagrama-de-componentes-c4--nivel-3)
+- [La cascada de scraping (el "cerebro")](#la-cascada-de-scraping-el-cerebro)
+- [Responsabilidad de cada componente](#responsabilidad-de-cada-componente)
+  - [Persistencia por servicio](#persistencia-por-servicio)
+- [Módulos desacoplados (puntos de extensión)](#módulos-desacoplados-puntos-de-extensión)
+- [Persistencia políglota](#persistencia-políglota)
+- [Concerns transversales](#concerns-transversales)
+- [Vista de despliegue (servicios desacoplados · Cloudflare + GCP + Oracle)](#vista-de-despliegue-servicios-desacoplados--cloudflare--gcp--oracle)
+  - [Vista mínima](#vista-mínima)
+- [Comunicación entre piezas](#comunicación-entre-piezas)
+  - [Usuario ↔ Frontend](#usuario--frontend)
+  - [Frontend ↔ Backend](#frontend--backend)
+  - [Backend ↔ Backend (service-to-service)](#backend--backend-service-to-service)
+  - [Backend → Servicios externos](#backend--servicios-externos)
+  - [Transversal](#transversal)
+
 ## Principios de diseño
 
 - **Modular y desacoplado:** las piezas que cambiarán —proveedor de IA, tasa de cambio, estrategia de "mejor precio", canal de notificación— viven **tras una interfaz**, reemplazables sin tocar el core.
@@ -23,7 +44,6 @@
 graph TB
     ADM([🛡️ Administrador])
     USR([🙍 Usuario con cuenta])
-    INC([👤 Incógnito · inactivo en Fase 1])
 
     subgraph Sistema I Found It
         APP[Plataforma de seguimiento<br/>de precios]
@@ -52,7 +72,7 @@ graph TB
 
 > **`Otro proyecto propio`** representa el motivo por el que `auth` y `notify` se diseñaron como piezas reutilizables ([ADR-0001](adr/0001-estructura-repos-servicios.md)): hoy nadie más los consume, pero la relación existe como razón de diseño desde ya.
 >
-> **Suscriptores sin cuenta:** una alerta puede notificar a un correo que no tiene usuario en el sistema (SUB-1). El diagrama simplifica ese destino como "Usuario", sin distinguir si tiene cuenta o no — decisión de simplicidad, no una omisión de la que no seamos conscientes.
+> **Ya no hay suscriptores sin cuenta** (decidido 2026-09-30): se retiró el rol incógnito, `notify.notification` exige `app_user_id` y `core.subscription.created_by` pasó a ser obligatorio (D13) — todo destino de una notificación es un "Usuario con cuenta" real, sin excepción. Queda un cabo suelto: `subscription.email` (SUB-1) todavía permite suscribir un correo distinto al de la cuenta, pero sin mecanismo para entregárselo (`notify` ya no recibe ningún email, solo `app_user_id`).
 
 ## Diagrama de contenedores (C4 · nivel 2)
 
@@ -129,7 +149,9 @@ graph TB
     end
 
     subgraph SVC_NOTIFY["📣 notify"]
-        SEND["Envío · plantilla única<br/>Jinja2 · unsubscribe"]
+        OUTBOX[["📝 Outbox<br/>recibe la decisión · crea NOTIFICATION"]]
+        SEND["✉️ Envío · plantilla única<br/>Jinja2 · unsubscribe · marca sent/failed"]
+        OUTBOX --> SEND
     end
 
     subgraph SVC_SCR["🕷️ scraper — sin estado, sin BD"]
@@ -152,7 +174,7 @@ graph TB
     CASC -->|"pull job · reporta estado + resultado<br/>una sola llamada, SCR-20"| RUNAPI
     JOBS -->|incluidos en el reporte| RUNAPI
     ACTION -->|"api_call: entrega el precio<br/>a la URL configurada"| CALLBACK
-    DEC -->|"llama a notify<br/>service-to-service"| SEND
+    DEC -->|"llama a notify<br/>service-to-service"| OUTBOX
 ```
 
 > **`schedule` es exclusivamente interno** (SCH-11): no tiene ruta pública en el Gateway, y el admin lo gestiona desde el frontend **a través de `core`** (`SCHEDPROXY`), nunca directo.
@@ -160,6 +182,10 @@ graph TB
 > **El scraper nunca llama a `core`** (SCR-20, 2026-09-30): entrega su resultado a `schedule` en la misma llamada donde reporta el estado del *run*. Al completarse, `schedule` dispara la acción `api_call` configurada — que es la que finalmente llama a `CALLBACK` en `core`. `schedule` nunca tiene el dato de "cómo llamar a core" *hardcodeado*: viaja como configuración del job (SCH-14), así queda desacoplado de verdad.
 >
 > **Cuatro llamadas entre servicios que antes eran una sola tabla** ([ADR-0001](adr/0001-estructura-repos-servicios.md)): `ALERT → JOBAPI` (crea/pausa el job, ALE-8/9), `RUNAPI → JOBBUILD` (pide el detalle al hacer *pull*), `ACTION → CALLBACK` (entrega el precio, resuelve cómo `core` se entera) y `HEALTH → JOBAPI` (consulta corridas, D8).
+>
+> **`notify` tiene dos pasos, no uno** (2026-09-30): `OUTBOX` es quien recibe la llamada de `DEC` y crea la fila `NOTIFICATION` — es **la notificación que se debe enviar**. `SEND` es quien la toma, arma el email con la plantilla y lo entrega por SMTP. Antes el diagrama los mezclaba en un solo nodo ("Envío"), lo que escondía que nadie tenía modelado el paso de creación del outbox.
+>
+> **Tres tablas, no un `status`** (2026-09-30): `NOTIFICATION` no lleva estado — se crea siempre. Si `SEND` entrega con éxito, inserta en `NOTIFICATION_SENT` (**la notificación enviada**). Si falla, inserta/actualiza `NOTIFICATION_OUTBOX` — una cola de reintento real (`next_retry_at`, `FOR UPDATE SKIP LOCKED`), no un campo que cambia de valor. Detalle en [doc 03](03-modelo-datos.md#d-notify-notificaciones). El mecanismo exacto de `OUTBOX → SEND` (en el mismo proceso o con una cola interna) sigue sin decidir — ver [doc 09](09-pendientes.md), D12.
 
 ## La cascada de scraping (el "cerebro")
 
@@ -186,9 +212,9 @@ graph TD
 
 | Servicio | Componente | Responsabilidad |
 |----------|------------|-----------------|
-| `frontend` | **React PWA** | Menú/módulos para usuarios con cuenta. Español, i18n listo. (Incógnito inactivo en Fase 1.) |
+| `frontend` | **React PWA** | Menú/módulos para usuarios con cuenta. Español, i18n listo. Sin acceso anónimo. |
 | `auth` | **Auth** | Login con access token (~15 min) + refresh (~7 días, rotación/revocación); publica el JWKS que validan `core`/`notify`. |
-| `auth` | **RBAC** | Roles/permisos dinámicos; arma el **árbol de accesos** en login. 3 roles sembrados (incógnito inactivo). |
+| `auth` | **RBAC** | Roles/permisos dinámicos; arma el **árbol de accesos** en login. 2 roles sembrados (admin, user). |
 | `auth` | **Reset contraseña** | Código de 6 dígitos por email, válido 15 min + throttle 15 min (llama a `notify` para el envío). |
 | `auth` | **Gestión de usuarios** | Alta/gestión **solo admin**; admin sembrado por seed. |
 | `auth` | **Registro de systems** | Identifica qué sistema/app llama (`aud=system`); base de la reutilización futura de `auth`/`notify` en otros proyectos. |
@@ -203,12 +229,13 @@ graph TD
 | `core` | **Normalizador** | Formato canónico: precio, moneda, stock, título, metadata. |
 | `core` | **Tasa de cambio** | Tarea liviana; convierte USD→COP; guarda tasa+fecha en su propia NoSQL (~1 doc/día); parametrizable. |
 | `core` | **Validador / dedupe** | Descarta lo inválido (≤0, HTML error); **marca** desplomes anómalos (no los descarta). |
-| `core` | **Motor de decisión** | "Mejor precio móvil" **global** de la alerta; **Strategy** reemplazable; crea el aviso como **outbox** y llama a `notify`. |
+| `core` | **Motor de decisión** | "Mejor precio móvil" **global** de la alerta; **Strategy** reemplazable; detecta el aviso y le pasa los datos de la decisión a `notify` (el outbox ya no lo crea `core` — ver sección D del [doc 03](03-modelo-datos.md#d-notify-notificaciones)). |
 | `core` | **Comparador / estadísticas** | Histórico y comparación **por sitio** en el tiempo. |
 | `core` | **Detalle del scraper (admin)** | Adapters rotos y tasa de éxito son suyos; las **últimas corridas** las pide por API a `schedule` (D8). |
 | `scraper` | **Cascada de extracción** | Adapter guardado → JSON-LD → microdata/regex → Playwright → XHR; reintentos controlados; robots.txt + rate limit. Sin estado, sin BD, **nunca llama a `core`** (SCR-20). |
 | `scraper` | **Máquina de estados** | Registra **cada etapa del job con su hora**; va incluida en el mismo reporte que le hace a `schedule`, que la persiste (NoSQL, códigos numéricos + desfase, TTL 30 días) y alimenta la vista de progreso. |
-| `notify` | **Notificador** | Email SMTP, plantilla única (con marca de anomalía y enlace de baja); registra plantilla + contexto (sin HTML) en su propia NoSQL. Reutilizable por otros proyectos (`system`). |
+| `notify` | **Outbox** | Recibe la llamada de `core` con los datos de la decisión y **crea** la fila `notification` (PostgreSQL, movida desde `core` el 2026-09-30, sin estado) — es la notificación **que se debe enviar**. Reutilizable por otros proyectos (`system`). |
+| `notify` | **Envío (SEND)** | Toma una `notification`, arma el email con **plantilla única** (Jinja2, con marca de anomalía y enlace de baja) y lo entrega por SMTP. Si tiene éxito, inserta en `notification_sent` — la notificación **enviada**; si falla, inserta/actualiza `notification_outbox` (cola de reintento). Registra plantilla + contexto (sin HTML) en su propia NoSQL. |
 | todos | **Observabilidad** | `transactionId` end-to-end; trazas/errores (OpenTelemetry + Sentry). |
 
 ### Persistencia por servicio
@@ -218,11 +245,11 @@ graph TD
 | Servicio | Store | Qué guarda |
 |----------|-------|-----------|
 | `auth` | PostgreSQL, esquema `auth` | RBAC, `person`/`app_user`, `refresh_token`, `password_reset`, `audit_log`, `system`. |
-| `core` | PostgreSQL, esquema `core` | Alertas, urls (con último precio), etiquetas, `price_snapshot` **por cambio** (particionado), suscripciones, `notification` (outbox), adapters, estadísticas diarias por sitio. |
+| `core` | PostgreSQL, esquema `core` | Alertas, urls (con último precio), etiquetas, `price_snapshot` **por cambio** (particionado), suscripciones, adapters, estadísticas diarias por sitio. |
 | `core` | MongoDB (base propia) | Solo `exchange_rate`. |
 | `schedule` | PostgreSQL, esquema `schedule` | `schedule` (config por alerta) y `run` (corridas). |
 | `schedule` | MongoDB (base propia) | `job_state`, `run_summary`, `raw_capture`, `scrape_result` (nueva) — detalle de una corrida, **con TTL y compresión zstd**. Se mudaron aquí desde `core` (2026-09-30): `run` ya vivía en `schedule`. |
-| `notify` | PostgreSQL, esquema `notify` | *(reservado, sin tablas hoy)*. |
+| `notify` | PostgreSQL, esquema `notify` | `notification` (outbox transaccional) — movida desde `core` (2026-09-30). |
 | `notify` | MongoDB (base propia) | `notification_log` (contenido para re-renderizar el email, sin HTML ni PII) — TTL 180 días. |
 
 > Ningún esquema/base tiene FK ni permisos sobre el de otro servicio — detalle completo en el [doc 03 · Modelo de datos](03-modelo-datos.md).
@@ -326,6 +353,7 @@ graph TB
     CORE --> MGC
     SCHED --> PG
     SCHED --> MGS
+    NOTIFY --> PG
     NOTIFY --> MGN
 
     CORE --> FX
@@ -340,7 +368,7 @@ graph TB
 - **El scraper solo hace llamadas salientes, y nunca a `core`** (SCR-20). Sondea a `schedule` por trabajo y le reporta —en la misma llamada— el estado y el resultado; la VM de Oracle **no necesita ningún puerto entrante abierto**, lo que reduce su superficie de ataque a casi cero. `schedule` es quien reenvía el precio a `core`.
 - **`schedule` no tiene ninguna ruta pública** (SCH-11): sus rutas bajo `/schedule/internal/*` solo aceptan JWT de servicio (`aud=system`), nunca un token de usuario. El admin lo gestiona desde el frontend, pero la llamada real es `core` la que habla con `schedule`.
 - **La validación de JWT vive en cada servicio** (no en el Gateway): `auth` publica su JWKS y `core`/`schedule`/`notify` lo cachean y validan localmente. El Gateway solo enruta y aplica límite de tasa.
-- **Una sola base PostgreSQL, aislada por esquema y rol** — no por FK: `core` referencia usuarios de `auth` solo por `uuid`, y `core`/`schedule` se referencian entre sí (`alert_id`, `run_id`) también solo por valor. Detalle en [docs/deliverables/db](deliverables/db/README.md).
+- **Una sola base PostgreSQL, aislada por esquema y rol** — no por FK: `core` referencia usuarios de `auth` solo por `uuid`, `core`/`schedule` se referencian entre sí (`alert_id`, `run_id`) también solo por valor, y `notify` referencia `core`/`schedule`/`auth` de la misma forma desde que `notification` (outbox) es suya (2026-09-30). Detalle en [docs/deliverables/db](deliverables/db/README.md).
 - **El callback de `schedule` a `core` es configuración, no un conocimiento fijo** (SCH-14): la URL a la que llamar viaja como parte del job creado por `core`, así que `schedule` puede reutilizarse por otro sistema sin tocarle el código.
 
 ### Vista mínima
@@ -394,6 +422,7 @@ graph TB
     CORE --> MG
     SCHED --> PG
     SCHED --> MG
+    NOTIFY --> PG
     NOTIFY --> MG
 
     SCR --> SITES
@@ -401,7 +430,7 @@ graph TB
     CORE --> FX
 ```
 
-> **`notify` no toca PostgreSQL:** su esquema está reservado pero sin tablas (`notify/schema.sql`); su único estado real es Mongo. Por eso no tiene flecha hacia `PG` en este diagrama, a diferencia de `auth`/`core`/`schedule`.
+> **`notify` también vive en PostgreSQL desde el 2026-09-30:** su esquema aloja `notification` (el outbox transaccional, movido desde `core` — ver [doc 03](03-modelo-datos.md#d-notify-notificaciones)); su detalle de envío (`notification_log`) sigue en Mongo. Por eso ahora tiene flecha hacia `PG` y hacia `MG`, igual que `auth`/`core`/`schedule`.
 
 ## Comunicación entre piezas
 
@@ -428,7 +457,7 @@ graph TB
 | `schedule` | `core` | Pide el detalle del job (URL, adapter) al hacer *pull* | `/api/internal/job-detail` | REST/HTTPS+JSON | JWT de servicio |
 | `scraper` | `schedule` | *Pull* de trabajo + reporta estado y resultado — **una sola llamada** (SCR-20) | `/schedule/internal/pull` | REST/HTTPS+JSON (polling) | JWT de servicio |
 | `schedule` | `core` | Callback: entrega el precio, en la URL de `api_call` configurada al crear el job (SCH-14) | `/api/internal/prices` | REST/HTTPS+JSON | JWT de servicio |
-| `core` | `notify` | Pide el envío de un email (mejor precio) | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
+| `core` | `notify` | Entrega los datos de la decisión (mejor precio) para que `notify` cree su propio outbox y lo envíe (`notification` vive en `notify`, no en `core`, desde 2026-09-30) | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
 | `auth` | `notify` | Pide el envío del código de reset | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
 | `core` / `schedule` / `notify` | `auth` | Descarga y cachea el JWKS (valida JWT localmente) | `/auth/.well-known/jwks.json` | REST/HTTPS+JSON | Sin credencial (endpoint público de claves) |
 

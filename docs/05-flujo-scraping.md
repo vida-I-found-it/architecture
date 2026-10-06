@@ -2,6 +2,16 @@
 
 > Consolidado con la [arquitectura](02-arquitectura.md), el [modelo de datos](03-modelo-datos.md) y los [requerimientos](deliverables/requerimientos.md). Cada alerta **activa** se ejecuta **2×/día** en ventanas horarias (04–06 / 18–20, env), en **background escalonado**. Todo lo de una corrida comparte un `transaction_id`.
 
+## Tabla de contenido
+
+- [Diagrama de secuencia](#diagrama-de-secuencia)
+- [Máquina de estados del job (por sitio)](#máquina-de-estados-del-job-por-sitio)
+- [La cascada de extracción (resumen)](#la-cascada-de-extracción-resumen)
+- [Motor de decisión — "mejor precio móvil" (global)](#motor-de-decisión--mejor-precio-móvil-global)
+- [Manejo de fallos y buenas prácticas](#manejo-de-fallos-y-buenas-prácticas)
+- [Idempotencia y trazabilidad](#idempotencia-y-trazabilidad)
+- [Qué se persiste y dónde](#qué-se-persiste-y-dónde)
+
 ## Diagrama de secuencia
 
 ```mermaid

@@ -16,7 +16,7 @@ Tres conceptos que no hay que confundir (detalle en [01 · Visión](docs/01-visi
 
 **Modos de monitoreo:** por **URL directa** (Fase 1) y por **tema descubierto con IA** (Fase 2).
 
-**Roles:** administrador (único que crea cuentas), usuario con cuenta y usuario incógnito (inactivo en Fase 1).
+**Roles:** administrador (único que crea cuentas) y usuario con cuenta — toda funcionalidad exige login, sin acceso anónimo.
 
 ## Cómo funciona (Fase 1)
 

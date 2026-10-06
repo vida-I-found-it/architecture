@@ -56,6 +56,7 @@ Roles (se crean según se necesiten, no todos de golpe):
 |--------|-----|--------------|--------|--------|---------------|
 | `arquitecto` | Analiza y propone mejoras de arquitectura (rápido, abierto, seguro, flexible, confiable); registra ADR en estado Propuesta | Lectura + edición de `docs/` (solo crea ADR nuevos; nunca aplica decisiones cerradas) | Sonnet | ✅ Creado | Evaluar un componente/cambio, o antes de cerrar una decisión de diseño |
 | `revisor-seguridad` | Revisa diffs buscando brechas y riesgos (sección 4) | Solo lectura | Sonnet | ✅ Creado | Antes de cada PR |
+| `dba` | Experto en motores relacionales y no relacionales (SQL, documentales, clave-valor, columnares, grafo, espaciales); señala qué falta/mejorar en el modelo y optimiza espacio y velocidad de consultas | Lectura + edición de `docs/deliverables/db/` y `docs/03-modelo-datos.md` (nunca ejecuta contra una BD real) | Sonnet | ✅ Creado | Diseñar/revisar un schema, antes de cerrar una decisión de modelo de datos, o ante sospecha de rendimiento/almacenamiento |
 | `dev-backend` | Implementa API, workers y migraciones | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos BE |
 | `dev-frontend` | Implementa UI, i18n y estados de carga/error | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos FE |
 | `dev-scraper` | Extractores y adapters, probados con fixtures locales | Lectura, edición, tests (sin red) | Sonnet | Propuesto | Requerimientos SCR |
@@ -75,7 +76,7 @@ Los agentes de `.claude/agents/` **pertenecen al repo donde viven**; un repo nue
 | **Nivel usuario** | Colocarlos en `~/.claude/agents/` | Disponibles en todos tus repos automáticamente | Solo en tu máquina, no viajan con el repo |
 | **Plugin/marketplace propio** | Empaquetar reglas, hooks y agentes | Una sola fuente, actualización centralizada | Más trabajo inicial; valorar cuando haya 4+ repos |
 
-El repo `architecture-i-found-it` es la **plantilla canónica**: los cambios se hacen aquí y luego se propagan.
+El repo `architecture` es la **plantilla canónica**: los cambios se hacen aquí y luego se propagan.
 
 ### 5 · Adopción progresiva por repo
 
@@ -83,7 +84,7 @@ Los agentes y hooks **se quedan en este repo** y se incorporan a los demás de f
 
 | Repo | Hooks | `revisor-seguridad` | `qa` | `arquitecto` | Otros agentes |
 |------|-------|---------------------|------|--------------|---------------|
-| `architecture-i-found-it` *(plantilla canónica)* | ✅ | ✅ | ✅ | ✅ | — |
+| `architecture` *(plantilla canónica)* | ✅ | ✅ | ✅ | ✅ | `dba` ✅ |
 | Repos futuros (api, workers, frontend…) | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 
 Actualiza esta tabla cada vez que se incorpore algo a un repo.
@@ -94,4 +95,4 @@ Actualiza esta tabla cada vez que se incorpore algo a un repo.
 2. Verificar que el `.gitignore` incluya `.claude/settings.local.json` y `.claude/.state/`.
 3. Ajustar solo lo específico del repo (agentes que apliquen, permisos propios).
 4. Abrir `/hooks` (o reiniciar la sesión) para que Claude Code cargue la configuración.
-5. Los cambios a estas reglas se hacen primero en `architecture-i-found-it` y luego se propagan.
+5. Los cambios a estas reglas se hacen primero en `architecture` y luego se propagan.

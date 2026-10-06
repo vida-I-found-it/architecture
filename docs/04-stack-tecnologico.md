@@ -2,6 +2,20 @@
 
 > Consolidado con el [Alcance 1](08-alcance-1-preguntas.md), la [arquitectura](02-arquitectura.md), el [modelo de datos](03-modelo-datos.md) y los [requerimientos](deliverables/requerimientos.md). Backend **Python**, frontend **React**, persistencia **políglota** (PostgreSQL + MongoDB), ejecución **background** con Redis (a confirmar, ver [doc 09](09-pendientes.md) B2), despliegue en **6 repos independientes** ([ADR-0001](adr/0001-estructura-repos-servicios.md)) portables a la nube. Todo detrás de interfaces reemplazables.
 
+## Tabla de contenido
+
+- [Stack por capa](#stack-por-capa)
+  - [Backend (API + workers)](#backend-api--workers)
+  - [Datos](#datos)
+  - [Frontend (PWA)](#frontend-pwa)
+  - [Calidad, seguridad y observabilidad](#calidad-seguridad-y-observabilidad)
+  - [IA (Fase 2)](#ia-fase-2)
+- [Decisión clave: ¿HTTP simple o navegador headless?](#decisión-clave-http-simple-o-navegador-headless)
+- [Organización de repos](#organización-de-repos)
+- [Estructura interna (por repo)](#estructura-interna-por-repo)
+- [Interfaces reemplazables (contratos)](#interfaces-reemplazables-contratos)
+- [Pendientes](#pendientes)
+
 ## Stack por capa
 
 ### Backend (API + workers)
@@ -103,8 +117,8 @@ graph LR
 | **auth** | FastAPI: login/JWT, RBAC, reset, gestión de usuarios, `system` (multi-proyecto). Publica su JWKS. |
 | **core** | FastAPI: alertas, suscripciones, adapters, normalizador, tasa de cambio, validador, motor de decisión. Ensambla el detalle del job a pedido de `schedule`. |
 | **schedule** | FastAPI + APScheduler: `schedule`/`run`, ventanas horarias, y la API de *pull* que consulta el scraper. |
-| **notify** | FastAPI: plantillas (Jinja2), envío SMTP, `notification_log`. Reutilizable por otros proyectos. |
-| **scraper** | Sin FastAPI ni BD: cliente que hace *pull* sobre `schedule`, ejecuta la cascada de extracción (httpx/Playwright) y reporta a `core`/`schedule`. |
+| **notify** | FastAPI: outbox transaccional (`notification`, movido desde `core` el 2026-09-30), plantillas (Jinja2), envío SMTP, `notification_log`. Reutilizable por otros proyectos. |
+| **scraper** | Sin FastAPI ni BD: cliente que hace *pull* sobre `schedule`, ejecuta la cascada de extracción (httpx/Playwright) y le reporta a `schedule` — nunca a `core` (SCR-20). |
 
 > No hay un contrato "api↔workers" como en versiones anteriores de este doc: cada repo expone su **propio OpenAPI**, y las llamadas entre servicios (`schedule`→`core`, `core`→`notify`) son HTTP normales, validadas por JWT de servicio (`aud=system`).
 
