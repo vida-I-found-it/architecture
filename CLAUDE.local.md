@@ -56,15 +56,15 @@ Roles (se crean según se necesiten, no todos de golpe):
 |--------|-----|--------------|--------|--------|---------------|
 | `arquitecto` | Analiza y propone mejoras de arquitectura (rápido, abierto, seguro, flexible, confiable); registra ADR en estado Propuesta | Lectura + edición de `docs/` (solo crea ADR nuevos; nunca aplica decisiones cerradas) | Sonnet | ✅ Creado | Evaluar un componente/cambio, o antes de cerrar una decisión de diseño |
 | `revisor-seguridad` | Revisa diffs buscando brechas y riesgos (sección 4) | Solo lectura | Sonnet | ✅ Creado | Antes de cada PR |
-| `dba` | Experto en motores relacionales y no relacionales (SQL, documentales, clave-valor, columnares, grafo, espaciales); señala qué falta/mejorar en el modelo y optimiza espacio y velocidad de consultas | Lectura + edición de `docs/deliverables/db/` y `docs/03-modelo-datos.md` (nunca ejecuta contra una BD real) | Sonnet | ✅ Creado | Diseñar/revisar un schema, antes de cerrar una decisión de modelo de datos, o ante sospecha de rendimiento/almacenamiento |
-| `dev-backend` | Implementa API, workers y migraciones | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos BE |
-| `dev-frontend` | Implementa UI, i18n y estados de carga/error | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos FE |
+| `dba` | Experto en análisis de modelado y motores relacionales/no relacionales; señala qué falta o mejorar (integridad, ciclo de vida, evolución), optimiza espacio y velocidad, y propone ideas modernas con su ficha de costo/riesgo/cuándo no aplicarlas | Lectura; edita `docs/deliverables/db/` y `docs/03-modelo-datos.md` solo si se le pide (nunca ejecuta contra una BD real) | Sonnet | ✅ Creado | Diseñar/revisar un schema, antes de cerrar una decisión de modelo de datos, o ante sospecha de rendimiento/almacenamiento |
+| `backend-developer-ia` | Senior/líder BE: implementa API, workers y migraciones con patrones y principios sólidos; propositivo; prueba con Bash (Docker desechable) | Lectura, edición, Bash | Sonnet | ✅ Creado | Requerimientos BE |
+| `frontend-developer-ia` | Senior/líder FE: UI/UX, accesibilidad (WCAG), React avanzado, design system, i18n y estados de carga/error; propositivo; prueba en navegador y con tests | Lectura, edición, Bash | Sonnet | ✅ Creado | Requerimientos FE |
 | `dev-scraper` | Extractores y adapters, probados con fixtures locales | Lectura, edición, tests (sin red) | Sonnet | Propuesto | Requerimientos SCR |
 | `qa` | Escribe y ejecuta tests unitarios y E2E; caza bordes | Lectura, edición de tests, ejecución | Haiku | ✅ Creado | Cierre de cada requerimiento |
 | `rendimiento` | Mide y propone mejoras (consultas, caché, bundles, CI) | Lectura + ejecución de mediciones | Sonnet | Propuesto | Cuando se sospeche o antes de escalar |
 | `documentador` | Mantiene docs, requerimientos y README al día | Lectura + edición de docs | Haiku | Propuesto | Al cerrar cada cambio |
 
-Flujo sugerido por requerimiento: `arquitecto` (si hay decisión) → `dev-*` → `qa` → `revisor-seguridad` (+ `rendimiento` si aplica) → `documentador` → PR con revisión humana.
+Flujo sugerido por requerimiento: `arquitecto` (si hay decisión) → `backend-developer-ia` / `frontend-developer-ia` → `qa` → `revisor-seguridad` (+ `rendimiento` si aplica) → `documentador` → PR con revisión humana.
 
 ### 4 · Alcance: los agentes son por repositorio
 
