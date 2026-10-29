@@ -83,26 +83,72 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 
 | ID | Requerimiento | Prioridad | Track | Estado | Notas |
 |----|---------------|-----------|-------|--------|-------|
-| AUTH-1 | **Admin sembrado** (seed) al instalar, credenciales por env | 🔴 P0 | 🖥️ BE | ⬜ | Resuelve el primer admin |
-| AUTH-2 | Login con usuario/contraseña → **JWT** | 🔴 P0 | 🔗 FE+BE | ⬜ | Contraseñas con hash (bcrypt/argon2) |
-| AUTH-3 | Middleware de autorización por rol (admin / usuario) | 🔴 P0 | 🖥️ BE | ⬜ | Protege módulos; se apoya en AUTH-10 |
+| AUTH-1 | **SUPER_ADMIN sembrado** al instalar o al registrar un system, con las credenciales por entorno | 🔴 P0 | 🖥️ BE | ⬜ | Lo crea `db/auth/register-system.sql`: persona (con fecha de nacimiento real, **mayor de 18 años**) + cuenta + rol `SUPER_ADMIN` de ese system (hoy `ifoundit`), AUTH-19. **La clave no viaja en claro**: el script recibe solo su **hash** por entorno (`SUPER_ADMIN_PASSWORD_HASH`) y deja la cuenta con `must_change_password`. Procedimiento en `db/README.md`. Criterios de aceptación: [criterios](#criterios-de-aceptación--contraseñas) |
+| AUTH-2 | Login con usuario/contraseña → **JWT** | 🔴 P0 | 🔗 FE+BE | ⬜ | Contraseñas con hash (bcrypt/argon2). El login indica el `system` y el JWT se emite **para ese system** (AUTH-12). Si `must_change_password` es verdadero, solo permite cambiar la contraseña (AUTH-20) |
+| AUTH-3 | Middleware de autorización por **permiso**: en cada endpoint, el backend exige el permiso correspondiente a partir del rol del usuario en el system | 🔴 P0 | 🖥️ BE | ⬜ | Nunca confía en el frontend. Se apoya en AUTH-10 y AUTH-13. Un permiso hijo exige tener concedidos todos sus ancestros; los `RULE_*` se evalúan además sobre los datos (p. ej. alertas propias o ajenas). Cómo llegan los permisos a `core`, `schedule` y `notify` (claim del JWT): pendiente, [doc 09](../09-pendientes.md) D26 |
 | AUTH-4 | Reset de contraseña: solicitud → **email con código de 6 dígitos** | 🟡 P1 | 🔗 FE+BE | ⬜ | Depende de NOT-1 (envío email) |
-| AUTH-5 | Reset: código **válido 15 min** + **throttle 15 min** entre solicitudes | 🟡 P1 | 🖥️ BE | ⬜ | Mensaje "espere hasta cierta hora" |
-| AUTH-6 | **Estrategia de tokens**: access **~15 min** (stateless) + refresh **~7 días** con **rotación y revocación** (cookie `httpOnly`) | 🔴 P0 | 🔗 FE+BE | ⬜ | Óptimo para alta demanda: mínima exposición + no golpea BD por request |
+| AUTH-5 | Reset: código **válido 15 min** + **throttle 15 min** entre solicitudes | 🟡 P1 | 🖥️ BE | ⬜ | Respuesta **uniforme**, exista o no el email, y sin hora concreta de espera (revelaría qué cuentas existen): "Si el correo está registrado, te enviaremos un código. Puedes pedir otro cada 15 minutos" |
+| AUTH-6 | **Estrategia de tokens**: access **~15 min** (stateless) + refresh **~7 días** con **rotación y revocación** (cookie `httpOnly`) | 🔴 P0 | 🔗 FE+BE | ⬜ | Óptimo para alta demanda: mínima exposición + no golpea BD por request. El refresh es **por `system`** (AUTH-12) y su rotación es atómica (AUTH-14). Política de cookie y CSRF: pendiente, [doc 09](../09-pendientes.md) D25 |
 | AUTH-7 | **Complejidad de contraseña** validada al **crear usuario** y al **hacer reset** | 🟡 P1 | 🔗 FE+BE | ⬜ | Longitud mín., mayús/minús/número/símbolo; validación en FE (UX) y BE (autoridad) |
-| AUTH-8 | **Registro de auditoría**: quién ejecutó la acción y cuándo | 🟡 P1 | 🖥️ BE | ⬜ | Solo actor + timestamp de la acción; **sin histórico completo** por ahora |
+| AUTH-8 | **Registro de auditoría**: quién ejecutó la acción y cuándo | 🟡 P1 | 🖥️ BE | ⬜ | Solo actor + timestamp de la acción; **sin histórico completo** por ahora. **No registra logins fallidos** (decidido 2026-10-08). El servicio solo puede insertar y leer el registro, nunca modificarlo ni borrarlo |
 | AUTH-9 | **Logout** + invalidación/expiración de sesión | 🟡 P1 | 🔗 FE+BE | ⬜ | Revoca el refresh token |
-| AUTH-10 | **Modelo de datos de roles y permisos (RBAC)** + **árbol de accesos** evaluado en login para validar acceso a cada funcionalidad | 🔴 P0 | 🖥️ BE | ⬜ | **Estructura dinámica** (tablas `rol`, `permiso`, `rol_permiso`) **sembrada con 2 roles** (admin, usuario) — se retiró el rol incógnito (2026-09-30), toda funcionalidad exige cuenta. UI de gestión de roles: después |
-| AUTH-11 | Bloqueo/backoff por **intentos fallidos** de login (anti fuerza bruta) | 🟢 P2 · **Opcional** | 🖥️ BE | ⬜ | Nice-to-have; puede no entrar en Fase 1 |
+| AUTH-10 | **Modelo de datos de roles y permisos (RBAC)** + **árbol de accesos** evaluado en login para validar acceso a cada funcionalidad | 🔴 P0 | 🖥️ BE | ⬜ | **Estructura dinámica y propia de cada `system`** (tablas `role`, `permission`, `role_permission`; [ADR-0003](../adr/0003-alcance-por-system-en-auth.md)). Un usuario tiene **un solo rol por system**. Semilla de `ifoundit` en AUTH-13. UI de gestión de roles: USR-6 (P2) |
+| AUTH-11 | Bloqueo/backoff por **intentos fallidos** de login (anti fuerza bruta) | 🟢 P2 · **Opcional** | 🖥️ BE | ⬜ | Nice-to-have; puede no entrar en Fase 1. ⏳ Subirlo a P1 al menos para cuentas administradoras: [doc 09](../09-pendientes.md) D28 |
+| AUTH-12 | **Cuenta global con acceso y rol por `system`**: una persona = una sola cuenta (email único); el acceso lo da `user_system_role` (un rol por system). El login indica el `system`; el access token y el refresh se emiten **para ese system** y no sirven en otro | 🔴 P0 | 🔗 FE+BE | ⬜ | [ADR-0003](../adr/0003-alcance-por-system-en-auth.md). Habilita reutilizar `auth` en otros proyectos (ADR-0001). El frontend de I Found It usa siempre `ifoundit` |
+| AUTH-13 | **Catálogo RBAC de `ifoundit` (semilla)**: rol `ADMIN` con los 19 permisos y rol `USER` con 8 (y `SUPER_ADMIN` con todos los permisos, AUTH-19); **7 de los 19 son el catálogo base de `auth`** (menú, perfil propio, usuarios y roles) que `register-system.sql` siembra en todo system; códigos en **MAYÚSCULAS**; el prefijo **`RULE_`** marca una **regla de servicio** (alcance sobre los datos), no una pantalla. Árbol: `VIEW_MENU` → módulos → acciones | 🔴 P0 | 🖥️ BE | ⬜ | Catálogo completo con su requerimiento de origen en el [doc 03](../03-modelo-datos.md#catálogo-de-permisos-de-ifoundit-semilla). Los `RULE_*` no se dibujan en el menú. Semilla por defecto en `db/auth/seed-default.sql` (idempotente) |
+| AUTH-14 | **Contratos de concurrencia y revocación**: rotación **atómica** del refresh (un solo token vivo por familia); **revocar los refresh** al desactivar a un usuario o cambiarle el rol; **proteger al último `SUPER_ADMIN`** activo de cada system (lock sobre el system antes de contar; también al anonimizar) | 🔴 P0 | 🖥️ BE | ⬜ | Detalle en el doc 03 ("Contratos para el backend"). El cambio de rol es siempre `UPDATE`, nunca borrar e insertar (se perderían los refresh). El access token ya emitido vive hasta ~15 min |
+| AUTH-15 | **Endurecimiento del reset**: `code_hash` = HMAC-SHA256 con *pepper* en el gestor de secretos; **máx. 5 intentos fallidos** por código; al completar el reset se **revocan todos los refresh** del usuario; throttle y verificación atómicos | 🟡 P1 | 🖥️ BE | ⬜ | Respuesta uniforme (AUTH-5). Falta un tope diario de solicitudes (límite de tasa en el Gateway) |
+| AUTH-16 | **Gestión de las claves de firma JWT y del *pepper***: viven en un gestor de secretos (Doppler o similar), nunca en el repo; `kid` en el JWT y dos claves publicadas a la vez en el JWKS durante la rotación | 🟡 P1 | 🖥️ BE · ⚙️ INFRA | ⏳ **Estrategia de rotación pendiente** | [Doc 09](../09-pendientes.md), D22. Los refresh son opacos: rotar la clave no cierra sesiones |
+| AUTH-17 | **Tokens de servicio** (`aud=system`) para las llamadas entre servicios (`core`→`notify`, `auth`→`notify`, `core`↔`schedule`, `scraper`→`schedule`): cómo se emiten y dónde viven sus credenciales | 🔴 P0 | 🖥️ BE | ⏳ **Diseño pendiente** | [Doc 09](../09-pendientes.md), D1; se apoya en SCH-11 |
+| AUTH-18 | **Tope absoluto de sesión** y **ventana de gracia** del refresh (dos pestañas que refrescan a la vez no deben revocar la familia de un usuario legítimo) | 🟡 P1 | 🖥️ BE | ⏳ **Por definir** | [Doc 09](../09-pendientes.md), D24. El modelo ya la soporta (`revoked_at`) |
+| AUTH-19 | **`SUPER_ADMIN`, dueño de su system**: cada system tiene su rol `SUPER_ADMIN` con **todos los permisos, presentes y futuros** (incluidas las reglas `RULE_*`), que **no interviene en otros systems**. Un system nuevo se registra con un **script SQL** (`db/auth/register-system.sql`) que crea por defecto su `SUPER_ADMIN`, su primera cuenta y el **catálogo base de permisos de `auth`** (7); tres triggers le conceden todo permiso nuevo y le impiden perder permisos o rol. Ningún system queda sin un `SUPER_ADMIN` activo | 🔴 P0 | 🖥️ BE | ⬜ | [ADR-0003](../adr/0003-alcance-por-system-en-auth.md), decisión 5. La app no crea systems. ⏳ Controles reforzados (MFA, número de cuentas): [doc 09](../09-pendientes.md) D27 |
+| AUTH-20 | **Cambio de contraseña autenticado y cambio forzado en el primer acceso**: si `must_change_password` es verdadero, el backend solo permite cambiar la contraseña (cumpliendo AUTH-7); al hacerlo apaga el indicador y revoca los demás refresh del usuario | 🔴 P0 | 🔗 FE+BE | ⬜ | Necesario para la primera cuenta `SUPER_ADMIN` (AUTH-1) y para las altas del admin (USR-3). Criterios: [criterios](#criterios-de-aceptación--contraseñas). [Doc 09](../09-pendientes.md), D33 |
+| AUTH-21 | **Distribución de la anonimización a los demás servicios**: `anonymize_user()` registra un evento por usuario (`anonymization_event`: solo ids y los systems a los que pertenecía); cada servicio corre su propio job que lee los eventos de hace más de 30 min con `id > su marca de agua`, ejecuta `erase(user_ids)` (idempotente) sobre SUS copias del dato personal y avanza la marca en la misma transacción. El job corre solo de madrugada: cada 30 min entre las 02:00 y las 04:00 (hora de Bogotá). Expone su rezago y alerta si falla | 🟡 P1 | 🖥️ BE | ⏳ **Falta decidir borrar vs anonimizar cada copia** | Mecanismo decidido el 2026-10-19: [Doc 09](../09-pendientes.md), D30; contrato en el [README de db](db/README.md#anonimización-contrato-del-consumidor). Todo system que se registre debe cumplirlo |
 
 ## 2 · Gestión de usuarios — módulo solo-admin (USR)
 
 | ID | Requerimiento | Prioridad | Track | Estado | Notas |
 |----|---------------|-----------|-------|--------|-------|
-| USR-1 | Modelo de usuario: nombres, apellidos, fecha nac., género, email, teléfono (opc.) | 🔴 P0 | 🖥️ BE | ⬜ | + rol + hash contraseña |
-| USR-2 | **Módulo de gestión de usuarios accesible SOLO por admin** | 🟡 P1 | 🔗 FE+BE | ⬜ | Con formularios en el sistema |
-| USR-3 | Crear / editar / desactivar cuentas (admin) | 🟡 P1 | 🔗 FE+BE | ⬜ | No hay auto-registro |
-| USR-4 | Módulo "Modificar mi información" (usuario edita su perfil) | 🟢 P2 | 🔗 FE+BE | ⬜ | |
+| USR-1 | Modelo de usuario: nombres, apellidos, fecha nac., género, email, teléfono (opc.) | 🔴 P0 | 🖥️ BE | ⬜ | + hash de contraseña; el rol lo da el `system` (AUTH-12). **Solo mayores de 18 años** (no se permiten menores; la base lo exige). La fecha de nacimiento tiene una finalidad declarada: verificar la edad mínima para ver una alerta ([doc 09](../09-pendientes.md), D20). Género y teléfono se mantienen por ahora sin finalidad declarada |
+| USR-2 | **Módulo de gestión de usuarios accesible SOLO por admin** | 🟡 P1 | 🔗 FE+BE | ⬜ | Con formularios en el sistema. Permiso `VIEW_USERS` (AUTH-13) |
+| USR-3 | Crear / editar / desactivar cuentas (admin) | 🟡 P1 | 🔗 FE+BE | ⬜ | No hay auto-registro. Permisos `CREATE_USER`, `EDIT_USER` (incluye asignar el rol del system) y `DEACTIVATE_USER`. Valida mayoría de edad (FE y BE). **No se puede desactivar ni bajar de rol al último admin** y al desactivar se revocan sus sesiones (AUTH-14). ⏳ Cómo recibe el usuario su clave inicial: pendiente ([doc 09](../09-pendientes.md), D23; se define en el [doc 02](../02-arquitectura.md) y en la HU). La cuenta nueva puede marcarse con `must_change_password` (AUTH-20). Criterios: [criterios](#criterios-de-aceptación--contraseñas) |
+| USR-4 | Módulo "Modificar mi información" (usuario edita su perfil) | 🟢 P2 | 🔗 FE+BE | ⬜ | Permiso `EDIT_OWN_PROFILE`. Solo edita su propia información; no puede cambiar su rol ni dejar de ser mayor de edad |
+| USR-5 | **Anonimizar una cuenta** (supresión de datos personales, Habeas Data): borra los datos personales y las credenciales, desactiva la cuenta y le quita los accesos y las sesiones; conserva los ids y la auditoría | 🟡 P1 | 🔗 FE+BE | ⏳ **Política legal pendiente** | [Doc 09](../09-pendientes.md), D21. Ya existe `anonymize_user()` en la base, que registra un evento por usuario (AUTH-21); falta definir quién la dispara, su permiso y su alcance con asesoría legal |
+| USR-6 | **Gestión de roles y permisos**: crear roles del system y asignarles permisos del catálogo | 🟢 P2 | 🔗 FE+BE | ⬜ | Permiso `MANAGE_ROLES`. Pantalla en FE-9. Puede quedar fuera de la Fase 1: mientras tanto el catálogo se siembra (AUTH-13). Al conceder un permiso hijo, el backend exige o añade sus ancestros (si no, queda un permiso muerto) |
+
+### Criterios de aceptación · contraseñas
+
+> Las HU de este repo son las filas de los requerimientos; los criterios de las que tocan la contraseña viven aquí y se enlazan desde la nota de cada una. ⏳ marca lo que depende de un pendiente del [doc 09](../09-pendientes.md).
+
+**AUTH-1 · SUPER_ADMIN sembrado (`register-system.sql`)**
+- La contraseña se genera **fuera** del sistema (generador criptográfico o gestor de contraseñas), de **16 caracteres o más** y cumpliendo AUTH-7. No se escribe en el repo, en un archivo ni en el historial del shell.
+- Se calcula su **hash argon2id** con los mismos parámetros del backend (bcrypt también se acepta). Solo el **hash** va al gestor de secretos (Doppler o similar) como `SUPER_ADMIN_PASSWORD_HASH`, exportado entre comillas simples. La clave en claro se entrega a la persona por un canal aparte.
+- El script **recibe solo el hash**: la clave nunca pasa por SQL, por `ps` ni por los logs. **Rechaza** un valor que no parezca un hash argon2/bcrypt, datos faltantes o vacíos, una cuenta inactiva o anonimizada y a un menor de edad, sin dejar nada a medias (una sola transacción).
+- La cuenta nace con `must_change_password = true`. Si ya existe una cuenta con ese email, se reutiliza **sin tocar su contraseña**.
+- Ni la clave ni el hash aparecen en logs, errores, auditoría ni mensajes.
+
+**AUTH-7 · Complejidad**
+- Se valida en el FE (UX) y en el BE (autoridad) al crear un usuario, al hacer reset y al cambiar la contraseña (AUTH-20).
+- Reglas mínimas: mayúscula, minúscula, número y símbolo. Longitud mínima: ⏳ por definir (propuesta: 12 para usuarios y 16 para una clave generada por un operador).
+- El backend guarda solo el hash argon2id y lo verifica en tiempo constante; la clave en claro no se persiste ni se loguea.
+
+**AUTH-4 / AUTH-5 / AUTH-15 · Reset**
+- El código de 6 dígitos se guarda como HMAC-SHA256 con *pepper* del gestor de secretos (AUTH-16); vale 15 minutos, admite 5 intentos fallidos y hay 15 minutos entre solicitudes.
+- La respuesta es **siempre la misma**, exista o no el email, sin hora concreta de espera. Pedir un reset de una cuenta inactiva o anonimizada no hace nada y responde igual.
+- La nueva contraseña cumple AUTH-7. Al completar el reset: el código queda usado, se apaga `must_change_password` y se **revocan todos los refresh** del usuario.
+
+**AUTH-2 / AUTH-20 · Login y cambio forzado**
+- Si `must_change_password` es verdadero, el login es válido pero **solo permite cambiar la contraseña**: cualquier otro endpoint responde 403 con el código `password_change_required` (⏳ propuesta, a confirmar).
+- El cambio exige la contraseña actual, cumple AUTH-7, no puede ser igual a la actual, apaga `must_change_password` y revoca los demás refresh del usuario. Sus intentos fallidos se limitan igual que los del login (⏳ D28).
+
+**USR-3 · Alta por el admin** (⏳ D23)
+- La cuenta nueva nace con `must_change_password = true` y su contraseña se hashea en el servidor con argon2id; la clave en claro no se persiste ni se loguea.
+- Cómo recibe el usuario su clave inicial (clave temporal o invitación por código) lo define D23 junto con el [doc 02](../02-arquitectura.md). Criterio que no cambia: el admin que crea la cuenta no puede quedar conociendo una clave vigente, por eso existe el cambio forzado.
+- Valida mayoría de edad y complejidad.
+
+**FE-2 / FE-5**
+- FE-2 maneja `password_change_required` (lleva a la pantalla de cambio y no muestra el menú), nunca guarda la contraseña (ni en `localStorage`) ni la pone en la URL, y usa los `autocomplete` correctos.
+- FE-5: el formulario de alta tiene medidor de complejidad; si D23 elige una clave temporal, la muestra una sola vez.
 
 ## 3 · Alertas (ALE)
 
@@ -205,13 +251,14 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 | ID | Requerimiento | Prioridad | Track | Estado | Notas |
 |----|---------------|-----------|-------|--------|-------|
 | FE-1 | App base React + Vite + TS + shadcn/ui | 🔴 P0 | 🎨 FE | ⬜ | |
-| FE-2 | Login + manejo de sesión JWT | 🔴 P0 | 🎨 FE | ⬜ | |
-| FE-3 | **Menú de módulos solo para usuarios con cuenta** | 🟡 P1 | 🎨 FE | ⬜ | Guard por rol |
+| FE-2 | Login + manejo de sesión JWT | 🔴 P0 | 🎨 FE | ⬜ | Indica el `system` (`ifoundit`). Access token en memoria y refresh en cookie `httpOnly`; si el refresh falla o expira, vuelve al login (AUTH-6, AUTH-12) |
+| FE-3 | **Menú de módulos solo para usuarios con cuenta** | 🟡 P1 | 🎨 FE | ⬜ | Se dibuja con el **árbol de accesos** recibido en el login (AUTH-10, AUTH-13); los `RULE_*` no se dibujan. El guard del frontend es solo UX: la autoridad es el backend (AUTH-3) |
 | FE-4 | Pantallas: crear/consultar alerta, suscribirse | 🟡 P1 | 🎨 FE | ⬜ | Formularios/wizard |
-| FE-5 | Pantalla de gestión de usuarios (admin) | 🟡 P1 | 🎨 FE | ⬜ | |
+| FE-5 | Pantalla de gestión de usuarios (admin) | 🟡 P1 | 🎨 FE | ⬜ | USR-2/3: crear, editar, asignar rol, desactivar; valida mayoría de edad. Clave inicial: pendiente (D23) |
 | FE-6 | Pantalla de administración de schedules (admin) | 🟡 P1 | 🎨 FE | ⬜ | SCH-4/5/8/9 |
 | FE-7 | Andamiaje **i18n** (español activo; inglés futuro) | 🟢 P2 | 🎨 FE | ⬜ | |
 | FE-8 | PWA instalable | 🟢 P2 | 🎨 FE | ⬜ | Progresiva, fases futuras |
+| FE-9 | Pantalla de gestión de roles y permisos (admin) | 🟢 P2 | 🎨 FE | ⬜ | USR-6. Muestra el árbol de permisos del system; permiso `MANAGE_ROLES` |
 
 ## 11 · No funcionales (RNF)
 
@@ -223,6 +270,7 @@ Estado: `⬜ pendiente` · `🟦 en curso` · `✅ hecho`
 | RNF-4 | Privacidad de emails de suscriptores | 🟡 P1 | 🔗 FE+BE | ⬜ | No exponer en UI; permitir baja |
 | RNF-5 | Fiabilidad de corrida diaria > 95% por alerta | 🟢 P2 | 🖥️ BE | ⬜ | Métrica objetivo |
 | RNF-6 | **Capa de saneamiento/normalización de datos** aplicada a **TODO dato antes de persistir** (scrapeado y de usuario): trim + colapsar espacios, quitar caracteres de control/invisibles/no imprimibles, Unicode NFC, precios→numérico, fechas→UTC, emails/etiquetas normalizados | 🔴 P0 | 🔗 FE+BE | ⬜ | Autoridad en BE; FE valida por UX. Base del DoD #1: análisis congruente |
+| RNF-7 | **Protección de datos personales (Habeas Data, Ley 1581 de 2012)**: autorización previa y registro del consentimiento, finalidad declarada por cada dato, solo mayores de edad y derecho a la supresión por anonimización | 🔴 P0 | 🔗 FE+BE | ⏳ **Política legal pendiente** | [Doc 09](../09-pendientes.md), D21. Debe quedar definida **antes de guardar datos de usuarios reales**. Ver USR-1 y USR-5 |
 
 ---
 
@@ -241,12 +289,12 @@ graph LR
     H5 --> H6[Hito 6 · Completar módulos<br/>usuarios, suscripciones, UI]
 ```
 
-- **Hito 1 (🔴 P0):** INF-1..4, INF-14, AUTH-1..3, AUTH-6, AUTH-10, USR-1, FE-1..2 → *puedo entrar al sistema con roles.*
+- **Hito 1 (🔴 P0):** INF-1..4, INF-14, AUTH-1..3, AUTH-6, AUTH-10, AUTH-12..14, AUTH-17, AUTH-19, AUTH-20, USR-1, RNF-7, FE-1..2 → *puedo entrar al sistema con roles.*
 - **Hito 2 (🔴 P0):** ALE-1..2, ALE-4, ALE-8, SCR-1..3, SCR-18, PRO-1..2 → *creo una alerta (inmutable) por URL y el sistema captura su precio.*
 - **Hito 3 (🔴 P0):** SCH-1..3, SCH-11..14, SCR-20 → *corre solo, en background, programado por alerta.*
 - **Hito 4 (🔴 P0):** VIS-1 → *veo el precio capturado en la UI.* ✅ **core estable completo.**
 - **Hito 5 (🟡 P1):** PRO-3..6, NOT-1..5, SUB-1..3, SCH-4..9, SCR-4..16, SCR-19 → *detecta mejor precio, avisa por email; scraping robusto observable; admin gestiona schedules.*
-- **Hito 6 (🟡/🟢):** USR-2..4, ALE-3/5/6/7/9, VIS-2..4, FE-3..8, AUTH-4/5/7/8/9/11 → *módulos completos y pulido.*
+- **Hito 6 (🟡/🟢):** USR-2..6, ALE-3/5/6/7/9, VIS-2..4, FE-3..9, AUTH-4/5/7/8/9/11/15/16/18/21 → *módulos completos y pulido.*
 
 ---
 

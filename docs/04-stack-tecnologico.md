@@ -42,7 +42,7 @@
 
 | Store | Tecnología | Uso |
 |-------|-----------|-----|
-| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), un rol por esquema sin permisos sobre el de los demás — ver [docs/deliverables/db](deliverables/db/README.md). Guarda RBAC, usuarios, alertas, urls, `price_snapshot` (por cambio, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Extensión `citext` para emails. |
+| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), dos roles por esquema (migraciones y servicio) sin permisos sobre el de los demás — ver [docs/deliverables/db](deliverables/db/README.md). Guarda RBAC, usuarios, alertas, urls, `price_snapshot` (por cambio, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Extensión `citext` para emails. |
 | Documental | **MongoDB** (compresión **zstd**, índices **TTL**) | Solo consulta, voluminoso/efímero: `job_state`, `run_summary`, `raw_capture`, `notification_log`, `exchange_rate`. Retenciones en [doc 03](03-modelo-datos.md#retención-resumen). |
 | Cola / caché | **Redis** | Backend de la cola de trabajos. |
 
