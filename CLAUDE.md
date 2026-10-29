@@ -33,6 +33,7 @@ Estas acciones están **prohibidas salvo instrucción explícita del usuario en 
 - ❌ Borrar archivos, carpetas, tablas, colecciones, volúmenes Docker o datos sin mirar antes qué se va a borrar y sin confirmación. Nunca sobrescribir un archivo sin haberlo leído.
 - ❌ Ejecutar comandos destructivos (`rm -rf`, `DROP`, `TRUNCATE`, `docker system prune`, downgrade de migraciones) sobre cualquier base de datos que no sea claramente local y desechable.
 - ❌ Ejecutar comandos o migraciones contra bases de datos compartidas o de la nube, aunque existan credenciales disponibles.
+- ❌ Levantar contenedores con `--privileged`, con el socket de Docker montado, montando el `HOME` o carpetas con secretos, publicando puertos en `0.0.0.0`, o con imágenes no oficiales / sin versión fijada. Los contenedores de prueba son desechables y acotados (ver sección 3, ítem 7).
 - ❌ Escribir, pegar o mostrar secretos reales (contraseñas, API keys, tokens, claves JWT, credenciales SMTP) en código, docs, logs, commits, issues o chat. Nunca leer ni subir `.env` reales; solo `.env.example` sin valores reales.
 - ❌ Enviar datos de usuarios/suscriptores (emails, teléfonos, fechas de nacimiento) a servicios externos, incluidas herramientas de IA, salvo el flujo diseñado del sistema.
 
@@ -73,6 +74,10 @@ Estas acciones están **prohibidas salvo instrucción explícita del usuario en 
 
 **Después**
 7. **Verificar ejecutando y con tests.** Lint, tipos y tests relevantes; si es UI, probarla en el navegador. Cada funcionalidad trae tests unitarios y los flujos críticos, E2E, cubriendo caso feliz y bordes (vacío, duplicado, unicode, valores enormes, errores de red).
+   - **Pruebas contra tecnologías o plataformas externas → en Docker, siempre que sea posible.** Bases de datos (PostgreSQL, MongoDB…), colas, SMTP de prueba, navegadores y cualquier otra dependencia externa se levantan en **contenedores desechables**, no instaladas en la máquina: el resultado es reproducible y no depende de lo que haya en cada equipo.
+   - **Misma versión que el entorno objetivo** (p. ej. `postgres:16` si el stack dice PostgreSQL 16). Si no se puede, se declara la diferencia en el reporte ("probado en 15; el destino es 16").
+   - **Contenedor desechable y acotado:** imagen **oficial o de editor verificado con versión fijada** (tag; digest si importa), `--rm`, nombre propio, puertos solo en `127.0.0.1`, datos en `tmpfs` o volumen anónimo y credenciales de prueba generadas al vuelo (nunca reales). Al terminar se detienen y eliminan **solo los que Yonko creó**.
+   - **Si Docker no está disponible o no aplica** (p. ej. algo que no se puede contenerizar), se dice por qué y se usa la alternativa local más aislada posible, declarando la limitación. Nunca se sustituye por una prueba contra un servicio compartido o de la nube (sección 2).
 8. **Segunda revisión del propio diff con otro enfoque** (seguridad, bordes, rendimiento) antes de darlo por terminado: código muerto, prints, TODOs, secretos, archivos generados.
 9. **Explicar qué se hizo y qué no:** cambios, cómo se verificó, qué queda pendiente o riesgoso.
 
