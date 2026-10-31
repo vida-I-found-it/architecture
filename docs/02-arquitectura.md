@@ -191,22 +191,32 @@ graph TB
 
 ```mermaid
 graph TD
-    START[Job de un sitio] --> A0{¿Adapter<br/>guardado para<br/>el dominio?}
+    START[Job de un sitio] --> A0{¿Adapter<br/>manual guardado<br/>para el dominio?}
     A0 -->|sí| USE[Usar adapter guardado]
-    A0 -->|no| C1[1 · JSON-LD / og:price]
+    A0 -->|no| A1{¿Estrategia genérica<br/>recordada para<br/>el dominio?}
+    A1 -->|sí| JUMP[Ejecutar esa<br/>estrategia directo]
+    JUMP -->|falla, el sitio cambió| C1
+    A1 -->|no| C1[1 · JSON-LD / og:price]
     C1 -->|falla| C2[2 · Microdata/RDFa/meta + regex]
     C2 -->|falla| C3[3 · Playwright render]
     C3 -->|falla| C4[4 · Interceptar XHR/JSON]
-    C4 -->|falla| RT{Reintentos<br/>controlados<br/>máx 3}
+    C4 -->|falla| C5["5 · Captura + VLM lee el precio<br/>(Fase 2 · estilo PixelRAG)"]
+    C5 -->|falla| RT{Reintentos<br/>controlados<br/>máx 3}
     RT -->|reintenta 10-15m| C1
     RT -->|agotados| N7[7 · Email al admin]
     N7 --> BUILD[Admin construye adapter<br/>manual · guarda por dominio]
     BUILD -.reutiliza siempre.-> A0
     USE --> OK[✅ Precio capturado]
-    C1 & C2 & C3 & C4 -->|éxito| OK
+    JUMP -->|éxito| OK
+    C1 -->|éxito| OK
+    C2 & C3 & C4 & C5 -->|éxito| LEARN[Recuerda la estrategia<br/>ganadora por dominio]
+    LEARN -.reutiliza siempre.-> A1
+    LEARN --> OK
 ```
 
-> **Fase 2:** entre el paso 4 y el aviso al admin se sumará el **extractor con IA** (#5), y el constructor de adapters tendrá **asistencia de IA** (evaluar API de Claude).
+> **`A1`/`LEARN` (candidato a pendiente, sin ID todavía):** hoy el **único** aprendizaje persistido es el adapter manual (`A0`/`BUILD`) — SCR-12 es explícito en que es "sin IA en Fase 1". Un dominio que solo logra extraer vía `C3`/`C4` nunca "aprende" nada: cada corrida repite `C1`→`C2` desde cero antes de llegar otra vez al paso que de verdad funciona. `A1`/`LEARN` cierra ese hueco con algo mucho más barato que un adapter completo: solo recuerda **cuál paso genérico ganó** la última vez (el dato ya existe, agregado, en `site_stats_daily.by_strategy` — [doc 03](03-modelo-datos.md)) para saltar directo a él, con reintento sobre la cascada completa (`JUMP -->|falla|`) si el sitio cambió y la estrategia recordada deja de servir. **No tiene prioridad ni Fase asignada aún** — falta decidirlo y, si se aprueba, darle un ID (candidato: `SCR-21`) y un lugar donde persistirlo (reusar `site_stats_daily` vs. un campo nuevo).
+>
+> **`C5` es Fase 2**, y concreta lo que antes era una nota genérica ("extractor con IA, #5"): en vez de que una IA lea el **HTML** (texto), lee una **captura de pantalla** de la página ya renderizada por Playwright en `C3`/`C4` — mismo principio detrás de PixelRAG (retrieval-augmented generation sobre *screenshots*, en vez de texto parseado), aplicado aquí a una sola página ya conocida, sin el componente de *retrieval* sobre un corpus (eso es lo que PixelRAG resuelve y este caso no necesita). Ventaja sobre leer HTML: no lo engaña la ofuscación de clases/CSS que sí dificulta el parseo de texto. Costo a tener presente: una llamada **de pago** a un modelo de visión por cada sitio que agote `C1`-`C4`. El constructor de adapters sigue con su propia asistencia de IA aparte (evaluar API de Claude), sin cambios.
 
 ## Responsabilidad de cada componente
 
