@@ -2,6 +2,13 @@
 
 > El scraping tiene matices legales. Esto **no es asesoría legal**, pero sí las buenas prácticas que seguiremos para operar de forma responsable y sostenible.
 
+## Tabla de contenido
+
+- [Principios](#principios)
+- [Checklist antes de agregar un sitio nuevo](#checklist-antes-de-agregar-un-sitio-nuevo)
+- [Mitigación de riesgos](#mitigación-de-riesgos)
+- [Regla de oro](#regla-de-oro)
+
 ## Principios
 
 1. **Respetar `robots.txt`** — revisar y respetar las rutas permitidas de cada sitio.

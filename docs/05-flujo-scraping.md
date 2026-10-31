@@ -2,6 +2,16 @@
 
 > Consolidado con la [arquitectura](02-arquitectura.md), el [modelo de datos](03-modelo-datos.md) y los [requerimientos](deliverables/requerimientos.md). Cada alerta **activa** se ejecuta **2×/día** en ventanas horarias (04–06 / 18–20, env), en **background escalonado**. Todo lo de una corrida comparte un `transaction_id`.
 
+## Tabla de contenido
+
+- [Diagrama de secuencia](#diagrama-de-secuencia)
+- [Máquina de estados del job (por sitio)](#máquina-de-estados-del-job-por-sitio)
+- [La cascada de extracción (resumen)](#la-cascada-de-extracción-resumen)
+- [Motor de decisión — "mejor precio móvil" (global)](#motor-de-decisión--mejor-precio-móvil-global)
+- [Manejo de fallos y buenas prácticas](#manejo-de-fallos-y-buenas-prácticas)
+- [Idempotencia y trazabilidad](#idempotencia-y-trazabilidad)
+- [Qué se persiste y dónde](#qué-se-persiste-y-dónde)
+
 ## Diagrama de secuencia
 
 ```mermaid
@@ -122,7 +132,7 @@ graph TD
 
 ## Idempotencia y trazabilidad
 
-- `capture_hash` evita snapshots duplicados idénticos.
+- El snapshot se inserta **solo si cambia** el precio/stock respecto al último (bloqueo de fila en `alert_url`); evita duplicados sin `capture_hash` (ver [doc 03](03-modelo-datos.md)).
 - Snapshots **append-only**: el historial nunca se corrompe.
 - Si la corrida se cae, se reintenta sin duplicar (los sitios ya completados no se reprocesan).
 - Todo se correlaciona por `transaction_id` (PG ↔ MongoDB) y se observa vía OpenTelemetry/Sentry.

@@ -9,11 +9,20 @@ graph LR
     F2 --> FU["Futuro<br/>🌱 Backlog"]
 ```
 
+## Tabla de contenido
+
+- [Fase 0 — Documentación *(casi cerrada)*](#fase-0--documentación-casi-cerrada)
+- [Fase 1 — Alcance 1 (MVP funcional de punta a punta)](#fase-1--alcance-1-mvp-funcional-de-punta-a-punta)
+- [Fase 2 — Inteligencia y extensiones](#fase-2--inteligencia-y-extensiones)
+- [Futuro — Backlog](#futuro--backlog)
+- [Principio de evolución](#principio-de-evolución)
+
 ## Fase 0 — Documentación *(casi cerrada)*
 
 - [x] Visión y objetivos (01), arquitectura (02), modelo de datos (03), stack (04), flujo (05), legal (07).
 - [x] Alcance 1 acotado (08) + requerimientos priorizados con Track y DoD.
 - [ ] Cerrar decisión de **despliegue** (provider VM / host frontend — [INF-15](deliverables/requerimientos.md)).
+- [ ] Resolver el backlog de [pendientes de arquitectura e infraestructura](09-pendientes.md) (ADR de repos, proveedor de BD, PoC de Oracle, contratos entre servicios).
 
 ## Fase 1 — Alcance 1 (MVP funcional de punta a punta)
 
@@ -21,7 +30,7 @@ graph LR
 
 Se construye por **hitos** (los 4 primeros = *core estable*):
 
-- [ ] **Hito 1 · Esqueleto + acceso** — polyrepo, Docker, PostgreSQL+MongoDB, migraciones, **modelo de datos base**, login JWT, **RBAC** (3 roles, incógnito inactivo), admin sembrado.
+- [ ] **Hito 1 · Esqueleto + acceso** — polyrepo, Docker, PostgreSQL+MongoDB, migraciones, **modelo de datos base**, login JWT, **RBAC** (2 roles: admin, usuario), admin sembrado.
 - [ ] **Hito 2 · Alerta + scraping** — crear alerta (URL, 1..N, **inmutable**), cascada HTTP-first + extractor genérico, capturar y guardar precio.
 - [ ] **Hito 3 · Scheduling background** — schedule por alerta (2×/día, ventanas), cola + workers escalonados, solo alertas activas.
 - [ ] **Hito 4 · Ver resultado** — detalle de alerta + precio en la UI. ✅ *core estable.*
@@ -41,7 +50,6 @@ Se construye por **hitos** (los 4 primeros = *core estable*):
 - [ ] **Validación de "mismo producto"** entre las URLs de una alerta (con IA).
 - [ ] **SMS al admin** (además de email) — según costo de pasarela.
 - [ ] **Doble opt-in** de suscripción (confirmación por email).
-- [ ] **Reactivar rol incógnito** — habilitar un módulo puntual por enlace.
 
 ## Futuro — Backlog
 

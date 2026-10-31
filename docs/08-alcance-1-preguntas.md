@@ -4,6 +4,21 @@
 
 > **Estado:** ✅ Sección A decidida · 🔄 Sección B en curso (falta B6). Ver "Decisiones" al pie de cada bloque.
 
+## Tabla de contenido
+
+- [A. Alcance funcional — ¿qué entra en la Fase 1?](#a-alcance-funcional--qué-entra-en-la-fase-1)
+- [B. Scraping inteligente (el corazón técnico)](#b-scraping-inteligente-el-corazón-técnico)
+- [C. Descubrimiento con IA (Modo B)](#c-descubrimiento-con-ia-modo-b)
+- [D. Autenticación y usuarios](#d-autenticación-y-usuarios)
+- [E. Datos y precios](#e-datos-y-precios)
+- [F. Notificaciones por email](#f-notificaciones-por-email)
+- [G. Frontend (React PWA)](#g-frontend-react-pwa)
+- [H. Infraestructura y despliegue](#h-infraestructura-y-despliegue)
+- [I. No funcionales / límites](#i-no-funcionales--límites)
+- [🎯 Alcance 1 — cerrado](#alcance-1--cerrado)
+- [Alcance de la Fase 1 (revisado y confirmado)](#alcance-de-la-fase-1-revisado-y-confirmado)
+  - [Correcciones aplicadas sobre la propuesta original](#correcciones-aplicadas-sobre-la-propuesta-original)
+
 ## A. Alcance funcional — ¿qué entra en la Fase 1?
 
 1. ¿El MVP incluye **los dos modos** (URL directa **y** tema con IA), o arrancamos solo con **URL directa** y el modo IA entra en Fase 2?

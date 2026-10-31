@@ -1,5 +1,24 @@
 # 01 · Visión y objetivos
 
+## Tabla de contenido
+
+- [Problema](#problema)
+- [Visión](#visión)
+- [🧭 Glosario / modelo conceptual (¡tenerlo muy presente!)](#glosario--modelo-conceptual-tenerlo-muy-presente)
+  - [🔔 Alerta](#alerta)
+  - [📧 Suscripción](#suscripción)
+  - [📈 Consumo *(nombre a mejorar)*](#consumo-nombre-a-mejorar)
+- [Los dos modos de monitoreo](#los-dos-modos-de-monitoreo)
+- [Roles del sistema](#roles-del-sistema)
+- [Autenticación y acceso](#autenticación-y-acceso)
+- [Módulos del sistema](#módulos-del-sistema)
+- [Objetivos](#objetivos)
+- [No-objetivos (por ahora)](#no-objetivos-por-ahora)
+- [Decisiones tomadas](#decisiones-tomadas)
+- [Métricas de éxito](#métricas-de-éxito)
+- [Casos de uso por rol](#casos-de-uso-por-rol)
+- [Preguntas abiertas](#preguntas-abiertas)
+
 ## Problema
 
 Los precios en tiendas online cambian constantemente (varias veces al día en algunos casos). Detectar **cuándo un producto está en su mejor precio** o **cuándo aparece una oferta real** de forma manual es inviable: hay que revisar muchos sitios, y una "oferta" a veces es solo un precio inflado previamente.
@@ -78,24 +97,21 @@ graph TB
 
 ## Roles del sistema
 
+> **Todo exige cuenta** (decidido 2026-09-30): se retiró el rol incógnito — ninguna funcionalidad del sistema es accesible sin login. Solo quedan 2 roles.
+
 ```mermaid
 graph TB
-    subgraph "Sin cuenta"
-        INC[👤 Usuario incógnito<br/>1 módulo habilitado como servicio]
-    end
     subgraph "Con cuenta"
         USR[🙍 Usuario con cuenta<br/>acceso a los módulos]
         ADM[🛡️ Administrador<br/>gestiona usuarios]
     end
     ADM -->|registra| USR
-    INC -.->|puede convertirse en| USR
 ```
 
 | Rol | Acceso | Puede hacer |
 |-----|--------|-------------|
 | **Administrador** | Total | Todo lo del usuario **+ registrar y gestionar cuentas**. Único que da de alta cuentas. |
 | **Usuario con cuenta** | Menú y módulos | Crear alertas, consultar **todas** las alertas (sin editar las ajenas), suscribirse, comparar precios, ver estadísticas, editar su perfil. |
-| **Usuario incógnito** | 1 módulo puntual | Se le **habilita un módulo concreto como "servicio"** sin necesidad de cuenta (ej. *consultar/gestionar una suscripción* vía enlace). |
 
 > **Visibilidad de alertas:** un usuario con cuenta **ve todas las alertas del sistema**, pero **solo puede editar las suyas** (las ajenas son de solo lectura).
 
@@ -106,13 +122,12 @@ graph TB
 - **Login** con usuario/contraseña.
 - **Recuperar contraseña** (flujo por email).
 - **Sin auto-registro:** las cuentas las crea únicamente el administrador.
-- **Menú de módulos:** visible y accesible **solo** para usuarios con cuenta autenticados.
-- El usuario incógnito **no** ve el menú; solo accede al **módulo habilitado como servicio** vía enlace directo.
+- **Menú de módulos:** visible y accesible **solo** para usuarios con cuenta autenticados — no hay acceso sin login.
 
 ```mermaid
 graph TD
     V[Visitante] --> L{¿Tiene cuenta<br/>y hace login?}
-    L -->|No| I[Solo el módulo habilitado<br/>como servicio incógnito]
+    L -->|No| I[Sin acceso]
     L -->|Sí| MENU[🧭 Menú de módulos]
     MENU --> M1[Crear alerta]
     MENU --> M2[Consultar alerta · todas, lectura]
@@ -125,7 +140,7 @@ graph TD
 
 ## Módulos del sistema
 
-Accesibles desde el menú, **solo para usuarios con cuenta** (salvo el que se habilite como servicio incógnito):
+Accesibles desde el menú, **solo para usuarios con cuenta**:
 
 | Módulo | Descripción |
 |--------|-------------|
@@ -141,7 +156,7 @@ Accesibles desde el menú, **solo para usuarios con cuenta** (salvo el que se ha
 
 ## Objetivos
 
-1. **Roles y acceso controlado:** administrador, usuario con cuenta y usuario incógnito.
+1. **Roles y acceso controlado:** administrador y usuario con cuenta — toda funcionalidad exige login.
 2. **Autenticación:** login, recuperar contraseña y **registro solo por administrador**.
 3. **Dos modos de alta de alertas:** por URL directa y por tema descubierto con IA.
 4. **Scraping inteligente y genérico** — rastrear precios sin importar el producto.
@@ -165,12 +180,11 @@ Accesibles desde el menú, **solo para usuarios con cuenta** (salvo el que se ha
 
 | Tema | Decisión |
 |------|----------|
-| **Roles** | Administrador · Usuario con cuenta · Usuario incógnito |
+| **Roles** | Administrador · Usuario con cuenta — sin acceso anónimo |
 | **Registro** | **Solo el administrador** crea cuentas (sistema académico) |
 | **Auth** | Login + recuperar contraseña |
 | **Menú/módulos** | Solo para usuarios con cuenta autenticados |
 | **Visibilidad de alertas** | Todos ven todas; editar solo las propias |
-| **Usuario incógnito** | Se le habilita **un módulo** concreto como servicio (sin cuenta) |
 | **Conceptos** | Alerta (proceso) · Suscripción (persona↔alerta) · Consumo→histórico de precios |
 | **Modos de monitoreo** | URL directa **+** búsqueda por tema con IA |
 | **Descubrimiento IA** | API de modelo de IA (por definir; preferible custom/gratuita) |
@@ -195,7 +209,6 @@ Accesibles desde el menú, **solo para usuarios con cuenta** (salvo el que se ha
 graph LR
     ADM([🛡️ Admin])
     USR([🙍 Usuario])
-    INC([👤 Incógnito])
 
     ADM --> A1[Registrar usuarios]
     ADM --> A2[Gestionar cuentas]
@@ -207,8 +220,6 @@ graph LR
     USR --> U5[Ver estadísticas]
     USR --> U6[Editar su perfil]
 
-    INC --> I1[Usar el módulo habilitado<br/>como servicio, por enlace]
-
     ADM -.hereda.-> USR
 ```
 
@@ -216,6 +227,5 @@ graph LR
 
 - **¿Qué API de IA** usamos para el descubrimiento de links? *(bloqueante para el Modo B)* — candidatas gratuitas: OpenRouter, Groq, o búsqueda web + LLM.
 - **¿Qué nombre** le damos a "Consumo"? (Histórico de precios / Comparador / Línea de tiempo).
-- **¿Qué módulo** se expone al usuario incógnito en la fase 1?
 - ¿El descubrimiento de links corre **cada día** o solo al alta del tema (y se re-descubre cada N días)?
 - ¿Región/mercado objetivo? (afecta qué sitios devuelve la IA y el parsing de moneda).

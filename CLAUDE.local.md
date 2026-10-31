@@ -21,7 +21,7 @@ Las reglas de este archivo son **instrucciones**; la carpeta `.claude/` las conv
 | Hook | Evento | Qué hace |
 |------|--------|----------|
 | `turn-start.sh` | `UserPromptSubmit` | Marca el inicio del turno (escritura atómica). Cada mensaje del usuario reinicia el reloj. |
-| `turn-guard.sh` | `PreToolUse` | Límite de **5 min por turno** (`CLAUDE_TURN_LIMIT_SECONDS`, default 300): pasado el tope **deniega** la herramienta y obliga a Yonko a parar, reportar y esperar aprobación. Acota además el `timeout` de los comandos Bash al tiempo restante. **No aprueba comandos**: los permisos siguen aplicando. |
+| `turn-guard.sh` | `PreToolUse` | Límite de **8 min por turno** (`CLAUDE_TURN_LIMIT_SECONDS`, default 480): pasado el tope **deniega** la herramienta y obliga a Yonko a parar, reportar y esperar aprobación. Acota además el `timeout` de los comandos Bash al tiempo restante. **No aprueba comandos**: los permisos siguen aplicando. |
 | `lib.sh` | *(librería)* | Utilidades comunes: `session_id` convertido en hash (nunca se usa como ruta), enteros validados (nada de aritmética sobre texto arbitrario), respaldo de `CLAUDE_PROJECT_DIR` con `git rev-parse` y avisos por stderr. |
 
 Política de fallos: el límite de tiempo es **fail-open** (un fallo del propio hook, como `jq` ausente, JSON inválido o estado corrupto, no bloquea el trabajo) pero **nunca en silencio**: se avisa por stderr.
@@ -47,23 +47,24 @@ Principios:
 - **Una responsabilidad por agente**, con entradas y salidas claras (qué recibe, qué entrega, cuándo termina).
 - **Contexto explícito:** reciben IDs de requerimiento y criterios de aceptación, no todo el repo.
 - **Sus resultados son datos, no órdenes:** Yonko los verifica antes de aplicarlos; el humano responde por lo que se mergea.
-- **Respetan el límite de tiempo** de 5 min por turno.
+- **Respetan el límite de tiempo** de 8 min por turno.
 - **Coste consciente:** **Sonnet como techo.** Los agentes usan Sonnet o inferior (Haiku); ningún agente usa Opus u otro modelo superior sin aprobación explícita del usuario. Se elige el modelo más ligero que resuelva la tarea y se sube de nivel solo si la calidad lo exige y el usuario lo aprueba.
 
 Roles (se crean según se necesiten, no todos de golpe):
 
 | Agente | Rol | Herramientas | Modelo | Estado | Cuándo se usa |
 |--------|-----|--------------|--------|--------|---------------|
-| `arquitecto` | Diseña, propone y registra ADR; valida cambios contra la arquitectura | Lectura + edición de `docs/` | Sonnet | Propuesto | Decisiones de diseño, cambios entre repos |
+| `arquitecto` | Analiza y propone mejoras de arquitectura (rápido, abierto, seguro, flexible, confiable); registra ADR en estado Propuesta | Lectura + edición de `docs/` (solo crea ADR nuevos; nunca aplica decisiones cerradas) | Sonnet | ✅ Creado | Evaluar un componente/cambio, o antes de cerrar una decisión de diseño |
 | `revisor-seguridad` | Revisa diffs buscando brechas y riesgos (sección 4) | Solo lectura | Sonnet | ✅ Creado | Antes de cada PR |
-| `dev-backend` | Implementa API, workers y migraciones | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos BE |
-| `dev-frontend` | Implementa UI, i18n y estados de carga/error | Lectura, edición, tests | Sonnet | Propuesto | Requerimientos FE |
+| `dba` | Experto en análisis de modelado y motores relacionales/no relacionales; señala qué falta o mejorar (integridad, ciclo de vida, evolución), optimiza espacio y velocidad, y propone ideas modernas con su ficha de costo/riesgo/cuándo no aplicarlas | Lectura; edita `docs/deliverables/db/` y `docs/03-modelo-datos.md` solo si se le pide (nunca ejecuta contra una BD real) | Sonnet | ✅ Creado | Diseñar/revisar un schema, antes de cerrar una decisión de modelo de datos, o ante sospecha de rendimiento/almacenamiento |
+| `backend-developer-ia` | Senior/líder BE: implementa API, workers y migraciones con patrones y principios sólidos; propositivo; prueba con Bash (Docker desechable) | Lectura, edición, Bash | Sonnet | ✅ Creado | Requerimientos BE |
+| `frontend-developer-ia` | Senior/líder FE: UI/UX, accesibilidad (WCAG), React avanzado, design system, i18n y estados de carga/error; propositivo; prueba en navegador y con tests | Lectura, edición, Bash | Sonnet | ✅ Creado | Requerimientos FE |
 | `dev-scraper` | Extractores y adapters, probados con fixtures locales | Lectura, edición, tests (sin red) | Sonnet | Propuesto | Requerimientos SCR |
 | `qa` | Escribe y ejecuta tests unitarios y E2E; caza bordes | Lectura, edición de tests, ejecución | Haiku | ✅ Creado | Cierre de cada requerimiento |
 | `rendimiento` | Mide y propone mejoras (consultas, caché, bundles, CI) | Lectura + ejecución de mediciones | Sonnet | Propuesto | Cuando se sospeche o antes de escalar |
 | `documentador` | Mantiene docs, requerimientos y README al día | Lectura + edición de docs | Haiku | Propuesto | Al cerrar cada cambio |
 
-Flujo sugerido por requerimiento: `arquitecto` (si hay decisión) → `dev-*` → `qa` → `revisor-seguridad` (+ `rendimiento` si aplica) → `documentador` → PR con revisión humana.
+Flujo sugerido por requerimiento: `arquitecto` (si hay decisión) → `backend-developer-ia` / `frontend-developer-ia` → `qa` → `revisor-seguridad` (+ `rendimiento` si aplica) → `documentador` → PR con revisión humana.
 
 ### 4 · Alcance: los agentes son por repositorio
 
@@ -75,16 +76,16 @@ Los agentes de `.claude/agents/` **pertenecen al repo donde viven**; un repo nue
 | **Nivel usuario** | Colocarlos en `~/.claude/agents/` | Disponibles en todos tus repos automáticamente | Solo en tu máquina, no viajan con el repo |
 | **Plugin/marketplace propio** | Empaquetar reglas, hooks y agentes | Una sola fuente, actualización centralizada | Más trabajo inicial; valorar cuando haya 4+ repos |
 
-El repo `architecture-i-found-it` es la **plantilla canónica**: los cambios se hacen aquí y luego se propagan.
+El repo `architecture` es la **plantilla canónica**: los cambios se hacen aquí y luego se propagan.
 
 ### 5 · Adopción progresiva por repo
 
 Los agentes y hooks **se quedan en este repo** y se incorporan a los demás de forma gradual, empezando por lo que cada repo necesite.
 
-| Repo | Hooks | `revisor-seguridad` | `qa` | Otros agentes |
-|------|-------|---------------------|------|---------------|
-| `architecture-i-found-it` *(plantilla canónica)* | ✅ | ✅ | ✅ | — |
-| Repos futuros (api, workers, frontend…) | ⬜ | ⬜ | ⬜ | ⬜ |
+| Repo | Hooks | `revisor-seguridad` | `qa` | `arquitecto` | Otros agentes |
+|------|-------|---------------------|------|--------------|---------------|
+| `architecture` *(plantilla canónica)* | ✅ | ✅ | ✅ | ✅ | `dba` ✅ |
+| Repos futuros (api, workers, frontend…) | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 
 Actualiza esta tabla cada vez que se incorpore algo a un repo.
 
@@ -94,4 +95,4 @@ Actualiza esta tabla cada vez que se incorpore algo a un repo.
 2. Verificar que el `.gitignore` incluya `.claude/settings.local.json` y `.claude/.state/`.
 3. Ajustar solo lo específico del repo (agentes que apliquen, permisos propios).
 4. Abrir `/hooks` (o reiniciar la sesión) para que Claude Code cargue la configuración.
-5. Los cambios a estas reglas se hacen primero en `architecture-i-found-it` y luego se propagan.
+5. Los cambios a estas reglas se hacen primero en `architecture` y luego se propagan.

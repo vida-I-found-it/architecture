@@ -16,7 +16,7 @@ Tres conceptos que no hay que confundir (detalle en [01 · Visión](docs/01-visi
 
 **Modos de monitoreo:** por **URL directa** (Fase 1) y por **tema descubierto con IA** (Fase 2).
 
-**Roles:** administrador (único que crea cuentas), usuario con cuenta y usuario incógnito (inactivo en Fase 1).
+**Roles:** administrador (único que crea cuentas) y usuario con cuenta — toda funcionalidad exige login, sin acceso anónimo.
 
 ## Cómo funciona (Fase 1)
 
@@ -44,6 +44,20 @@ La documentación vive en [`docs/`](docs/) y está pensada para leerse en orden:
 | — | [**Requerimientos Fase 1**](docs/deliverables/requerimientos.md) | Requerimientos con ID, prioridad, track y estado |
 
 Las reglas para trabajar con IA en este proyecto están en [`CLAUDE.md`](CLAUDE.md) (se copia a cada repositorio).
+
+## Agentes de Claude Code
+
+Este repo trae agentes especializados en `.claude/agents/` (ficha completa y roster en [`CLAUDE.local.md`](CLAUDE.local.md)). No son un comando aparte: se piden en el chat y Claude Code los ejecuta como subagente, con su propio contexto, herramientas y modelo.
+
+| Agente | Para qué | Cómo invocarlo |
+|--------|----------|-----------------|
+| **`arquitecto`** | Analiza un componente o una decisión y propone mejoras de arquitectura —más rápida, abierta, segura, flexible y confiable—, con lenguaje técnico y opinión propia. Generalista y **portable** a cualquier repo. | *"Usa el agente arquitecto para revisar/evaluar `<alcance concreto>`."* |
+| `revisor-seguridad` | Busca brechas de seguridad en un diff o configuración (solo lectura). | *"Lanza revisor-seguridad sobre `<archivos/diff>`."* |
+| `qa` | Escribe/ejecuta tests y valida criterios de aceptación. | *"Que qa valide `<requerimiento>`."* |
+
+Con `arquitecto`, dale un alcance concreto (un componente, un ADR, una pregunta de [doc 09](docs/09-pendientes.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
+
+> Si acabas de crear o editar un agente, abre `/hooks` (o reinicia la sesión) para que Claude Code lo cargue.
 
 ## Decisiones vigentes
 
