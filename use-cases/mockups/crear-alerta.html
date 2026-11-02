@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crear alerta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <header class="bar">
+    <span class="brand"><i data-i="tag"></i>I Found It</span>
+    <span class="spacer"></span>
+    <button class="btn primary" type="button"><i data-i="plus"></i>Crear alerta</button>
+  </header>
+
+  <main class="lista" aria-hidden="true">
+    <h1>Alertas</h1>
+    <div class="fila"><b>Audífonos inalámbricos con cancelación de ruido</b><span>3 sitios</span><span class="precio">$1.099.000</span></div>
+    <div class="fila"><b>Cafetera de cápsulas automática</b><span>2 sitios</span><span class="precio">$389.900</span></div>
+    <div class="fila"><b>Bicicleta de montaña rodada 29</b><span>4 sitios</span><span class="precio">$2.150.000</span></div>
+  </main>
+
+  <div class="overlay">
+    <section class="modal alta" role="dialog" aria-modal="true" aria-labelledby="titulo">
+      <div class="head">
+        <span class="icon-badge"><i data-i="bell"></i></span>
+        <h2 id="titulo">Crear alerta</h2>
+        <button class="icon-btn" type="button" aria-label="Cerrar"><i data-i="x"></i></button>
+      </div>
+      <p class="intro">Pega las páginas del producto que quieres vigilar. Revisamos el precio dos veces al día y te avisamos cuando baje.</p>
+
+      <div class="field">
+        <span class="label" id="modo">Cómo quieres crearla</span>
+        <div class="segmented" role="group" aria-labelledby="modo">
+          <button type="button" aria-pressed="true"><i data-i="link"></i>URL directa</button>
+          <button type="button" disabled><i data-i="search"></i>Palabra clave<span class="soon">Próximamente</span></button>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="label-row"><label class="label" for="u1">Páginas del producto</label><span class="count num">2 de 10</span></div>
+        <div class="input url-row"><i data-i="link"></i><input id="u1" value="https://tienda-a.example/audifonos-xm5"><button class="icon-btn" type="button" aria-label="Quitar página 1"><i data-i="x"></i></button></div>
+        <div class="input url-row"><i data-i="link"></i><input aria-label="Página 2" value="https://tienda-b.example/p/48213"><button class="icon-btn" type="button" aria-label="Quitar página 2"><i data-i="x"></i></button></div>
+        <button class="add" type="button"><i data-i="plus"></i>Agregar otra página</button>
+      </div>
+
+      <div class="field">
+        <label class="label" for="correo">Correo para el aviso</label>
+        <div class="input"><i data-i="mail"></i><input id="correo" type="email" value="ana@correo.com"></div>
+        <p class="help">Te escribimos aquí cuando baje el mejor precio. Cada correo trae un enlace para darte de baja.</p>
+      </div>
+
+      <div class="notice" role="note"><i data-i="lock"></i><p>La alerta no se puede editar después de guardarla. Antes de crearla te pediremos confirmar.</p></div>
+
+      <div class="actions">
+        <button class="btn ghost" type="button">Cancelar</button>
+        <button class="btn primary" type="button">Guardar alerta</button>
+      </div>
+    </section>
+  </div>
+<script src="iconos.js"></script>
+</body>
+</html>

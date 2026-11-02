@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confirmar alerta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilo.css">
+<style>
+  .confirm { width: 460px; padding: 30px 32px 24px; }
+  .confirm .badge { width: 52px; height: 52px; border-radius: 16px; background: var(--amber-soft); color: var(--amber); display: grid; place-items: center; margin-bottom: 18px; }
+  .confirm .badge .ic { width: 26px; height: 26px; }
+  .confirm h2 { margin: 0 0 8px; font-size: 21px; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
+  .confirm .lead { margin: 0 0 22px; color: var(--muted); }
+  .resumen { list-style: none; margin: 0 0 26px; padding: 0; border-top: 1px solid var(--line); }
+  .resumen li { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .resumen .ic { color: var(--muted); margin-top: 2px; }
+  .resumen b { display: block; font-weight: 500; }
+  .resumen small { color: var(--muted); font-size: 14px; }
+  /* El modal de alta queda de fondo, atenuado */
+  .detras { filter: brightness(0.78); }
+  .overlay.segundo { background: rgba(14, 26, 40, 0.45); }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <span class="brand"><i data-i="tag"></i>I Found It</span>
+    <span class="spacer"></span>
+    <button class="btn primary" type="button"><i data-i="plus"></i>Crear alerta</button>
+  </header>
+
+  <main class="lista" aria-hidden="true">
+    <h1>Alertas</h1>
+    <div class="fila"><b>Audífonos inalámbricos con cancelación de ruido</b><span>3 sitios</span><span class="precio">$1.099.000</span></div>
+    <div class="fila"><b>Cafetera de cápsulas automática</b><span>2 sitios</span><span class="precio">$389.900</span></div>
+  </main>
+
+  <div class="overlay" aria-hidden="true">
+    <section class="modal alta detras">
+      <div class="head">
+        <span class="icon-badge"><i data-i="bell"></i></span>
+        <h2>Crear alerta</h2>
+        <button class="icon-btn" type="button" tabindex="-1"><i data-i="x"></i></button>
+      </div>
+      <p class="intro">Pega las páginas del producto que quieres vigilar. Revisamos el precio dos veces al día y te avisamos cuando baje.</p>
+      <div class="field">
+        <span class="label">Cómo quieres crearla</span>
+        <div class="segmented">
+          <button type="button" aria-pressed="true"><i data-i="link"></i>URL directa</button>
+          <button type="button" disabled><i data-i="search"></i>Palabra clave<span class="soon">Próximamente</span></button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="label-row"><span class="label">Páginas del producto</span><span class="count num">2 de 10</span></div>
+        <div class="input url-row"><i data-i="link"></i><input value="https://tienda-a.example/audifonos-xm5"></div>
+        <div class="input url-row"><i data-i="link"></i><input value="https://tienda-b.example/p/48213"></div>
+      </div>
+      <div class="field">
+        <span class="label">Correo para el aviso</span>
+        <div class="input"><i data-i="mail"></i><input value="ana@correo.com"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay segundo">
+    <section class="modal confirm" role="alertdialog" aria-modal="true" aria-labelledby="t" aria-describedby="d">
+      <div class="badge"><i data-i="lock"></i></div>
+      <h2 id="t">¿Estás seguro de tu configuración?</h2>
+      <p class="lead" id="d">Es definitiva: después de crear la alerta no podrás editar las páginas ni el correo.</p>
+      <ul class="resumen">
+        <li><i data-i="link"></i><div><b>2 páginas del producto</b><small>tienda-a.example y tienda-b.example</small></div></li>
+        <li><i data-i="mail"></i><div><b>Aviso a a***@correo.com</b><small>Con un enlace para darte de baja</small></div></li>
+        <li><i data-i="clock"></i><div><b>Revisión dos veces al día</b><small>Una en la madrugada y otra al final de la tarde</small></div></li>
+      </ul>
+      <div class="actions">
+        <button class="btn ghost" type="button">Volver a editar</button>
+        <button class="btn primary" type="button">Crear alerta</button>
+      </div>
+    </section>
+  </div>
+<script src="iconos.js"></script>
+</body>
+</html>

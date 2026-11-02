@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board de una alerta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilo.css">
+<style>
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 48px 56px; }
+  .back { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); text-decoration: none; font-size: 14px; }
+  .back:hover { color: var(--ink); }
+
+  .hero { margin-top: 22px; }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 14px; font-weight: 600; letter-spacing: -0.02em; max-width: 24ch; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 28px; color: var(--muted); font-size: 14px; margin: 0 0 28px; }
+  .meta span { display: inline-flex; align-items: center; gap: 8px; }
+  .meta .ic { width: 16px; height: 16px; }
+
+  .best { font-size: 20px; line-height: 1.4; margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+  .best strong { font-size: 38px; font-weight: 600; letter-spacing: -0.03em; color: var(--green); }
+  .flag { display: inline-flex; align-items: center; gap: 8px; background: var(--amber-soft); color: var(--amber-ink); border-radius: 99px; padding: 5px 14px 5px 11px; font-size: 14px; font-weight: 500; }
+  .flag .ic { width: 16px; height: 16px; color: var(--amber); }
+
+  .chart-head { display: flex; align-items: center; gap: 10px; margin: 40px 0 4px; }
+  .chart-head h2 { flex: 1; margin: 0; font-size: 16px; font-weight: 500; }
+  .chart-head .ic { color: var(--muted); }
+  .range { color: var(--muted); font-size: 14px; }
+  svg text { font-family: var(--font); }
+
+  .sites { margin-top: 24px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 400; color: var(--muted); font-size: 13px; padding: 10px 12px 10px 0; }
+  td { padding: 16px 12px 16px 0; border-top: 1px solid var(--line); vertical-align: middle; }
+  th.price, td.price { text-align: right; padding-right: 36px; }
+  td.price { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .site { display: flex; align-items: center; gap: 12px; }
+  .site > .ic { width: 20px; height: 20px; }
+  .site b { display: block; font-weight: 500; }
+  .site small { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .site small .ic { width: 13px; height: 13px; }
+  .low { display: block; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .low + small { color: var(--muted); font-size: 13px; }
+  .cell { display: inline-flex; align-items: center; gap: 8px; }
+  .cell .ic { width: 16px; height: 16px; }
+  .ok { color: var(--green-ink); }
+  .out { color: var(--amber); font-weight: 500; }
+  .muted { color: var(--muted); }
+  .tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 99px; padding: 3px 11px 3px 9px; font-size: 13px; font-weight: 500; margin-right: 6px; }
+  .tag .ic { width: 14px; height: 14px; }
+  .tag.best { background: var(--green-soft); color: var(--green-ink); }
+  .tag.warn { background: var(--amber-soft); color: var(--amber-ink); }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <span class="brand"><i data-i="tag"></i>I Found It</span>
+    <span class="spacer"></span>
+    <button class="btn primary" type="button"><i data-i="plus"></i>Crear alerta</button>
+  </header>
+
+  <main>
+    <a class="back" href="#"><i data-i="back"></i>Alertas</a>
+
+    <div class="hero">
+      <div>
+        <h1>Audífonos inalámbricos con cancelación de ruido</h1>
+        <p class="meta">
+          <span><i data-i="calendar"></i>Creada el 1 de octubre de 2026</span>
+          <span><i data-i="mail"></i>Aviso a a***@correo.com</span>
+          <span><i data-i="clock"></i>Último chequeo hoy a las 05:12</span>
+        </p>
+        <p class="best">
+          <span>El mejor precio hoy es <strong class="num">$1.099.000</strong> en tienda-c.example</span>
+          <span class="flag" role="note"><i data-i="alert"></i>Caída anómala, valida manualmente</span>
+        </p>
+      </div>
+    </div>
+
+    <div class="chart-head">
+      <i data-i="chart"></i><h2>Precio por sitio</h2><span class="range">Últimos 30 días</span>
+    </div>
+    <svg id="grafico" viewBox="0 0 1084 350" width="100%" role="img"
+         aria-label="Gráfico de líneas del precio de tres tiendas durante 30 días. Tienda C baja a 1.099.000 pesos el 29 de octubre y es la más barata.">
+      <defs>
+        <linearGradient id="area" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="#0A7549" stop-opacity=".2"/>
+          <stop offset="0.85" stop-color="#0A7549" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+    </svg>
+
+    <section class="sites" aria-label="Sitios vigilados">
+      <table>
+        <thead>
+          <tr><th>Sitio</th><th class="price">Último precio</th><th>Mejor precio desde que se creó</th><th>Disponibilidad</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="site"><i data-i="globe" style="color:var(--green)"></i><span><b>tienda-c.example</b><small><i data-i="clock"></i>hoy, 05:12</small></span></span></td>
+            <td class="price">$1.099.000</td>
+            <td><span class="low">$1.099.000</span><small>29 oct, hoy</small></td>
+            <td><span class="cell ok"><i data-i="check"></i>Disponible</span></td>
+            <td><span class="tag best"><i data-i="check"></i>Mejor precio</span><span class="tag warn"><i data-i="down"></i>Caída anómala</span></td>
+          </tr>
+          <tr>
+            <td><span class="site"><i data-i="globe" style="color:var(--accent)"></i><span><b>tienda-a.example</b><small><i data-i="clock"></i>hoy, 05:12</small></span></span></td>
+            <td class="price">$1.309.000</td>
+            <td><span class="low">$1.289.000</span><small>16 oct</small></td>
+            <td><span class="cell ok"><i data-i="check"></i>Disponible</span></td>
+            <td class="muted">Sin cambios hoy</td>
+          </tr>
+          <tr>
+            <td><span class="site"><i data-i="globe" style="color:var(--magenta)"></i><span><b>tienda-b.example</b><small><i data-i="clock"></i>hoy, 05:13</small></span></span></td>
+            <td class="price">$1.349.900</td>
+            <td><span class="low">$1.289.900</span><small>12 oct</small></td>
+            <td><span class="cell out"><i data-i="ban"></i>Agotado</span></td>
+            <td class="muted">No cuenta para el mejor precio</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+<script src="iconos.js"></script>
+<script>
+  // Precio por sitio: [día de octubre, precio] cada vez que cambió.
+  const series = [
+    { name: 'tienda-b.example', color: '#A3246E', w: 2, min: [12, 1289900], pts: [[1,1399900],[5,1379900],[12,1289900],[15,1379900],[18,1349900],[31,1349900]] },
+    { name: 'tienda-a.example', color: '#1B3AB8', w: 2, min: [16, 1289000], pts: [[1,1349000],[9,1319000],[16,1289000],[17,1319000],[21,1309000],[31,1309000]] },
+    { name: 'tienda-c.example', color: '#0A7549', w: 3.6, area: true, pts: [[1,1329000],[12,1299000],[29,1099000],[31,1099000]] }
+  ];
+  const W = 1084, H = 350, L = 100, R = 150, T = 14, B = 38;
+  const x = d => L + (d - 1) / 30 * (W - L - R);
+  const yMin = 1050000, yMax = 1420000;
+  const y = p => T + (yMax - p) / (yMax - yMin) * (H - T - B);
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('grafico');
+  const el = (n, a, t) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (t) e.textContent = t; svg.appendChild(e); return e; };
+  const fmt = n => '$' + n.toLocaleString('es-CO');
+
+  [1100000, 1200000, 1300000, 1400000].forEach(p => {
+    el('line', { x1: L, x2: W - R, y1: y(p), y2: y(p), stroke: '#B7C3CF', 'stroke-width': 1, 'stroke-dasharray': '2 5' });
+    el('text', { x: L - 14, y: y(p) + 4, 'text-anchor': 'end', 'font-size': 12.5, fill: '#475A6E' }, fmt(p));
+  });
+  [1, 8, 15, 22, 29].forEach(d => {
+    el('text', { x: x(d), y: H - 10, 'text-anchor': 'middle', 'font-size': 12.5, fill: '#475A6E' }, d + ' oct');
+  });
+
+  // El precio se mantiene hasta el siguiente cambio; en cada cambio la línea hace una curva corta.
+  const curva = pts => {
+    const k = 11; // ancho de la curva, en px
+    let d = 'M' + x(pts[0][0]) + ' ' + y(pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+      const xi = x(pts[i][0]), yPrev = y(pts[i-1][1]), yi = y(pts[i][1]);
+      d += ' H' + (xi - k) + ' C' + xi + ' ' + yPrev + ' ' + xi + ' ' + yi + ' ' + (xi + k) + ' ' + yi;
+    }
+    return d + ' H' + x(pts[pts.length - 1][0]);
+  };
+
+  series.forEach(s => {
+    const d = curva(s.pts);
+    if (s.area) {
+      el('path', { d: d + ' V' + (H - B) + ' H' + x(s.pts[0][0]) + ' Z', fill: 'url(#area)' });
+    }
+    el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': s.w, 'stroke-linecap': 'round' });
+    const last = s.pts[s.pts.length - 1];
+    el('text', { x: x(31) + 10, y: y(last[1]) + 4, 'font-size': 13, 'font-weight': 500, fill: s.color }, s.name);
+    if (s.min) { // el mejor precio que tuvo ese sitio desde que se creó la alerta
+      el('circle', { cx: x(s.min[0]), cy: y(s.min[1]), r: 5, fill: '#D3DBE3', stroke: s.color, 'stroke-width': 2 });
+    }
+  });
+
+  // Caída anómala de tienda-c el 29 de octubre, con su detalle.
+  const ax = x(29), ay = y(1099000);
+  el('circle', { cx: ax, cy: ay, r: 12, fill: '#E9D6A9', 'fill-opacity': .55 });
+  el('circle', { cx: ax, cy: ay, r: 6.5, fill: '#E9D6A9', stroke: '#8A5200', 'stroke-width': 2 });
+  const cw = 176, ch = 66, cx0 = ax - 28 - cw, cy0 = ay - ch - 20;
+  el('rect', { x: cx0, y: cy0, width: cw, height: ch, rx: 12, fill: '#0E1A28' });
+  el('text', { x: cx0 + 14, y: cy0 + 22, 'font-size': 12, fill: '#B7C3CF' }, '29 de octubre');
+  el('text', { x: cx0 + 14, y: cy0 + 42, 'font-size': 15, 'font-weight': 600, fill: '#E2E8EE' }, '$1.099.000');
+  el('text', { x: cx0 + 14, y: cy0 + 58, 'font-size': 12, fill: '#E9D6A9' }, 'tienda-c.example, bajó 15 %');
+</script>
+</body>
+</html>
