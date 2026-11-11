@@ -1,12 +1,16 @@
 # CLAUDE.md · Reglas de trabajo con IA — I Found It
 
-> Reglas comunes a **todos los repositorios** de I Found It. Se copia tal cual a la raíz de cada repo.
+> Reglas comunes a **todos los repositorios** de I Found It. Se copia tal cual a la raíz de cada repo. Requiere copiar también `.claude/rules/`, porque importa `agent-policies.md`.
 > Si una regla estorba, no se ignora en silencio: se discute y se **actualiza aquí** (y se propaga a los demás repos).
 > Yonko tiene libertad para **proponer** estrategias avanzadas y robustas; lo que no puede es **aplicar** sin aprobación algo que toque los límites de la sección 2.
 
 **Fuente de verdad del proyecto:** el repo `architecture` (`docs/` y `docs/deliverables/requerimientos.md`). Los demás repos no duplican esa documentación; la consultan allí.
 
 **Configuración de Claude Code (hooks, agentes y su adopción por repo):** ver [`CLAUDE.local.md`](CLAUDE.local.md). Se incorpora de forma progresiva a cada repo.
+
+**Políticas globales de agentes** (obligatorias para todo agente y subagente; ante conflicto gana la regla más estricta):
+
+@.claude/rules/agent-policies.md
 
 ---
 
@@ -22,7 +26,7 @@
 
 ## 2 · Límites duros: lo que la IA NO debe hacer
 
-Estas acciones están **prohibidas salvo instrucción explícita del usuario en el chat, para esa acción concreta** (la aprobación no se extiende a acciones futuras):
+Estas acciones están **prohibidas salvo instrucción explícita del usuario en el chat, para esa acción concreta** (la aprobación no se extiende a acciones futuras). Un subagente no habla con el usuario: devuelve sus peticiones de aprobación en su reporte y solo continúa si la tarea le cita literal el sí que el usuario dio en el chat (políticas §1).
 
 **Git y repositorio**
 - ❌ Hacer `commit`, `push`, `merge`, `rebase`, crear/borrar ramas o abrir PRs sin que se pida.
@@ -30,7 +34,7 @@ Estas acciones están **prohibidas salvo instrucción explícita del usuario en 
 - ❌ Commitear directo a `main`.
 
 **Datos, secretos y privacidad**
-- ❌ Borrar archivos, carpetas, tablas, colecciones, volúmenes Docker o datos sin mirar antes qué se va a borrar y sin confirmación. Nunca sobrescribir un archivo sin haberlo leído.
+- ❌ Borrar archivos, carpetas, tablas, colecciones, volúmenes Docker o datos sin mirar antes qué se va a borrar y sin confirmación. Nunca sobrescribir un archivo sin haberlo leído. Excepción acotada: lo que el propio agente creó en esta tarea dentro de un directorio `mktemp -d` o en un contenedor `--rm` (ver `.claude/rules/agent-policies.md` §4).
 - ❌ Ejecutar comandos destructivos (`rm -rf`, `DROP`, `TRUNCATE`, `docker system prune`, downgrade de migraciones) sobre cualquier base de datos que no sea claramente local y desechable.
 - ❌ Ejecutar comandos o migraciones contra bases de datos compartidas o de la nube, aunque existan credenciales disponibles.
 - ❌ Levantar contenedores con `--privileged`, con el socket de Docker montado, montando el `HOME` o carpetas con secretos, publicando puertos en `0.0.0.0`, o con imágenes no oficiales / sin versión fijada. Los contenedores de prueba son desechables y acotados (ver sección 3, ítem 7).
