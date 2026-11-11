@@ -47,15 +47,37 @@ Las reglas para trabajar con IA en este proyecto están en [`CLAUDE.md`](CLAUDE.
 
 ## Agentes de Claude Code
 
-Este repo trae agentes especializados en `.claude/agents/` (ficha completa y roster en [`CLAUDE.local.md`](CLAUDE.local.md)). No son un comando aparte: se piden en el chat y Claude Code los ejecuta como subagente, con su propio contexto, herramientas y modelo.
+Este repo trae agentes especializados en `.claude/agents/` (ficha completa y roster en [`.claude/rules/claude-config-guide.md`](.claude/rules/claude-config-guide.md)). No son un comando aparte: se piden en el chat y Claude Code los ejecuta como subagente, con su propio contexto, herramientas y modelo.
 
 | Agente | Para qué | Cómo invocarlo |
 |--------|----------|-----------------|
-| **`arquitecto`** | Analiza un componente o una decisión y propone mejoras de arquitectura —más rápida, abierta, segura, flexible y confiable—, con lenguaje técnico y opinión propia. Generalista y **portable** a cualquier repo. | *"Usa el agente arquitecto para revisar/evaluar `<alcance concreto>`."* |
-| `revisor-seguridad` | Busca brechas de seguridad en un diff o configuración (solo lectura). | *"Lanza revisor-seguridad sobre `<archivos/diff>`."* |
+| **`architect`** | Analiza un componente o una decisión y propone mejoras de arquitectura —más rápida, abierta, segura, flexible y confiable—, con lenguaje técnico y opinión propia. Generalista y **portable** a cualquier repo. | *"Usa el agente architect para revisar/evaluar `<alcance concreto>`."* |
+| `security-reviewer` | Busca brechas de seguridad en un diff o configuración (solo lectura). | *"Lanza security-reviewer sobre `<archivos/diff>`."* |
 | `qa` | Escribe/ejecuta tests y valida criterios de aceptación. | *"Que qa valide `<requerimiento>`."* |
+| `requirements-analyst` | Convierte un requerimiento en historia de usuario y criterios de aceptación; señala ambigüedades sin inventar reglas de negocio. | *"Usa requirements-analyst para `<ID>`."* |
+| `technical-writer` | Corrige deriva entre documentos (índices, enlaces, IDs, estados). | *"Que technical-writer deje al día `<cambio>`."* |
+| `devops` | Dockerfiles, CI/CD y secretos. No despliega; pide tu autorización antes de borrar o usar privilegios. | *"Usa devops para `<requerimiento INF-*>`."* |
+| `dba` | Revisa y mejora modelos de datos (relacionales y no relacionales): integridad, ciclo de vida, espacio y velocidad. No ejecuta nada contra una BD. | *"Usa dba para revisar `<schema/tabla>`."* |
+| `backend-developer` | Implementa un requerimiento de backend (API, workers, migraciones) con tests y verificación; propone patrones y arquitectura. | *"Usa backend-developer para `<ID>`."* |
+| `frontend-developer` | Implementa pantallas y flujos con accesibilidad, estados de carga/error e i18n, y los prueba en el navegador. | *"Usa frontend-developer para `<ID>`."* |
 
-Con `arquitecto`, dale un alcance concreto (un componente, un ADR, una pregunta de [doc 09](docs/09-pendientes.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
+Con `architect`, dale un alcance concreto (un componente, un ADR, una pregunta de [doc 09](docs/09-pendientes.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
+
+**Nombres de los agentes.** Los identificadores están en inglés (coinciden con el nombre del archivo en `.claude/agents/` y con el campo `name`). Si encuentras un nombre antiguo en un chat o documento viejo, esta es la equivalencia:
+
+| Nombre actual | Nombre anterior | Modelo |
+|---------------|-----------------|--------|
+| `architect` | `arquitecto` | Sonnet 5.5 |
+| `security-reviewer` | `revisor-seguridad` | Sonnet 5.5 |
+| `requirements-analyst` | `analista-requerimientos` | Sonnet 5.5 |
+| `backend-developer` | `backend-developer-ia` | Sonnet 5.5 |
+| `frontend-developer` | `frontend-developer-ia` | Sonnet 5.5 |
+| `technical-writer` | `documentador` | Haiku |
+| `dba` | `dba` *(sin cambio)* | Sonnet 5.5 |
+| `devops` | `devops` *(sin cambio)* | Sonnet 5.5 |
+| `qa` | `qa` *(sin cambio)* | Haiku |
+
+Todos corren con `effort: medium`. El modelo está fijado en el campo `model:` de cada agente (`claude-sonnet-5-5` y `claude-haiku-5-5`).
 
 > Si acabas de crear o editar un agente, abre `/hooks` (o reinicia la sesión) para que Claude Code lo cargue.
 
