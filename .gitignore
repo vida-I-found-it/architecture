@@ -69,6 +69,7 @@ docker-compose.override.yml
 *.dump
 *.sql.gz
 data/
+!_docs/data/
 dumps/
 scraped/
 snapshots-reales/

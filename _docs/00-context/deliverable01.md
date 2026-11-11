@@ -52,15 +52,15 @@ Frontend en **React + Vite + TypeScript** con shadcn/ui, `react-hook-form` + `zo
 
 **Crear una alerta (CU-02).** Un modal con el modo de creación (URL directa activo y «Palabra clave» deshabilitada), de 1 a 10 páginas del producto, el correo para el aviso y la advertencia de que la alerta no se puede editar.
 
-![Modal para crear una alerta](mockups/crear-alerta.png)
+![Modal para crear una alerta](../design/mockups/create-alert.png)
 
 **Confirmar la alerta (CU-02).** Al pulsar «Guardar alerta» se abre una confirmación con el resumen: las páginas, el correo enmascarado y la frecuencia de revisión. Es definitiva: después no se pueden editar las páginas ni el correo.
 
-![Confirmación antes de crear la alerta](mockups/confirmar-alerta.png)
+![Confirmación antes de crear la alerta](../design/mockups/confirm-alert.png)
 
 **Dashboard de una alerta (CU-07, CU-08).** Muestra el mejor precio vigente con su advertencia si la caída es anómala, un gráfico de líneas con una curva por sitio (histórico y comparador) y la tabla de sitios con el último precio, el **mejor precio de cada sitio desde que se creó la alerta**, la disponibilidad y el estado. En el gráfico, un círculo marca el mejor precio de cada sitio y un detalle señala la caída anómala. El correo aparece enmascarado.
 
-![Dashboard de una alerta con gráfico y precios por sitio](mockups/board-alerta.png)
+![Dashboard de una alerta con gráfico y precios por sitio](../design/mockups/alert-dashboard.png)
 
 Son maquetas con datos de ejemplo (sitios `*.example`), de estilo minimalista: tonos pizarra sin blanco, la fuente Geist e iconos de línea. La lista de alertas y la página pública de baja siguen el mismo estilo y no se dibujan aquí.
 
@@ -325,7 +325,7 @@ erDiagram
     SUBSCRIPTION {
         int id PK "Identificador"
         int alert_id FK "Alerta suscrita"
-        citext email "Correo a avisar, normalizado"
+        string email "Correo a avisar, normalizado a minúsculas"
         string status "active | unsubscribed"
         uuid created_by "Usuario fijo de la versión"
         bytea unsubscribe_token_hash "Hash del token de baja"
