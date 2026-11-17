@@ -37,7 +37,7 @@
 | Chequeo | Resultado |
 |---------|-----------|
 | IDs de `requirements.md`, entregable, arquitectura, historias y pruebas frente al original | **0 IDs inexistentes** |
-| Los 12 endpoints en `architecture.md`, `requirements.md` y `deliverable01.md` | **Mismo conjunto de 12** en los tres |
+| Los 12 endpoints en `architecture.md`, `requirements.md` y `deliverable01.md` | **Mismo conjunto de 12** en los tres. *Actualización 2026-11-11: con el [ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md) son **13 endpoints** (se añaden `POST /scraper/internal/jobs` y `POST /schedule/internal/results`; `POST /notify/notifications` ahora tiene dos llamadores, `core` y `schedule`). Los tres documentos y `api/README.md` coinciden en 13.* |
 | Criterios de CU-02 frente a casos de prueba | **24 criterios · 24 casos · 0 sin caso** |
 | Requerimientos que entran, frente a su prioridad en el original | 22 son P0 y 21 son P1; **ninguno P2 ni P3** |
 | Nombres de requerimientos citados en R1..R13 | 25 de 26 coinciden; el que falta es *Trazabilidad de la corrida* (INF-5), que vive en la tabla de transversales, no en una de caso de uso |

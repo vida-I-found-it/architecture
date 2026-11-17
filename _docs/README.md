@@ -15,13 +15,33 @@
 | [`00-context/`](00-context/) | Visión, alcance, consideraciones legales, pendientes, roadmap y el [entregable 01](00-context/deliverable01.md) | todos (lectura) |
 | [`requirements/`](requirements/) | [Requerimientos de la versión](requirements/requirements.md), [originales](requirements/original-requirements.md) e [historias de usuario](requirements/user-stories/) | `requirements-analyst` |
 | [`design/`](design/) | Mockups de las pantallas | `frontend-developer` |
-| [`architecture/`](architecture/) | [Arquitectura de la versión](architecture/architecture.md), [general](architecture/general-architecture.md), [flujo de scraping](architecture/scraping-flow.md) y [`adr/`](architecture/adr/) | `architect`, `backend-developer` |
-| [`data/`](data/) | [Modelo de datos](data/data-model.md) y [esquemas SQL/Mongo](data/db/) | `dba`, `backend-developer` |
+| [`architecture/`](architecture/) | [Arquitectura del ejercicio](architecture/architecture.md) (solo los casos de uso a recrear), [arquitectura general](architecture/general-architecture.md) (todo el proyecto), [flujo de scraping](architecture/scraping-flow.md) y [`adr/`](architecture/adr/) | `architect`, `backend-developer` |
+| [`data/`](data/) | [Modelo de datos](data/data-model.md) y [esquemas SQL/Mongo](data/scripts/) | `dba`, `backend-developer` |
 | [`api/`](api/) | Contratos OpenAPI por pieza (pendiente) | `backend-developer`, `qa` |
 | [`testing/`](testing/) | [Estrategia](testing/strategy.md), [casos de prueba](testing/test-cases/) y [trazabilidad](testing/traceability.md) | `qa` |
 | [`guides/`](guides/) | Cómo se hace (setup local, correr pruebas, runbooks) | `devops` |
 | [`tools/`](tools/) | [Stack tecnológico](tools/tech-stack.md) y convenciones | `devops` |
 | [`templates/`](templates/) | Formato de [historia](templates/user-story.md), [caso de prueba](templates/test-case.md) y [ADR](templates/adr.md) | todos |
+
+## Avance de la documentación
+
+> **Última actualización: 2026-11-12.** Orientativo: mide cuánto de lo esperado ya está escrito, **no** si está aprobado ni revisado por un humano.
+
+| Carpeta | Avance | Cómo se calcula | Qué falta |
+|---------|--------|-----------------|-----------|
+| [`00-context/`](00-context/) | `████████░░` **83 %** | 6 documentos: 4 completos y 2 a medias | Roadmap sin la versión del ejercicio; consideraciones legales sin Habeas Data (D21) |
+| [`requirements/`](requirements/) | `██████░░░░` **61 %** | Media de 3 medidas: lista de requerimientos del ejercicio (100 %), decisiones cerradas (19 de 26, 73 %) e historias de usuario (1 de 9 casos de uso, 11 %) | Historias de CU-03 a CU-11; 7 decisiones abiertas (DEC-11, 14, 15, 17, 18, 20, 21) |
+| [`design/`](design/) | `█████░░░░░` **50 %** | 2 de 4 pantallas (alta con confirmación, dashboard); la lista no se verificó y cuenta como pendiente | Pantalla de baja y pantalla de lista de alertas |
+| [`architecture/`](architecture/) | `█████░░░░░` **50 %** | 11 elementos esperados: 5 completos, el flujo de scraping a medias (7 eventos por definir) y 5 sin hacer | ADR-0002 (despliegue), modelo de amenazas, objetivos de calidad medibles, vista de ejecución local y observabilidad concreta |
+| [`data/`](data/) | `██████░░░░` **63 %** | 8 elementos: modelo, SQL de `core`, `schedule` y `notify` (probados en `postgres:16`) y `provision-roles.sql` | SQL de `auth` (desfasado), validar los scripts de MongoDB, `seed-default.sql` y `register-system.sql` |
+| [`api/`](api/) | `░░░░░░░░░░` **0 %** | 0 de 4 contratos OpenAPI (`core`, `schedule`, `scraper`, `notify`) | Los cuatro contratos |
+| [`testing/`](testing/) | `██░░░░░░░░` **24 %** | Media de 3 medidas: estrategia en borrador (50 %), casos de prueba (1 de 9, 11 %) y trazabilidad (1 de 9, 11 %) | Casos y matriz de CU-03 a CU-11; todos los casos están sin implementar |
+| [`guides/`](guides/) | `░░░░░░░░░░` **0 %** | 0 de 3 guías (setup local, correr pruebas, runbook de fallos) | Las tres |
+| [`tools/`](tools/) | `█████░░░░░` **50 %** | 1 de 2: stack tecnológico (hecho) y convenciones (sin documento propio) | Documento de convenciones |
+| [`templates/`](templates/) | `██████████` **100 %** | 3 de 3: historia, caso de prueba y ADR | — |
+| **Total** | `█████░░░░░` **48 %** | Media simple de las 10 carpetas, sin ponderar | |
+
+**Criterio:** cada carpeta tiene una lista corta de lo que debería contener. Un elemento completo vale 1, uno en borrador o parcial vale 0,5 y uno sin hacer vale 0; las medidas por conteo (por ejemplo, 1 de 9 casos de uso) valen su fracción. Al cerrar un elemento se recalcula la fila y se cambia la fecha.
 
 ## Cadena de trazabilidad
 

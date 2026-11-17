@@ -31,9 +31,9 @@ La funcionalidad priorizada es **el recorrido completo de una alerta**: desde qu
 
 **1 · Crear la alerta (CU-02, CU-03).** El usuario elige el modo de creación (hoy solo «URL directa»; «Palabra clave» con LLM queda preparado pero deshabilitado), pega de 1 a 10 URLs, escribe el correo al que se le avisará y confirma en un modal que advierte que la acción es definitiva. La alerta es inmutable. Al guardarse, el sistema crea por debajo su agendamiento: **2 veces al día**, dentro de las ventanas 04:00–06:00 y 18:00–20:00. La primera corrida es inmediata, cuenta dentro de esas 2 y puede quedar fuera de las ventanas. El usuario no vuelve a intervenir.
 
-**2 · Capturar con el scraper y guardar (CU-04, CU-05).** El scraper toma el trabajo de `schedule`, valida cada URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega el resultado a `schedule` (nunca a `core`), que lo reenvía a `core` por un callback. `core` normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL **solo cuando cambia el precio o el stock**.
+**2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL **solo cuando cambia el precio o el stock**. No calcula el mejor precio ni avisa.
 
-**3 · Analizar el resultado (CU-06, CU-10, CU-11).** Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. Cuando el mejor precio baja, `notify` envía un email al correo registrado, con un enlace para darse de baja de esa alerta.
+**3 · Analizar el resultado (CU-06, CU-10, CU-11).** El **análisis** es otro proceso, a otra hora (por defecto 2 al día, parametrizable), lanzado desde la interfaz o por un job agendado. Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. La primera vez no hay contra qué comparar y no avisa. Cuando el mejor precio baja, `notify` envía un email al correo registrado, con un enlace para darse de baja de esa alerta.
 
 **4 · Mostrar en el dashboard (CU-07, CU-08).** El usuario ve la lista de alertas y, al abrir una, su dashboard: último precio por URL, mejor precio, marca de anomalía, histórico (el precio vale hasta el siguiente cambio) y un comparador con una serie por URL. El correo se muestra siempre enmascarado.
 
@@ -82,10 +82,17 @@ Catálogo de los endpoints que resuelven los requerimientos de backend, con su o
 | 6 | `POST /api/subscriptions/{subscription_id}/unsubscribe` | Frontend → `core` | CU-11 | *Baja por enlace* |
 | 7 | `POST /schedule/internal/jobs` | `core` → `schedule` | CU-03 | *Programar la captura al crear la alerta*, *API de jobs* |
 | 8 | `GET /schedule/internal/jobs/{job_id}` | `core` → `schedule` | CU-03 | *API de jobs* |
-| 9 | `POST /schedule/internal/pull` | `scraper` → `schedule` | CU-04 | *El scraper entrega a schedule* |
-| 10 | `GET /api/internal/job-detail` | `schedule` → `core` | CU-04 | *El scraper entrega a schedule* |
-| 11 | `POST /api/internal/prices` | `schedule` → `core` | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes* |
-| 12 | `POST /notify/notifications` | `core` → `notify` | CU-10 | *Aviso al bajar el mejor precio* |
+| 9 | `POST /scraper/internal/jobs` | `schedule` → `scraper` | CU-04 | *Cola de trabajos y workers* |
+| 10 | `POST /schedule/internal/results` | `scraper` → `schedule` | CU-04 | *El scraper entrega a schedule* |
+| 11 | `GET /api/internal/job-detail` | `schedule` → `core` | CU-04 | *El scraper entrega a schedule* |
+| 12 | `POST /api/internal/prices` | `schedule` → `core` | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes* |
+| 13 | `POST /notify/notifications` | `core` → `notify` · `schedule` → `notify` | CU-10 | *Aviso al bajar el mejor precio* · barrido diario de errores al administrador (EJ-6) |
+| 14 | `GET /api/health` | docker-compose → `core` | Transversal | *Salud de cada pieza* (EJ-4) |
+| 15 | `GET /schedule/health` | docker-compose → `schedule` | Transversal | *Salud de cada pieza* (EJ-4) |
+| 16 | `GET /scraper/health` | docker-compose → `scraper` | Transversal | *Salud de cada pieza* (EJ-4) |
+| 17 | `GET /notify/health` | docker-compose → `notify` | Transversal | *Salud de cada pieza* (EJ-4) |
+| 18 | `POST /api/analysis` | Frontend → `core` | CU-06 | *Lanzar el análisis* (EJ-5) |
+| 19 | `POST /api/internal/analysis` | `schedule` → `core` | CU-06 | *Lanzar el análisis* (EJ-5) |
 
 Reglas del catálogo:
 - **Las alertas no se editan ni se borran** (requerimiento *Alerta inmutable*): por eso no existen las operaciones `PUT`, `PATCH` ni `DELETE` sobre `/api/alerts`.
@@ -104,7 +111,7 @@ Reglas del catálogo:
 
 #### Contrato detallado
 
-Cada pieza que expone endpoints (`core`, `schedule` y `notify`) publicará su **contrato Swagger (OpenAPI)**, donde quedan resumidas todas sus operaciones: rutas, cuerpos, respuestas y errores. El `scraper` no expone endpoints: solo consume el de `schedule`.
+Cada pieza que expone endpoints (`core`, `schedule`, `scraper` y `notify`) publicará su **contrato Swagger (OpenAPI)**, donde quedan resumidas todas sus operaciones: rutas, cuerpos, respuestas y errores. El `scraper` expone solo dos endpoints internos (el que recibe el trabajo de `schedule` y su `health`) y no es alcanzable desde fuera de la red interna.
 
 ### 5 · Servicio(s) de aplicación o negocio
 
@@ -122,7 +129,7 @@ FastAPI y PostgreSQL. Es el dueño del negocio.
 | **Suscripciones**<br>`SubscriptionService` | Guarda si el correo está activo o dado de baja y procesa la baja con el enlace del email | CU-11 | *Suscripción al correo*, *Baja por enlace* |
 | **Detalle del job**<br>`JobDetailService` | Le dice a `schedule` qué URLs tiene que visitar cada alerta | CU-04 | *El scraper entrega a schedule* |
 | **Ingesta de precios**<br>`PriceIngestService` | Recibe el precio capturado, lo limpia y lo convierte a número, descarta lo inválido (precio cero o página de error), marca las caídas sospechosas y guarda el precio solo si cambió. Procesa juntas todas las URLs de una alerta: si una es inválida, las demás se guardan igual | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes*, *Saneamiento de datos* |
-| **Análisis de precio**<br>`BestPriceStrategy` | Calcula cuál es el mejor precio vigente entre todas las URLs de la alerta y decide si hay que avisar | CU-06 | *Motor de mejor precio* |
+| **Análisis de precio**<br>`BestPriceStrategy` | En el análisis (a otra hora que el scraping), calcula cuál es el mejor precio vigente entre todas las URLs de la alerta, lo compara con el anterior y decide si hay que avisar | CU-06 | *Motor de mejor precio* |
 | **Consulta de precios**<br>`PriceHistoryService` | Entrega el historial de cada URL y los datos del gráfico comparador | CU-08 | *Histórico de precios*, *Comparador entre sitios* |
 | **Cliente de agendamiento**<br>`SchedulerClient` | Le pide a `schedule` que programe las corridas de la alerta | CU-03 | *Programar la captura al crear la alerta*, *API de jobs* |
 | **Cliente de notificación**<br>`NotifierClient` | Le pide a `notify` que envíe el aviso. Si no responde, reintenta unas pocas veces con el mismo identificador de transacción | CU-10 | *Aviso al bajar el mejor precio* |
@@ -136,19 +143,19 @@ FastAPI y APScheduler. Es un motor de tareas programadas **genérico**: no conoc
 | **Gestión de jobs**<br>`JobService` | Crea y consulta los jobs (tareas programadas): cuándo corren, qué hacen y a quién entregan el resultado | CU-03 | *API de jobs*, *Acción del job*, *Callback del job* |
 | **Agendamiento**<br>`SchedulerEngine` | Decide cuándo corre cada job: 2 veces al día, dentro de las franjas horarias y repartidas para no saturar | CU-03 | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Franjas horarias* |
 | **Ejecución de corridas**<br>`ExecutionService` | Dispara el job a su hora y registra cada corrida con su estado y su identificador de transacción | CU-03, CU-04 | *Ejecución en segundo plano* |
-| **Entrega de trabajo**<br>`PullService` | Cuando el scraper pregunta si hay trabajo, le entrega el pendiente; en la misma llamada recibe su estado y su resultado | CU-04 | *El scraper entrega a schedule* |
+| **Entrega de trabajo**<br>`ScraperDispatcher` | Al disparar el job, pide a `core` el detalle y envía las URLs al scraper **una a la vez**, cada una con su callback; si el envío falla, reintenta con backoff exponencial. Recibe `ok`, `no_price` o `error` y **administra los reintentos del scraper**: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min). Lo agotado queda `failed` y lo avisa el barrido diario | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
 | **Entrega del resultado**<br>`CallbackService` | Envía el resultado a `core`. Si falla, lo reintenta desde su propia cola de reintentos. Hoy solo soporta la acción «llamar a un endpoint» | CU-05 | *Acción del job*, *Callback del job* |
 
 #### `scraper` · captura del precio
 
-Sin endpoints propios ni base de datos (usa httpx y Playwright). Nunca llama a `core`: solo habla con `schedule`.
+Sin base de datos (usa httpx y Playwright). Recibe **una URL** de `schedule` y responde por un callback con `ok`, `no_price` o `error`, sin reintentar; en el ejercicio apunta a `schedule`, así que no llama a `core`.
 
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
 | **Trabajador de captura**<br>`ScrapeWorker` | Pregunta a `schedule` si hay trabajo y le informa el estado y el resultado | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
 | **Descarga**<br>`Fetcher` | Descarga cada URL y la revalida contra direcciones peligrosas en cada descarga y en cada redirección | CU-04 | *Descarga HTTP*, *Protección anti-SSRF* |
 | **Extracción**<br>`ExtractionStrategy` | Busca el precio probando estrategias en orden, de la más simple a la más pesada: datos estructurados (JSON-LD, `og:price`), microdata o expresión regular, navegador (Playwright) e interceptar la llamada interna (XHR). Se detiene en la primera que lo encuentra | CU-04 | *Extractor genérico*, *Extracción por microdata y regex*, *Extracción con navegador*, *Interceptar la llamada interna*, *Cascada de estrategias de extracción* |
-| **Reintentos**<br>`RetryPolicy` | Si ninguna estrategia funciona, reintenta hasta 3 veces con espera; si se agotan, marca el sitio «sin precio hoy» | CU-04 | *Reintentos controlados* |
+| **Resultado por URL**<br>`PriceResult` | Hace una sola pasada de las 4 estrategias y devuelve `ok` o `no_price` con su motivo, sin reintentar. Los reintentos los administra `schedule` (`ScraperDispatcher`) | CU-04 | *Reintentos controlados* |
 
 #### `notify` · notificaciones
 
@@ -180,7 +187,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 | R1 | La unidad de captura es la **URL**. Una alerta con N URLs genera N capturas independientes: si una falla, las demás continúan | *El scraper entrega a schedule* |
 | R2 | Cada alerta se captura **hasta 2 veces al día**, dentro de las franjas horarias configuradas | *Programación por alerta*, *Máximo de corridas al día*, *Franjas horarias* |
 | R3 | Una URL peligrosa (red interna, esquema no permitido, credenciales embebidas) se rechaza al crear la alerta y **de nuevo en cada descarga y redirección** | *Protección anti-SSRF* |
-| R4 | El precio se busca con estrategias en orden, de la más simple a la más pesada; **gana la primera** que devuelve un precio válido. Si ninguna funciona tras 3 reintentos, la URL queda «sin precio hoy» y **no se guarda nada** | *Extractor genérico*, *Extracción por microdata y regex*, *Extracción con navegador*, *Interceptar la llamada interna*, *Reintentos controlados*, *Cascada de estrategias de extracción* |
+| R4 | El precio se busca con estrategias en orden, de la más simple a la más pesada; **gana la primera** que devuelve un precio válido. Si ninguna funciona tras 3 reintentos (los administra `schedule`), la URL queda «sin precio hoy» y **no se guarda nada** | *Extractor genérico*, *Extracción por microdata y regex*, *Extracción con navegador*, *Interceptar la llamada interna*, *Reintentos controlados*, *Cascada de estrategias de extracción* |
 
 **Validación** (CU-05)
 
@@ -208,7 +215,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 
 | ID | Regla | Requerimientos |
 |---|---|---|
-| R12 | Se avisa **solo cuando el mejor precio baja** respecto del anterior, y solo a suscripciones **activas**: la primera captura no avisa, y un precio igual o más alto tampoco. Una caída anómala se avisa con la advertencia «valida manualmente», y cada email trae el enlace para darse de baja. Un aviso no se duplica aunque se repita el pedido, y si falla, el análisis y los snapshots no se revierten | *Aviso al bajar el mejor precio*, *Advertencia de caída anómala*, *Suscripción al correo*, *Baja por enlace* |
+| R12 | Se avisa **solo cuando el mejor precio baja** respecto del anterior, y solo a suscripciones **activas**: la primera vez (sin mejor precio anterior) no avisa, y un precio igual o más alto tampoco. El que decide es el análisis, no el guardado del snapshot. Una caída anómala se avisa con la advertencia «valida manualmente», y cada email trae el enlace para darse de baja. Un aviso no se duplica aunque se repita el pedido, y si falla, el análisis y los snapshots no se revierten | *Aviso al bajar el mejor precio*, *Advertencia de caída anómala*, *Suscripción al correo*, *Baja por enlace* |
 
 **Presentación y generales** (CU-07, CU-08)
 
@@ -236,7 +243,8 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 Cada una de esas piezas abre un único pool de conexiones por proceso (un engine de SQLAlchemy o un cliente de MongoDB), con un tamaño configurable por entorno (*Configuración por entorno*). **No es una conexión única**, porque una sola serializaría todas las peticiones. Cada petición toma una conexión del pool, abre **una transacción por caso de uso** y la devuelve al terminar:
 
 - Crear una alerta: la alerta, sus URLs y su suscripción.
-- Procesar un callback de precios: todas las URLs de la corrida y el mejor precio.
+- Procesar un callback de precios (una URL): la fila de la alerta y de esa URL.
+- Analizar el mejor precio (CU-06): la fila de la alerta y todas sus URLs.
 - Dar de baja una suscripción.
 
 #### Bloqueos
@@ -245,7 +253,7 @@ Dentro de esas transacciones, el aislamiento es el de PostgreSQL por defecto (`R
 
 | Dónde | Bloqueo | Para qué |
 |---|---|---|
-| Procesar un callback de precios (CU-05, CU-06) | `SELECT … FOR UPDATE` sobre la fila de `alert` y luego sobre sus `alert_url`, siempre en ese orden y por id | Una alerta se procesa de a una corrida a la vez: dos corridas o reintentos simultáneos no se pisan. El orden fijo evita bloqueos mutuos (deadlocks) |
+| Procesar un callback de precios (CU-05) y analizar el mejor precio (CU-06) | `SELECT … FOR UPDATE` sobre la fila de `alert` y luego sobre sus `alert_url`, siempre en ese orden y por id | Una alerta se procesa de a una corrida a la vez: dos corridas o reintentos simultáneos no se pisan. El orden fijo evita bloqueos mutuos (deadlocks) |
 | Tomar trabajo pendiente de una cola: jobs vencidos en `schedule`, envíos en `notification_outbox`, entregas en `job_callback_outbox` | `SELECT … FOR UPDATE SKIP LOCKED` | Varios trabajadores toman tareas sin repetirlas ni esperarse |
 | Insertar un snapshot, una notificación, una corrida o un resultado | Ninguno: restricciones únicas e `INSERT … ON CONFLICT DO NOTHING` | Idempotencia natural. Claves: `(alert_url_id, captured_at)` en `price_snapshot`; `(transaction_id, app_user_id, channel)` en `notification`; `transaction_id` en `job_execution`; `_id` = `transaction_id` en MongoDB |
 | Dar de baja una suscripción | `UPDATE … WHERE status = 'active'` (bloqueo de fila implícito) | Repetir la baja no cambia nada |
@@ -368,7 +376,12 @@ erDiagram
         bigint id PK "Identificador de la corrida"
         int job_id FK "Job que la disparó"
         string system "Proyecto dueño: valor fijo en esta versión"
-        uuid transaction_id UK "Trazabilidad de punta a punta"
+        uuid transaction_id UK "Trazabilidad de punta a punta (uno por URL)"
+        uuid run_id "Agrupa las ejecuciones de un mismo disparo del job"
+        smallint seq "Orden dentro del disparo (se procesan de una en una)"
+        jsonb item "Unidad de trabajo opaca (p.ej. la URL), se reenvía al reintentar"
+        smallint attempt "Intento en curso; sube al reinyectar tras un error"
+        datetime next_attempt_at "Cuándo toca enviar o reintentar"
         string status "queued | running | completed | failed"
         datetime started_at "Inicio (UTC)"
         datetime finished_at "Fin (UTC)"
@@ -455,12 +468,12 @@ erDiagram
 
     JOB_EXECUTION {
         bigint id PK "Tabla relacional de schedule"
-        uuid transaction_id UK "Identificador de la corrida"
+        uuid transaction_id UK "Identificador de la ejecución (una URL)"
     }
     JOB_EXECUTION_RESULT {
         uuid _id PK "Es el transaction_id de la corrida"
         datetime created_at "Base de la caducidad de 90 días"
-        array results "Uno por URL: alert_url_id, status ok o no_price, strategy, price_raw, currency, in_stock, title, metadata, error"
+        object result "De esa URL: alert_url_id, status ok, no_price o error, strategy, price_raw, currency, in_stock, title, metadata, error"
     }
 ```
 
@@ -498,7 +511,7 @@ Las piezas no comparten claves foráneas: se enlazan solo por identificadores.
 #### Solo backend
 
 - **Callback de precios** (`POST /api/internal/prices`, CU-05): cada URL debe pertenecer a la alerta, o se rechaza todo con 422. El precio debe ser un número mayor que 0, en COP y que quepa en la base; si no, esa URL se descarta y las demás siguen. Una captura de fecha futura se rechaza y una más vieja que el último chequeo se ignora. Repetir el `transaction_id` no duplica nada.
-- **Crear el job** (`POST /schedule/internal/jobs`, CU-03): cron válido que no supere 2 corridas al día, y callback solo hacia `core`.
+- **Crear el job** (`POST /schedule/internal/jobs`, CU-03): cron válido que no supere 2 corridas al día, y callback solo hacia un backend de la lista blanca registrada (en el ejercicio, `core`).
 - **Pedir el aviso** (`POST /notify/notifications`, CU-10): canal y plantilla existentes y activos, y correo de destino válido. Una llamada repetida no duplica el aviso.
 - **Captura** (CU-04): la URL se revalida en cada descarga y redirección, con límites de tiempo y de tamaño de respuesta. Lo extraído se trata como texto y nunca se ejecuta.
 - **Email** (CU-10): lo capturado que va al mensaje, como el título, se escapa al armar la plantilla.
@@ -525,7 +538,7 @@ Todo lo que se omite respecto a la versión original del proyecto:
 - **Usuarios:** alta, edición, desactivación y anonimización de cuentas, perfil propio, y gestión de roles y permisos.
 - **Administración y supervisión:** pantallas de schedules (ver, editar, lanzar a mano, seguir el progreso), panel técnico del scraper y estadísticas por sitio.
 - **Alertas:** etiquetas, asistente de creación, vista previa del sitio, pausar y reactivar.
-- **Scraping avanzado:** adapters por dominio y su constructor, `robots.txt`, límite de tasa, email al administrador y guardado del HTML crudo.
+- **Scraping avanzado:** adapters por dominio y su constructor, `robots.txt`, límite de tasa, email al administrador por adapter roto y guardado del HTML crudo.
 - **Precios:** conversión de moneda (solo COP) y estadísticas de mínimo, máximo y promedio.
 - **Notificaciones:** log en NoSQL y otros canales, como SMS.
 - **Búsqueda por palabra clave con LLM:** solo queda el selector deshabilitado.
@@ -539,7 +552,7 @@ Todo lo que se omite respecto a la versión original del proyecto:
 
 Efectos:
 - **Más tiempo:** hace falta pasar a estrategias más pesadas (navegador, interceptar la llamada interna) y a reintentos con espera.
-- **Sin dato:** la URL queda «sin precio hoy», el historial tiene huecos y el mejor precio y el aviso no se actualizan.
+- **Sin dato:** la URL queda «sin precio hoy» (`no_price`) o `error`, el historial tiene huecos y el siguiente análisis no cuenta esa URL.
 
 Cómo se enfrenta:
 - **Cascada de estrategias** de la más simple a la más pesada, con reintentos (R4). Si una URL falla, las demás de la alerta continúan (R1).

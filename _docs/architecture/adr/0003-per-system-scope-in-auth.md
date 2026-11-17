@@ -44,6 +44,6 @@ Respuestas del usuario que condicionan el diseño:
 
 ## Referencias
 
-- [Modelo de datos · sección A](../../data/data-model.md#a-auth-identidad-y-rbac) y [`auth/schema.sql`](../../data/db/auth/schema.sql) — modelo aplicado.
+- [Modelo de datos · sección A](../../data/data-model.md#a-auth-identidad-y-rbac) y [`auth/schema.sql`](../../data/scripts/auth/schema.sql) — modelo aplicado.
 - [ADR-0001](0001-repo-and-service-structure.md) — reutilización de `auth` en otros proyectos.
 - [Requerimientos](../../requirements/original-requirements.md) — AUTH-10 (RBAC y árbol de accesos).

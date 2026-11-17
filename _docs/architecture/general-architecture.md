@@ -1,6 +1,8 @@
 # Arquitectura
 
-> Consolidado con el [Alcance 1](../00-context/scope-1-questions.md), los [requerimientos](../requirements/original-requirements.md), el [modelo de datos](../data/data-model.md) y el [flujo diario](scraping-flow.md). Refleja roles/RBAC, ejecución background con cola+workers, la **cascada de scraping con adapters aprendidos**, la máquina de estados del job, persistencia políglota, observabilidad y despliegue polyrepo portable a la nube.
+> **Alcance: el proyecto completo.** Contiene toda la arquitectura (incluye `auth`, administración y despliegue). La arquitectura reducida a los casos de uso del ejercicio está en [`architecture.md`](architecture.md). Es normal que ambos repitan secciones; en unas semanas se unificarán en una sola arquitectura.
+
+> Consolidado con el [Alcance 1](../00-context/scope-1-questions.md), los [requerimientos](../requirements/original-requirements.md), el [modelo de datos](../data/data-model.md) y el [flujo diario](scraping-flow.md). Refleja roles/RBAC, ejecución background asíncrona, la **cascada de scraping con adapters aprendidos**, la máquina de estados del job, persistencia políglota, observabilidad y despliegue polyrepo portable a la nube.
 
 ## Tabla de contenido
 
@@ -8,7 +10,6 @@
 - [Diagrama de contexto (C4 · nivel 1)](#diagrama-de-contexto-c4--nivel-1)
 - [Diagrama de contenedores (C4 · nivel 2)](#diagrama-de-contenedores-c4--nivel-2)
 - [Diagrama de componentes (C4 · nivel 3)](#diagrama-de-componentes-c4--nivel-3)
-- [La cascada de scraping (el "cerebro")](#la-cascada-de-scraping-el-cerebro)
 - [Responsabilidad de cada componente](#responsabilidad-de-cada-componente)
   - [Persistencia por servicio](#persistencia-por-servicio)
 - [Módulos desacoplados (puntos de extensión)](#módulos-desacoplados-puntos-de-extensión)
@@ -26,13 +27,13 @@
 ## Principios de diseño
 
 - **Modular y desacoplado:** las piezas que cambiarán —proveedor de IA, tasa de cambio, estrategia de "mejor precio", canal de notificación— viven **tras una interfaz**, reemplazables sin tocar el core.
-- **Scraping en background, no en el request:** el trabajo pesado corre en el **scraper**, orquestado por **`schedule`** vía *pull* dentro de ventanas horarias — detalle de cola/workers en el [stack tecnológico](../tools/tech-stack.md).
-- **Scraping que aprende:** extractor genérico (JSON-LD/schema.org) + cascada de fallbacks; los sitios difíciles obtienen un **adapter guardado por dominio** que se **reutiliza** (sin re-trabajo).
+- **Scraping en background, no en el request:** el trabajo pesado corre en el **scraper**; `schedule` se lo envía de forma asíncrona dentro de ventanas horarias y recibe el resultado por un callback ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)).
+- **Scraping que aprende:** lo que se descubre de un sitio se reutiliza en vez de repetir el trabajo. La cascada completa está en el [flujo de scraping](scraping-flow.md).
 - **Observable de punta a punta:** cada corrida lleva un `transactionId` que atraviesa los 5 servicios de backend y sus logs; máquina de estados granular por job.
 - **6 repos independientes, portables, sin lock-in** ([ADR-0001](adr/0001-repo-and-service-structure.md)): cada uno empaquetado en contenedores + config por entorno (12-factor). Las mismas imágenes corren local (docker-compose) y en producción (Cloudflare/GCP/Oracle).
 - **Cloudflare como única puerta de entrada:** ningún servicio expone su origen directamente — todo el tráfico, de usuarios y entre servicios, pasa por el Gateway o la red de Cloudflare (ver [Vista de despliegue](#vista-de-despliegue-servicios-desacoplados--cloudflare--gcp--oracle)).
-- **Aislamiento de datos por servicio, no por conveniencia:** cada repo es dueño de su propio esquema/base, con sus propios roles de BD y **sin FK ni permisos** sobre el de otro servicio; la integridad entre servicios la garantiza quien escribe, no la base de datos (ver [modelo de datos](../data/data-model.md) y [docs/deliverables/db](../data/db/README.md)).
-- **Superficie de ataque mínima en el scraper:** sin estado, sin credenciales de negocio y **sin puertos entrantes** — solo hace *pull* de trabajo y reporta resultados hacia afuera.
+- **Aislamiento de datos por servicio, no por conveniencia:** cada repo es dueño de su propio esquema/base, con sus propios roles de BD y **sin FK ni permisos** sobre el de otro servicio; la integridad entre servicios la garantiza quien escribe, no la base de datos (ver [modelo de datos](../data/data-model.md) y [docs/deliverables/db](../data/scripts/README.md)).
+- **Superficie de ataque mínima en el scraper:** sin estado, sin credenciales de negocio y **sin puertos expuestos fuera de la red interna**; solo `schedule` puede enviarle trabajo y el destino de su callback es una lista blanca ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)).
 - **Idempotente y append-only:** las corridas se reintentan sin duplicar ni corromper el historial; el precio se guarda **solo cuando cambia**.
 - **Almacenamiento mínimo:** cada dato vive en el almacén que menos cuesta según su ciclo de vida; lo voluminoso o efímero va a NoSQL con **TTL y compresión** (ver [modelo de datos](../data/data-model.md)).
 
@@ -98,10 +99,12 @@ graph TB
     PWA <-->|HTTPS| CORE2
     CORE2 -->|"CRUD de jobs (crea/pausa)<br/>interno, service-to-service"| SCHED2
     SCHED2 -->|"pide detalle del job<br/>(URL, adapter)"| CORE2
-    SCR2 -->|"pull job · push estado + resultado<br/>(una sola llamada)"| SCHED2
+    SCHED2 -->|"envía una URL + callback<br/>HTTP asíncrono"| SCR2
+    SCR2 -->|"callback: entrega el resultado"| SCHED2
     SCHED2 -->|"callback: entrega el precio<br/>(api_call configurado al crear el job)"| CORE2
     SCR2 -->|fetch| SITES2
     CORE2 -->|"decide y llama"| NOTIFY2 --> SMTP2
+    SCHED2 -->|"barrido diario de errores"| NOTIFY2
     AUTH2 -->|"código de reset"| NOTIFY2
     AUTH2 & CORE2 & SCHED2 & NOTIFY2 & SCR2 -.->|traza| OBS2
 ```
@@ -127,7 +130,7 @@ graph TB
         CALLBACK[["📩 Ingesta de precio<br/>recibe el callback de schedule, SCH-14"]]
         NORM["📐 Normalizador"]
         FXP["💱 Tasa de cambio<br/>parametrizable"]
-        VALID["🔁 Validador / dedupe<br/>marca desplome anómalo"]
+        VALID["🔁 Validador / dedupe<br/>marca caída anómala"]
         DEC["🧠 Motor de decisión<br/>mejor precio · Strategy"]
         STATS["📊 Comparador / estadísticas"]
         HEALTH["🩺 Detalle del scraper · admin"]
@@ -142,7 +145,7 @@ graph TB
         JOBAPI[["🛠️ API CRUD de jobs<br/>crear·consultar·actualizar·eliminar en memoria — SCH-12"]]
         ENGINE["⏱️ Motor de jobs en memoria<br/>tipo APScheduler"]
         ACTION{{"🎯 Acción al disparar · Strategy<br/>api_call · python_script — Fase 1<br/>topic_message — Fase 2 o 3, SCH-13"}}
-        RUNAPI[["📥 API de pull<br/>el scraper la consulta y reporta"]]
+        RUNAPI[["📥 API de resultados<br/>recibe el callback del scraper"]]
 
         JOBAPI --> ENGINE
         RUNAPI -->|"run completado → dispara"| ACTION
@@ -171,52 +174,22 @@ graph TB
     SCHEDPROXY -->|"CRUD: ver, editar, lanzar"| JOBAPI
     HEALTH -->|"consulta corridas, D8"| JOBAPI
     RUNAPI -->|"pide detalle: URL, adapter"| JOBBUILD
-    CASC -->|"pull job · reporta estado + resultado<br/>una sola llamada, SCR-20"| RUNAPI
-    JOBS -->|incluidos en el reporte| RUNAPI
+    ENGINE -->|"envía una URL + callback<br/>ADR-0004"| CASC
+    JOBS -->|"callback con ok, no_price o error"| RUNAPI
     ACTION -->|"api_call: entrega el precio<br/>a la URL configurada"| CALLBACK
     DEC -->|"llama a notify<br/>service-to-service"| INTAKE
+    ENGINE -->|"barrido diario de errores"| INTAKE
 ```
 
 > **`schedule` es exclusivamente interno** (SCH-11): no tiene ruta pública en el Gateway, y el admin lo gestiona desde el frontend **a través de `core`** (`SCHEDPROXY`), nunca directo.
 >
-> **El scraper nunca llama a `core`** (SCR-20, 2026-09-30): entrega su resultado a `schedule` en la misma llamada donde reporta el estado del *run*. Al completarse, `schedule` dispara la acción `api_call` configurada — que es la que finalmente llama a `CALLBACK` en `core`. `schedule` nunca tiene el dato de "cómo llamar a core" *hardcodeado*: viaja como configuración del job (SCH-14), así queda desacoplado de verdad.
+> **El scraper recibe el trabajo y un callback configurable** ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md), 2026-11-11; antes hacía *pull*): `schedule` le envía **una URL a la vez**, el scraper responde «recibido» y, al terminar, ejecuta el callback con `ok`, `no_price` o `error`. El scraping y el **análisis** (mejor precio y avisos) son procesos separados a horas distintas (revisión del 2026-11-12); los diagramas del motor de decisión de este documento aún no se han re-revisado para reflejarlo. El destino del callback es configuración; en el ejercicio apunta a `schedule`, así que **el scraper no llama a `core`** (SCR-20). Al completarse, `schedule` dispara la acción `api_call` configurada — que es la que finalmente llama a `CALLBACK` en `core`. `schedule` nunca tiene el dato de «cómo llamar a core» *hardcodeado*: viaja como configuración del job (SCH-14).
 >
-> **Cuatro llamadas entre servicios que antes eran una sola tabla** ([ADR-0001](adr/0001-repo-and-service-structure.md)): `ALERT → JOBAPI` (crea/pausa el job, ALE-8/9), `RUNAPI → JOBBUILD` (pide el detalle al hacer *pull*), `ACTION → CALLBACK` (entrega el precio, resuelve cómo `core` se entera) y `HEALTH → JOBAPI` (consulta corridas, D8).
+> **Cuatro llamadas entre servicios que antes eran una sola tabla** ([ADR-0001](adr/0001-repo-and-service-structure.md)): `ALERT → JOBAPI` (crea/pausa el job, ALE-8/9), `RUNAPI → JOBBUILD` (pide el detalle antes de enviar el trabajo), `ACTION → CALLBACK` (entrega el precio, resuelve cómo `core` se entera) y `HEALTH → JOBAPI` (consulta corridas, D8).
 >
 > **`notify` tiene dos pasos, no uno** (2026-09-30): `INTAKE` (Recepción) es quien recibe la llamada de `DEC` y crea la fila `NOTIFICATION` — es **la notificación que se debe enviar**. `SEND` es quien la toma, arma el mensaje con la plantilla de su canal y lo entrega (SMTP en Fase 1). Antes el diagrama los mezclaba en un solo nodo ("Envío"), lo que escondía que nadie tenía modelado el paso de creación. El nodo se llamaba `OUTBOX`; se renombró porque en el [modelo de datos](../data/data-model.md#d-notify-notificaciones) `notification_outbox` es otra cosa: la cola de reintento.
 >
 > **Una tabla con estado, más una cola de reintento** (reemplaza el modelo de "tres tablas" del 2026-09-30): `NOTIFICATION` lleva su propio `status` (`pending`\|`sent`\|`failed`) y, según el caso, `sent_at`, `provider`, `attempts` y `last_error`; `notification_sent` se fusionó en ella porque nunca mutaba. Si `SEND` falla, inserta/actualiza `NOTIFICATION_OUTBOX` — cola de reintento **activo** (`next_retry_at`, `FOR UPDATE SKIP LOCKED`) que se borra al resolverse. `notify` además es genérico y multicanal: `CHANNEL` (catálogo abierto) y `TEMPLATE` (versionada) viven en el mismo esquema. Detalle en [modelo de datos](../data/data-model.md#d-notify-notificaciones). El mecanismo exacto de `INTAKE → SEND` (en el mismo proceso o con una cola interna) sigue sin decidir — ver [pendientes](../00-context/pending.md), D12.
-
-## La cascada de scraping (el "cerebro")
-
-```mermaid
-graph TD
-    START[Job de un sitio] --> A0{¿Adapter<br/>manual guardado<br/>para el dominio?}
-    A0 -->|sí| USE[Usar adapter guardado]
-    A0 -->|no| A1{¿Estrategia genérica<br/>recordada para<br/>el dominio?}
-    A1 -->|sí| JUMP[Ejecutar esa<br/>estrategia directo]
-    JUMP -->|falla, el sitio cambió| C1
-    A1 -->|no| C1[1 · JSON-LD / og:price]
-    C1 -->|falla| C2[2 · Microdata/RDFa/meta + regex]
-    C2 -->|falla| C3[3 · Playwright render]
-    C3 -->|falla| C4[4 · Interceptar XHR/JSON]
-    C4 -->|falla| C5["5 · Captura + VLM lee el precio<br/>(Fase 2 · estilo PixelRAG)"]
-    C5 -->|falla| RT{Reintentos<br/>controlados<br/>máx 3}
-    RT -->|reintenta 10-15m| C1
-    RT -->|agotados| N7[7 · Email al admin]
-    N7 --> BUILD[Admin construye adapter<br/>manual · guarda por dominio]
-    BUILD -.reutiliza siempre.-> A0
-    USE --> OK[✅ Precio capturado]
-    JUMP -->|éxito| OK
-    C1 -->|éxito| OK
-    C2 & C3 & C4 & C5 -->|éxito| LEARN[Recuerda la estrategia<br/>ganadora por dominio]
-    LEARN -.reutiliza siempre.-> A1
-    LEARN --> OK
-```
-
-> **`A1`/`LEARN` (candidato a pendiente, sin ID todavía):** hoy el **único** aprendizaje persistido es el adapter manual (`A0`/`BUILD`) — SCR-12 es explícito en que es "sin IA en Fase 1". Un dominio que solo logra extraer vía `C3`/`C4` nunca "aprende" nada: cada corrida repite `C1`→`C2` desde cero antes de llegar otra vez al paso que de verdad funciona. `A1`/`LEARN` cierra ese hueco con algo mucho más barato que un adapter completo: solo recuerda **cuál paso genérico ganó** la última vez (el dato ya existe, agregado, en `site_stats_daily.by_strategy` — [modelo de datos](../data/data-model.md)) para saltar directo a él, con reintento sobre la cascada completa (`JUMP -->|falla|`) si el sitio cambió y la estrategia recordada deja de servir. **No tiene prioridad ni Fase asignada aún** — falta decidirlo y, si se aprueba, darle un ID (candidato: `SCR-21`) y un lugar donde persistirlo (reusar `site_stats_daily` vs. un campo nuevo).
->
-> **`C5` es Fase 2**, y concreta lo que antes era una nota genérica ("extractor con IA, #5"): en vez de que una IA lea el **HTML** (texto), lee una **captura de pantalla** de la página ya renderizada por Playwright en `C3`/`C4` — mismo principio detrás de PixelRAG (retrieval-augmented generation sobre *screenshots*, en vez de texto parseado), aplicado aquí a una sola página ya conocida, sin el componente de *retrieval* sobre un corpus (eso es lo que PixelRAG resuelve y este caso no necesita). Ventaja sobre leer HTML: no lo engaña la ofuscación de clases/CSS que sí dificulta el parseo de texto. Costo a tener presente: una llamada **de pago** a un modelo de visión por cada sitio que agote `C1`-`C4`. El constructor de adapters sigue con su propia asistencia de IA aparte (evaluar API de Claude), sin cambios.
 
 ## Responsabilidad de cada componente
 
@@ -234,23 +207,22 @@ graph TD
 | `core` | **Ensamblado de job** | A pedido de `schedule`, arma el detalle del job (URL, dominio, adapter) para un `alert_id` dado. |
 | `core` | **Ingesta de precio (callback)** | Recibe la llamada `api_call` que `schedule` dispara al completar un *run* (SCH-14); es la única puerta de entrada del precio hacia el Normalizador. |
 | `schedule` | **Scheduling** | Motor de jobs **genérico**, reutilizable por cualquier `system`: cada `job` lleva su cron, su `execution_type` (catálogo abierto), un `payload` opaco y un callback. `core` crea el job de scraping de cada alerta (2×/día por defecto); admin ve/edita/lanza y ve progreso; dueño de `job`, `job_script` y `job_execution`. |
-| `schedule` | **API de jobs (pull + CRUD)** | El scraper la consulta para tomar trabajo pendiente; `schedule` —no el scraper— le pide el detalle a `core` y se lo entrega. El scraper le reporta, **en una sola llamada**, el estado del *run* y el resultado (SCR-20); `core` usa la misma API para crear/pausar/consultar jobs (SCH-12). |
+| `schedule` | **API de jobs (CRUD) y de resultados** | `core` la usa para crear, pausar y consultar jobs (SCH-12). Al disparar un job, `schedule` le pide el detalle a `core`, **envía el trabajo al scraper** con su callback y recibe el resultado por esa misma API (SCR-20); si no logra entregar el trabajo, reintenta con backoff exponencial y avisa al administrador llamando a `notify`. |
 | `schedule` | **Motor de acciones (Strategy)** | Al completar un *run*, dispara la acción configurada al crear el job (`api_call`/`python_script`); nunca conoce el dominio de negocio de quien la configuró (SCH-13/14). |
 | `core` | **Normalizador** | Formato canónico: precio, moneda, stock, título, metadata. |
 | `core` | **Tasa de cambio** | Tarea liviana; convierte USD→COP; guarda tasa+fecha en su propia NoSQL (~1 doc/día); parametrizable. |
-| `core` | **Validador / dedupe** | Descarta lo inválido (≤0, HTML error); **marca** desplomes anómalos (no los descarta). |
+| `core` | **Validador / dedupe** | Descarta lo inválido (≤0, HTML error); **marca** caídas anómalas (no las descarta). |
 | `core` | **Motor de decisión** | "Mejor precio móvil" **global** de la alerta; **Strategy** reemplazable; detecta el aviso y le pasa los datos de la decisión a `notify` (la `notification` ya no la crea `core` — ver sección D del [modelo de datos](../data/data-model.md#d-notify-notificaciones)). |
 | `core` | **Comparador / estadísticas** | Histórico y comparación **por sitio** en el tiempo. |
 | `core` | **Detalle del scraper (admin)** | Adapters rotos y tasa de éxito son suyos; las **últimas corridas** las pide por API a `schedule` (D8). |
-| `scraper` | **Cascada de extracción** | Adapter guardado → JSON-LD → microdata/regex → Playwright → XHR; reintentos controlados; robots.txt + rate limit. Sin estado, sin BD, **nunca llama a `core`** (SCR-20). |
-| `scraper` | **Máquina de estados** | Registra **cada etapa del job con su hora**; va incluida en el mismo reporte que le hace a `schedule` y alimenta la vista de progreso. Dónde se persiste ese detalle por etapa tras genericizar `schedule` está pendiente (D15 de los [pendientes](../00-context/pending.md)); `schedule` solo conserva el resultado genérico de la corrida (`job_execution_result`, TTL 90 días). |
-| `notify` | **Recepción (INTAKE)** | Recibe la llamada de quien origina el aviso (`core`, `auth`) con `transaction_id`, `app_user_id`, canal, `destination`, plantilla y `payload` (opaco), y **crea** la fila `notification` (PostgreSQL, movida desde `core` el 2026-09-30) con `status = pending` — es la notificación **que se debe enviar**. Genérica y multicanal: no conoce ningún concepto de `core`. Reutilizable por otros proyectos (`system`). |
+| `scraper` | **Extracción de precios** | Obtiene el precio de cada URL y lo reporta a `schedule`. Sin estado, sin BD; recibe el trabajo de `schedule` y responde por un callback (en el ejercicio no llama a `core`, SCR-20). Cascada, estados, reintentos y fallos: ver el [flujo de scraping](scraping-flow.md). |
+| `notify` | **Recepción (INTAKE)** | Recibe la llamada de quien origina el aviso (`core`, `auth` y `schedule`, este último para avisar al administrador) con `transaction_id`, `app_user_id`, canal, `destination`, plantilla y `payload` (opaco), y **crea** la fila `notification` (PostgreSQL, movida desde `core` el 2026-09-30) con `status = pending` — es la notificación **que se debe enviar**. Genérica y multicanal: no conoce ningún concepto de `core`. Reutilizable por otros proyectos (`system`). |
 | `notify` | **Envío (SEND)** | Toma una `notification`, arma el mensaje con la **plantilla versionada de su canal** (`template`; en email, Jinja2 con marca de anomalía y enlace de baja) y lo entrega (SMTP en Fase 1; el catálogo `channel` admite SMS/WhatsApp/llamada sin migración). Si tiene éxito, actualiza `notification` (`status = sent`, `sent_at`, `provider`); si falla, inserta/actualiza `notification_outbox` (cola de reintento) y, al agotar los intentos, deja `status = failed`. Archiva lo enviado (sin HTML ni PII) en su propia NoSQL (`notification_log`; su utilidad está en revisión, D18). |
 | todos | **Observabilidad** | `transactionId` end-to-end; trazas/errores (OpenTelemetry + Sentry). |
 
 ### Persistencia por servicio
 
-> **PostgreSQL es UNA sola instancia** con **cuatro esquemas**, uno por servicio, cada uno con sus propios roles (migraciones y servicio) y sin permisos sobre el de los demás (no hay 4 bases físicas separadas — más realista con un proveedor gratuito que solo da una base por proyecto). MongoDB sí es una base separada por servicio, porque ahí el aislamiento natural es la base. Detalle y scripts en [docs/deliverables/db](../data/db/README.md).
+> **PostgreSQL es UNA sola instancia** con **cuatro esquemas**, uno por servicio, cada uno con sus propios roles (migraciones y servicio) y sin permisos sobre el de los demás (no hay 4 bases físicas separadas — más realista con un proveedor gratuito que solo da una base por proyecto). MongoDB sí es una base separada por servicio, porque ahí el aislamiento natural es la base. Detalle y scripts en [docs/deliverables/db](../data/scripts/README.md).
 
 | Servicio | Store | Qué guarda |
 |----------|-------|-----------|
@@ -320,7 +292,7 @@ graph TB
     end
 
     subgraph ORACLE["🖥️ Oracle Cloud · VM Ampere — Always Free"]
-        SCR[🕷️ scraper<br/>sin estado · sin acceso a BD<br/>sin puertos entrantes]
+        SCR[🕷️ scraper<br/>sin estado · sin acceso a BD<br/>solo red interna]
     end
 
     subgraph DATA["🗄️ Persistencia gestionada — gratis"]
@@ -347,13 +319,15 @@ graph TB
     CORE -->|"llama a notify<br/>(service-to-service, aud=system)"| GW
     AUTH -->|"código de reset"| GW
     GW -->|"/notify/*"| NOTIFY
+    SCHED -->|"barrido diario de errores<br/>(service-to-service)"| GW
     CORE -->|"CRUD de jobs: crea/pausa/consulta<br/>(service-to-service, ALE-8/9, SCH-4/5/8/9)"| GW
     GW -->|"/schedule/internal/jobs"| SCHED
     SCHED -->|"pide detalle del job (service-to-service)"| GW
     GW -->|"/api/internal/job-detail"| CORE
 
-    SCR -->|"sondea jobs · reporta estado + resultado<br/>una sola llamada, SCR-20 · HTTPS saliente"| GW
-    GW -->|"/schedule/internal/pull"| SCHED
+    SCHED -->|"envía una URL + callback<br/>acceso restringido a schedule"| SCR
+    SCR -->|"callback: entrega el resultado"| GW
+    GW -->|"/schedule/internal/results"| SCHED
     SCHED -->|"callback: entrega el precio<br/>api_call configurado, SCH-14"| GW
     GW -->|"/api/internal/prices"| CORE
     SCR -->|"fetch de precios<br/>(anti-SSRF, SCR-18)"| SITES
@@ -375,10 +349,10 @@ graph TB
 **Cómo leerlo:**
 
 - **Cloudflare es la única puerta.** Ningún origen (Cloud Run ni la VM de Oracle) se llama directo; todo pasa por el Worker Gateway o por la red de Cloudflare.
-- **El scraper solo hace llamadas salientes, y nunca a `core`** (SCR-20). Sondea a `schedule` por trabajo y le reporta —en la misma llamada— el estado y el resultado; la VM de Oracle **no necesita ningún puerto entrante abierto**, lo que reduce su superficie de ataque a casi cero. `schedule` es quien reenvía el precio a `core`.
+- **El scraper solo es alcanzable por `schedule`** y su callback tiene un destino de lista blanca ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)). En la VM de Oracle el puerto del scraper se restringe por firewall al origen de `schedule` y no se publica a internet; el mecanismo exacto de red está por definir. `schedule` es quien reenvía el precio a `core`.
 - **`schedule` no tiene ninguna ruta pública** (SCH-11): sus rutas bajo `/schedule/internal/*` solo aceptan JWT de servicio (`aud=system`), nunca un token de usuario. El admin lo gestiona desde el frontend, pero la llamada real es `core` la que habla con `schedule`.
 - **La validación de JWT vive en cada servicio** (no en el Gateway): `auth` publica su JWKS y `core`/`schedule`/`notify` lo cachean y validan localmente. El Gateway solo enruta y aplica límite de tasa.
-- **Una sola base PostgreSQL, aislada por esquema y rol** — no por FK: `core` referencia usuarios de `auth` solo por `uuid` y guarda el `run_id` de `schedule.job_execution` solo por valor; `schedule` y `notify` son genéricos y ya no referencian nada de `core` — solo `auth` (`system` por código, usuarios por `uuid`) y un `transaction_id` de correlación opaco. Detalle en [docs/deliverables/db](../data/db/README.md).
+- **Una sola base PostgreSQL, aislada por esquema y rol** — no por FK: `core` referencia usuarios de `auth` solo por `uuid` y guarda el `run_id` de `schedule.job_execution` solo por valor; `schedule` y `notify` son genéricos y ya no referencian nada de `core` — solo `auth` (`system` por código, usuarios por `uuid`) y un `transaction_id` de correlación opaco. Detalle en [docs/deliverables/db](../data/scripts/README.md).
 - **El callback de `schedule` a `core` es configuración, no un conocimiento fijo** (SCH-14): la URL a la que llamar viaja como parte del job creado por `core`, así que `schedule` puede reutilizarse por otro sistema sin tocarle el código.
 
 ### Vista mínima
@@ -425,7 +399,8 @@ graph TB
     CORE <--> SCHED
     CORE --> NOTIFY
     AUTH --> NOTIFY
-    SCR --> SCHED
+    SCHED --> NOTIFY
+    SCHED <--> SCR
 
     AUTH --> PG
     CORE --> PG
@@ -464,10 +439,12 @@ graph TB
 | Origen | Destino | Qué comunica | Ruta | Protocolo | Tecnología / Auth |
 |---|---|---|---|---|---|
 | `core` | `schedule` | CRUD de jobs: crea/pausa/consulta (ALE-8/9, SCH-4/5/8/9/12, D8) — la consulta incluye la **etapa actual** del *run* en curso, nunca un tiempo estimado¹ | `/schedule/internal/jobs` | REST/HTTPS+JSON | JWT de servicio (`aud=system`) |
-| `schedule` | `core` | Pide el detalle del job (URL, adapter) al hacer *pull* | `/api/internal/job-detail` | REST/HTTPS+JSON | JWT de servicio |
-| `scraper` | `schedule` | *Pull* de trabajo + reporta estado y resultado — **una sola llamada** (SCR-20) | `/schedule/internal/pull` | REST/HTTPS+JSON (polling) | JWT de servicio |
-| `schedule` | `core` | Callback: entrega el precio, en la URL de `api_call` configurada al crear el job (SCH-14) | `/api/internal/prices` | REST/HTTPS+JSON | JWT de servicio |
+| `schedule` | `core` | Pide el detalle del job (URL, adapter) antes de enviar el trabajo al scraper | `/api/internal/job-detail` | REST/HTTPS+JSON | JWT de servicio |
+| `schedule` | `scraper` | Envía **una URL** con su callback, de forma asíncrona y una tras otra; el scraper responde «recibido» (ADR-0004) | `/scraper/internal/jobs` | REST/HTTPS+JSON | JWT de servicio |
+| `scraper` | `schedule` | Callback: entrega el resultado de la URL (`ok`, `no_price` o `error`, SCR-20). Destino configurable, de lista blanca | `/schedule/internal/results` | REST/HTTPS+JSON | JWT de servicio |
+| `schedule` | `core` | Callback: entrega el resultado de cada URL de inmediato, en la URL de `api_call` configurada al crear el job (SCH-14). Solo guarda el snapshot; no avisa | `/api/internal/prices` | REST/HTTPS+JSON | JWT de servicio |
 | `core` | `notify` | Entrega los datos de la decisión (mejor precio: `transaction_id`, `app_user_id`, canal, `destination`, plantilla y `payload`) para que `notify` cree su propia `notification` y la envíe (`notification` vive en `notify`, no en `core`, desde 2026-09-30) | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
+| `schedule` | `notify` | Pide, una vez al día, un solo correo al administrador con los errores del día (barrido diario, ADR-0004, EJ-6): `transaction_id`, canal, `destination` (dirección del administrador, por entorno), plantilla y `payload` | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
 | `auth` | `notify` | Pide el envío del código de reset | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
 | `core` / `schedule` / `notify` | `auth` | Descarga y cachea el JWKS (valida JWT localmente) | `/auth/.well-known/jwks.json` | REST/HTTPS+JSON | Sin credencial (endpoint público de claves) |
 

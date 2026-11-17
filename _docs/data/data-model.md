@@ -2,9 +2,9 @@
 
 > Consolidado con el [Alcance 1](../00-context/scope-1-questions.md) y los [requerimientos](../requirements/original-requirements.md). Persistencia **políglota**: PostgreSQL (relacional + JSONB) para lo transaccional y de larga vida, y **MongoDB** (documental) para lo voluminoso, efímero o de solo consulta.
 >
-> **Convenciones:** nombres en **inglés**, `snake_case`; PK `id` (salvo clave natural); FK `<entidad>_id`; booleanos `is_*`; fechas `*_at` en **UTC** (`timestamptz`). Comentarios de cada campo **en español**. Cada colección NoSQL se alcanza desde el modelo relacional mediante un **puente por id compartido**, documentado dentro de la sección de su propio esquema. Este documento (diagramas ER y prosa) sigue en minúscula; los **scripts ejecutables** de [docs/deliverables/db](db/README.md) escriben el mismo `snake_case` en **mayúsculas** (`SCREAMING_SNAKE_CASE`) como estilo visual — PostgreSQL pliega igual a minúsculas los identificadores sin comillas, así que el objeto real en el catálogo no cambia.
+> **Convenciones:** nombres en **inglés**, `snake_case`; PK `id` (salvo clave natural); FK `<entidad>_id`; booleanos `is_*`; fechas `*_at` en **UTC** (`timestamptz`). Comentarios de cada campo **en español**. Cada colección NoSQL se alcanza desde el modelo relacional mediante un **puente por id compartido**, documentado dentro de la sección de su propio esquema. Este documento (diagramas ER y prosa) sigue en minúscula; los **scripts ejecutables** de [docs/deliverables/db](scripts/README.md) escriben el mismo `snake_case` en **mayúsculas** (`SCREAMING_SNAKE_CASE`) como estilo visual — PostgreSQL pliega igual a minúsculas los identificadores sin comillas, así que el objeto real en el catálogo no cambia.
 >
-> **Una sección por esquema ([ADR-0001](../architecture/adr/0001-repo-and-service-structure.md)):** cada sección lettered de este documento es **un solo esquema/servicio**, con sus tablas PostgreSQL, su base MongoDB (si tiene) y los puentes entre ambas. En PostgreSQL es **una sola instancia con 4 esquemas** (no bases separadas): **`auth`** (sección A), **`core`** (sección B), **`schedule`** (sección C) y **`notify`** (sección D). En MongoDB hay una base por servicio: `core`, `schedule` y `notify` (`auth` no tiene). Ningún esquema/base tiene FK ni permisos sobre el de otro — ver [docs/deliverables/db](db/README.md). Un campo que apunta a otro servicio (p. ej. `created_by` hacia un usuario) es un **`uuid` de solo referencia, sin FK real** — la integridad no la garantiza la base de datos sino el servicio que la escribe.
+> **Una sección por esquema ([ADR-0001](../architecture/adr/0001-repo-and-service-structure.md)):** cada sección lettered de este documento es **un solo esquema/servicio**, con sus tablas PostgreSQL, su base MongoDB (si tiene) y los puentes entre ambas. En PostgreSQL es **una sola instancia con 4 esquemas** (no bases separadas): **`auth`** (sección A), **`core`** (sección B), **`schedule`** (sección C) y **`notify`** (sección D). En MongoDB hay una base por servicio: `core`, `schedule` y `notify` (`auth` no tiene). Ningún esquema/base tiene FK ni permisos sobre el de otro — ver [docs/deliverables/db](scripts/README.md). Un campo que apunta a otro servicio (p. ej. `created_by` hacia un usuario) es un **`uuid` de solo referencia, sin FK real** — la integridad no la garantiza la base de datos sino el servicio que la escribe.
 
 ## Tabla de contenido
 
@@ -278,7 +278,7 @@ VIEW_MENU                        ver el menú (todo usuario con cuenta)
 
 > **Quién es:** el rol **vital de cada system**: tiene **todos los permisos de ese system, presentes y futuros** (incluidas las reglas `RULE_*`). Es un rol más del modelo, sin banderas especiales en `app_user`, y **no interviene en los demás systems** que usen el modelo: el `SUPER_ADMIN` de `ifoundit` no tiene ningún poder en otro system.
 >
-> **Cómo nace:** un system nuevo se agrega **con un script SQL**, no desde la aplicación: [`register-system.sql`](deliverables/db/auth/register-system.sql) (se corre con `auth_migrator`) registra el system y **crea por defecto su `SUPER_ADMIN`**. Es idempotente, y la semilla por defecto ([`seed-default.sql`](deliverables/db/auth/seed-default.sql)) lo usa para `ifoundit`, donde además deja consignados `ADMIN`, `USER` y el catálogo de permisos. El mismo script crea la **primera cuenta `SUPER_ADMIN`** (persona + cuenta + `user_system_role`) a partir de variables de entorno que traen **solo el hash** de la clave, nunca la clave en claro, y la deja con `must_change_password = true` (AUTH-1, AUTH-20); si ya existe una cuenta con ese email, la reutiliza sin tocar su contraseña. Procedimiento en el [README de db](db/README.md).
+> **Cómo nace:** un system nuevo se agrega **con un script SQL**, no desde la aplicación: [`register-system.sql`](deliverables/db/auth/register-system.sql) (se corre con `auth_migrator`) registra el system y **crea por defecto su `SUPER_ADMIN`**. Es idempotente, y la semilla por defecto ([`seed-default.sql`](deliverables/db/auth/seed-default.sql)) lo usa para `ifoundit`, donde además deja consignados `ADMIN`, `USER` y el catálogo de permisos. El mismo script crea la **primera cuenta `SUPER_ADMIN`** (persona + cuenta + `user_system_role`) a partir de variables de entorno que traen **solo el hash** de la clave, nunca la clave en claro, y la deja con `must_change_password = true` (AUTH-1, AUTH-20); si ya existe una cuenta con ese email, la reutiliza sin tocar su contraseña. Procedimiento en el [README de db](scripts/README.md).
 >
 > **Tres triggers lo mantienen** (los únicos de `auth`; los timestamps no usan triggers, los escribe el backend):
 > 1. **Todo permiso nuevo** (o regla `RULE_*` nueva) se concede solo al `SUPER_ADMIN` de su system. Un `ADMIN` o un `USER` no lo reciben: sus permisos se asignan a mano.
@@ -460,7 +460,12 @@ erDiagram
         bigint id PK "Identificador"
         int job_id FK "Job que la disparó (mismo esquema, FK real)"
         string system "Código de auth.system, sin FK (denormalizado, lookup rápido)"
-        uuid transaction_id UK "Trazabilidad end-to-end; _id del resultado en la Mongo de schedule"
+        uuid transaction_id UK "Trazabilidad end-to-end (una por unidad de trabajo, p.ej. una URL); _id del resultado en la Mongo de schedule"
+        uuid run_id "Agrupa las ejecuciones de un mismo disparo del job (ADR-0004)"
+        smallint seq "Orden dentro del disparo; UNIQUE (run_id, seq); a lo más una en running por run_id"
+        jsonb item "Unidad de trabajo opaca para schedule; se reenvía tal cual al reintentar"
+        smallint attempt "Intento en curso (sube al reinyectar tras un error)"
+        timestamptz next_attempt_at "Cuándo toca enviar o reintentar"
         string status "Estado del TRABAJO: queued | running | completed | failed (CHECK)"
         datetime started_at "Inicio (UTC)"
         datetime finished_at "Fin (UTC)"
@@ -489,7 +494,7 @@ erDiagram
 
 | Colección | Contenido (documento) | Puente | Retención | Requerimiento |
 |-----------|------------------------|--------|-----------|---------------|
-| **job_execution_result** | Resultado/detalle de **una corrida**, forma libre según `execution_type` (filas afectadas de un `db_query`, stdout de un `script`, resultado crudo de un `scrape`…) | `_id` = `job_execution.transaction_id` (UUID binario) | **TTL 90 días** | SCR-14 · SCR-20 |
+| **job_execution_result** | Resultado/detalle de **una ejecución (una unidad de trabajo, p.ej. una URL)**, forma libre según `execution_type` (filas afectadas de un `db_query`, stdout de un `script`, resultado crudo de un `scrape`…) | `_id` = `job_execution.transaction_id` (UUID binario) | **TTL 90 días** | SCR-14 · SCR-20 |
 
 ---
 

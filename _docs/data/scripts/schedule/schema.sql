@@ -101,6 +101,14 @@ CREATE TABLE JOB_EXECUTION (
     JOB_ID            int NOT NULL REFERENCES JOB(ID), -- FK real, misma esquema
     SYSTEM            text NOT NULL,             -- código de auth.system, sin FK (denormalizado, lookup rápido)
     TRANSACTION_ID    uuid NOT NULL UNIQUE,      -- trazabilidad end-to-end; _id del resultado en Mongo
+    -- ADR-0004 (2026-11-12): una ejecución = UNA unidad de trabajo (p.ej. una URL).
+    -- Un disparo del job crea N ejecuciones que comparten RUN_ID y se procesan
+    -- de una en una, en orden de SEQ.
+    RUN_ID            uuid NOT NULL,             -- agrupa las ejecuciones de un mismo disparo del job (id de correlación en los logs)
+    SEQ               smallint NOT NULL CHECK (SEQ >= 1), -- orden dentro del disparo
+    ITEM              jsonb NOT NULL DEFAULT '{}'::jsonb, -- la unidad de trabajo, opaca para schedule (p.ej. {"alert_url_id": 7, "url": "..."}); se reenvía tal cual al reintentar
+    ATTEMPT           smallint NOT NULL DEFAULT 1 CHECK (ATTEMPT >= 1), -- intento en curso: sube al reinyectar tras un `error`
+    NEXT_ATTEMPT_AT   timestamptz,               -- cuándo toca enviar o reintentar; NULL si ya no hay nada pendiente
     STATUS            text NOT NULL DEFAULT 'queued'
                           CHECK (STATUS IN ('queued', 'running', 'completed', 'failed')),
     STARTED_AT        timestamptz,
@@ -111,8 +119,13 @@ CREATE TABLE JOB_EXECUTION (
     CALLBACK_ATTEMPTS smallint NOT NULL DEFAULT 0, -- total de intentos hasta resolverse (éxito o agotado)
     CALLBACK_ERROR    varchar(500),               -- motivo del fallo final — solo si CALLBACK_STATUS='failed'; nunca se expone al usuario
     CREATED_AT        timestamptz NOT NULL DEFAULT now(), -- momento de encolado
-    UPDATED_AT        timestamptz NOT NULL DEFAULT now()
+    UPDATED_AT        timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT UQ_JOB_EXECUTION_RUN_SEQ UNIQUE (RUN_ID, SEQ)
 );
+-- Procesamiento SECUENCIAL: a lo más una ejecución en curso por disparo.
+CREATE UNIQUE INDEX UX_JOB_EXECUTION_ONE_RUNNING_PER_RUN ON JOB_EXECUTION(RUN_ID) WHERE STATUS = 'running';
+-- El worker toma lo vencido (envíos y reintentos por `error`) con FOR UPDATE SKIP LOCKED.
+CREATE INDEX IX_JOB_EXECUTION_DUE ON JOB_EXECUTION(NEXT_ATTEMPT_AT) WHERE STATUS = 'queued';
 CREATE INDEX IX_JOB_EXECUTION_JOB_STARTED ON JOB_EXECUTION(JOB_ID, STARTED_AT);
 CREATE INDEX IX_JOB_EXECUTION_STATUS_ACTIVE ON JOB_EXECUTION(STATUS) WHERE STATUS IN ('queued', 'running');
 CREATE INDEX IX_JOB_EXECUTION_SYSTEM ON JOB_EXECUTION(SYSTEM);

@@ -8,7 +8,7 @@
 **Tipo:** *Regla* si el requerimiento es una restricción o política (un tope, un valor de configuración, un criterio de descarte) y no una función con pantalla, endpoint o proceso propio; enlaza a su regla en la [sección 6 del entregable](../00-context/deliverable01.md#6--regla-de-negocio-principal). *Funcionalidad* en los demás.
 
 **Capa** (emoji junto al nombre del requerimiento): 🖥️ backend · 🎨 frontend · 🎨🖥️ ambos, según el *Track* del documento original; en los requerimientos nuevos (`EJ-`) la asigno yo.
-**API:** 🔌 marca los requerimientos que se resuelven con un endpoint, con su operación y ruta. Las rutas base (`/api/*`, `/api/internal/*`, `/schedule/internal/*`, `/notify/*`) y los endpoints `prices`, `job-detail`, `pull` y `jobs` vienen de la [arquitectura](../architecture/general-architecture.md); el resto del path es propuesta 🆕. En esta versión los endpoints públicos no exigen sesión (CU-01 omitido).
+**API:** 🔌 marca los requerimientos que se resuelven con un endpoint, con su operación y ruta. Las rutas base (`/api/*`, `/api/internal/*`, `/schedule/internal/*`, `/scraper/internal/*`, `/notify/*`) y los endpoints `prices`, `job-detail`, `results` y `jobs` vienen de la [arquitectura](../architecture/general-architecture.md); el resto del path es propuesta 🆕. En esta versión los endpoints públicos no exigen sesión (CU-01 omitido).
 
 ## Tabla de contenido
 
@@ -44,10 +44,11 @@
 |----|---------------|----------|
 | INF-1 | Un repositorio por pieza | Cada pieza (`core`, `schedule`, `scraper`, `notify` y el frontend) vive en su propio repositorio. |
 | INF-2 | Entorno local con docker-compose | Levanta todas las piezas y sus bases de datos en local. |
-| INF-3 | Configuración por entorno | Nada va fijo en el código: los valores que cambian y los secretos llegan por variables de entorno. |
+| INF-3 | Configuración por entorno | Nada va fijo en el código: los valores que cambian y los secretos llegan por variables de entorno. Esto incluye los reintentos, plazos, concurrencia y horas del scraping, el análisis y el barrido (lista en el [ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)). |
 | INF-4 | Migraciones de base de datos | El esquema de cada pieza se versiona y se puede recrear de forma reproducible. |
 | INF-5 | Trazabilidad de la corrida | El mismo `transactionId` cruza `core`, `schedule`, `scraper` y `notify`, y sus logs. |
 | INF-14 | Modelo de datos base | Las tablas y colecciones de la versión existen antes de construir las funciones. |
+| **EJ-4** 🆕 | Salud de cada pieza | Cada pieza (`core`, `schedule`, `scraper`, `notify`) expone `GET /<prefijo>/health` (`/api/health`, `/schedule/health`, `/scraper/health`, `/notify/health`): responde 200 si está viva y alcanza sus dependencias (su base de datos; en `notify`, también el SMTP), y 503 si no. No devuelve datos de negocio ni detalles internos. Lo consumen los healthchecks de docker-compose (INF-2). |
 | RNF-1 | Interfaces reemplazables | Los servicios van detrás de interfaces para poder cambiarlos sin tocar el resto. |
 
 ---
@@ -83,27 +84,30 @@ sequenceDiagram
 
     rect rgba(70, 130, 220, 0.14)
         Note over SC,SR: CU-04 · Capturar el precio
-        SR->>SC: pull de trabajo
         SC->>CO: pide el detalle del job (las URLs de la alerta)
-        SR->>SR: descarga cada URL (anti-SSRF) y prueba estrategias hasta obtener el precio
-        SR->>SC: reporta estado y resultado
+        SC->>SR: envía una URL con su callback (asíncrono, una tras otra)
+        SR-->>SC: recibido
+        SR->>SR: descarga la URL (anti-SSRF) y prueba estrategias hasta obtener el precio
+        SR->>SC: ejecuta el callback con ok, no_price o error
+        SC->>SC: si es error, reinyecta la URL (hasta 3 veces)
     end
 
     rect rgba(60, 170, 120, 0.14)
         Note over SC,PG: CU-05 · Procesar y almacenar
-        SC->>CO: callback con los precios (si falla, su outbox reintenta)
-        CO->>CO: normaliza y valida
+        SC->>CO: callback con el resultado de esa URL (si falla, su outbox reintenta)
+        CO->>CO: sanea, normaliza y valida
         CO->>PG: guarda el snapshot solo si cambia
     end
 
     rect rgba(70, 130, 220, 0.14)
-        Note over CO,PG: CU-06 · Analizar el mejor precio
-        CO->>PG: actualiza el mejor precio y marca anomalías
+        Note over CO,PG: CU-06 · Analizar el mejor precio (otro proceso, a otra hora)
+        SC->>CO: lanza el análisis (job agendado, o desde la interfaz)
+        CO->>PG: calcula el mejor precio, lo compara con el anterior y marca anomalías
     end
 
     rect rgba(150, 90, 200, 0.14)
         Note over CO,U: CU-10 · Notificar al correo registrado
-        CO->>NT: llamada REST que crea la notificación (destino = correo de la suscripción)
+        CO->>NT: si el mejor precio bajó, llamada REST que crea la notificación (destino = correo de la suscripción)
         NT->>NT: crea la notificación y arma el email con su enlace de baja
         NT-->>U: envía el email (si falla, su outbox reintenta)
     end
@@ -191,21 +195,21 @@ Restricciones ya conocidas para cuando se active (no se implementan ahora):
 | SCH-11 | 🖥️ `schedule` solo interno | Mantiene `schedule` accesible solo para otros servicios. | ✅ | Funcionalidad | — (regla: sin ruta pública) | Sin ruta pública |
 | SCH-12 | 🖥️ API de jobs | Permite a `core` crear y consultar jobs en `schedule`. | 🔧 | Funcionalidad | 🔌 `POST /schedule/internal/jobs` · `GET /schedule/internal/jobs/{job_id}` | Solo **crear y consultar**; actualizar y eliminar quedan fuera (no hay pausar, ALE-9) |
 | SCH-13 | 🖥️ Acción del job | Define qué hace un job al dispararse (llamar a un endpoint). | 🔧 | Funcionalidad | — | Solo `api_call`; `python_script` y `topic_message` fuera |
-| SCH-14 | 🖥️ Callback del job | Indica a `schedule` a qué URL entregar el resultado. | ✅ | Funcionalidad | — (`schedule` llama a `POST /api/internal/prices`) | `core` indica la URL a la que `schedule` entrega el precio |
+| SCH-14 | 🖥️ Callback del job | Indica a `schedule` a qué URL entregar el resultado. | ✅ | Funcionalidad | — (`schedule` llama a `POST /api/internal/prices`) | `core` indica la URL a la que `schedule` entrega el precio; el destino debe estar en la lista blanca de backends registrados. El callback del scraper es otro, definido por `schedule` (SCR-20) |
 
 **Criterios de aceptación** 🆕
 - Al crear la alerta existe **un job por alerta** con su callback configurado; si falla su creación, la alerta queda detectable como «sin schedule» (según D7).
 - La captura corre sola, sin botón, dentro de las ventanas configuradas.
 - Ninguna alerta corre más de 2 veces al día.
 - Las pruebas controlan el reloj o la ventana (inyectados) en vez de esperar al horario real.
-- El callback de un job solo puede apuntar a `core`.
+- El callback de un job solo puede apuntar a un backend **registrado en la lista blanca** (configuración de entorno, no el cuerpo de la petición); un destino que no esté en la lista se rechaza con 400. En el ejercicio la lista tiene `core` (callback de `schedule`) y `schedule` (callback del scraper).
 - `schedule` no tiene ninguna ruta pública.
 
 ---
 
 ### CU-04 · Capturar el precio de un sitio
 
-**Descripción.** El scraper toma el trabajo de `schedule` y, por cada URL de la alerta, la valida de nuevo contra SSRF, la descarga y aplica una **cascada de estrategias de extracción**: prueba la primera y, si no aplica a ese sitio, pasa a la siguiente, hasta obtener un precio válido. Cada estrategia es una adaptación de una forma de hacer scraping. Entrega el resultado a `schedule`, nunca a `core`.
+**Descripción.** `schedule` envía al scraper **una URL a la vez** con un callback configurable y espera su resultado antes de enviar la siguiente. El scraper responde «recibido» y, para esa URL, la valida de nuevo contra SSRF, la descarga y aplica una **cascada de estrategias de extracción**: prueba la primera y, si no aplica a ese sitio, pasa a la siguiente, hasta obtener un precio válido. Cada estrategia es una adaptación de una forma de hacer scraping. Al terminar ejecuta el callback con uno de tres estados: `ok`, `no_price` (definitivo) o `error` (se reintenta). El callback, en el ejercicio, apunta a `schedule`, nunca a `core`.
 
 ```mermaid
 graph LR
@@ -213,8 +217,7 @@ graph LR
     E1 -->|no aplica| E2[2 · Microdata / RDFa + regex<br/>SCR-9]
     E2 -->|no aplica| E3[3 · Playwright<br/>SCR-4]
     E3 -->|no aplica| E4[4 · Interceptar XHR<br/>SCR-10]
-    E4 -->|no aplica| RT[Reintentos · máx 3<br/>SCR-8]
-    RT -->|agotados| X[Sin precio hoy + log]
+    E4 -->|no aplica| X[no_price · sin precio hoy + log]
     E1 -->|precio válido| OK[Resultado + estrategia ganadora]
     E2 -->|precio válido| OK
     E3 -->|precio válido| OK
@@ -223,16 +226,16 @@ graph LR
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
-| SCR-1 | 🖥️ Cola de trabajos y workers | Encola los trabajos de scraping y los reparte entre workers. | ✅ | Funcionalidad | — (el worker usa `POST /schedule/internal/pull`) | Redis sigue «a confirmar» (B2) |
+| SCR-1 | 🖥️ Cola de trabajos y workers | Envía las URLs al scraper, una a la vez. | ✅ | Funcionalidad | 🔌 `POST /scraper/internal/jobs` | `schedule` envía cada trabajo al scraper por HTTP asíncrono, sin cola ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)). Redis queda como evolución futura (B2) |
 | SCR-2 | 🖥️ Descarga HTTP | Descarga la página de la URL con una petición HTTP. | ✅ | Funcionalidad | — | Base de las estrategias 1 y 2 |
 | SCR-3 | 🖥️ Extractor genérico | Lee el precio de los datos estructurados de la página (JSON-LD, `og:price`). | ✅ | Funcionalidad | — | **Estrategia 1** |
 | SCR-9 | 🖥️ Extracción por microdata y regex | Busca el precio en microdata o con una expresión regular. | ✅ | Funcionalidad | — | **Estrategia 2**. Las regex llevan timeout (anti-ReDoS) |
 | SCR-4 | 🖥️ Extracción con navegador | Abre la página en un navegador cuando el precio depende de JavaScript. | ✅ | Funcionalidad | — | **Estrategia 3**. Solo cuando HTTP no basta |
 | SCR-10 | 🖥️ Interceptar la llamada interna | Captura la respuesta interna (XHR) con la que la página carga el precio. | ✅ | Funcionalidad | — | **Estrategia 4** |
 | **EJ-2** 🆕 | 🖥️ **Cascada de estrategias de extracción** | Prueba las estrategias en orden hasta obtener un precio. | 🆕 | Funcionalidad | — | Detalle abajo |
-| SCR-8 | 🖥️ Reintentos controlados | Reintenta hasta 3 veces un sitio que falló. | 🔧 | Regla [R4](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | Máx. 3 (parametrizable) con espera de 10–15 min, **tras agotar las 4 estrategias**; re-encola solo el sitio fallido. Al agotarse: «sin precio hoy» + log con `transactionId`. **No hay email al admin** (SCR-13 fuera) |
+| SCR-8 | 🖥️ Reintentos controlados | Reintenta hasta 3 veces un sitio que falló. | 🔧 | Regla [R4](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | **Los administra `schedule`, no el scraper** ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)). El scraper hace una sola pasada por URL y devuelve `ok`, `no_price` o `error`. **Solo `error`** (sin respuesta fiable: *timeout*, red, 5xx, excepción) se reintenta: `schedule` reinyecta esa URL hasta 3 veces (parametrizable) con espera de 10–15 min. `no_price` (la página respondió bien y las 4 estrategias no hallaron precio) es **definitivo** y no se reintenta. Al agotarse un `error`: se entrega `error` a `core` + log con `transactionId` y la ejecución queda `failed`. **No hay email al admin por adapter roto** (SCR-13 fuera); los errores agotados se avisan en el **barrido diario** (EJ-6) |
 | SCR-18 | 🖥️ Protección anti-SSRF | Vuelve a validar la URL en cada descarga y en cada redirección. | ✅ | Regla [R3](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (el fetcher valida en cada descarga) | Es la **autoridad**. También en el navegador de Playwright: se bloquea toda request a destinos no permitidos |
-| SCR-20 | 🖥️ El scraper entrega a schedule | Entrega el resultado a `schedule`, nunca directamente a `core`. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/pull` · `GET /api/internal/job-detail` | Entrega el resultado a `schedule`, con un precio por URL |
+| SCR-20 | 🖥️ El scraper entrega a schedule | Entrega el resultado por un callback; en el ejercicio apunta a `schedule`, nunca directamente a `core`. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/results` · `GET /api/internal/job-detail` | El scraper recibe el trabajo y un callback configurable ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)); al terminar entrega el resultado de **esa URL** (`ok`, `no_price` o `error`). El destino del callback es una lista blanca (en el ejercicio, solo `schedule`) |
 
 **EJ-2 · Cascada de estrategias** 🆕
 
@@ -246,7 +249,9 @@ graph LR
 
 **Criterios de aceptación** 🆕
 - Con un fixture por estrategia gana la esperada: JSON-LD → la 1; microdata o regex sin JSON-LD → la 2; precio que solo aparece al ejecutar JavaScript → la 3; precio que llega por una API interna → la 4.
-- Con un fixture donde las cuatro fallan: hasta 3 reintentos, luego «sin precio hoy» y ningún snapshot.
+- Con un fixture donde las cuatro fallan y la página responde bien: el scraper devuelve `no_price` sin esperar ni reintentar, «sin precio hoy» y ningún snapshot.
+- Con un fixture que no responde (*timeout* o 5xx): el scraper devuelve `error`; `schedule` reinyecta esa URL hasta 3 veces, y agotadas queda `failed` sin snapshot.
+- Las URLs de una alerta se envían una tras otra, nunca en paralelo.
 - La cascada se detiene en la primera que acierta (Playwright no se lanza si alcanzó la 1).
 - El resultado trae la estrategia ganadora.
 - Una URL a una IP interna, o que redirige a una, se rechaza en el fetcher aunque haya pasado la validación del alta; el navegador de Playwright tampoco puede llegar a destinos no permitidos.
@@ -259,7 +264,7 @@ graph LR
 
 ### CU-05 · Procesar y almacenar
 
-**Descripción.** `schedule` entrega los precios a `core` por el callback; `core` los normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL solo cuando el precio o el stock cambian.
+**Descripción.** `schedule` entrega a `core`, por el callback y **de inmediato**, el resultado de cada URL (`ok` o `no_price`, y `error` si se agotaron los reintentos). `core` los sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL solo cuando el precio o el stock cambian. Aquí **no se calcula el mejor precio ni se avisa**: eso es el análisis (CU-06), otro proceso a otra hora.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
@@ -274,25 +279,32 @@ graph LR
 - Un precio ≤ 0 o una página de error no se guarda.
 - Una moneda distinta de COP se descarta y no se guarda.
 - El precio guardado es numérico, en COP, con el título saneado.
-- El `transactionId` es el mismo en los logs de todos los servicios.
+- El `transactionId` (uno por URL) es el mismo en los logs de todos los servicios.
+- El resultado de una URL se guarda al llegar, sin esperar a las demás de la alerta.
+- Un resultado `no_price` o `error` no crea snapshot y queda registrado con su `transactionId`.
+- Guardar un snapshot no recalcula el mejor precio ni llama a `notify`.
 
 ---
 
 ### CU-06 · Analizar el mejor precio
 
-**Descripción.** Con los snapshots guardados, `core` calcula el mejor precio vigente de la alerta entre todas sus URLs y marca las caídas anómalas.
+**Descripción.** Es el **análisis**, un proceso de `core` separado del scraping que corre a otra hora (por defecto 2 veces al día, cada una un tiempo después de una captura; parametrizable, puede ser 1 y 1). Se lanza desde la interfaz de usuario o por un job agendado en `schedule`. Con los snapshots guardados, calcula el mejor precio vigente de la alerta entre todas sus URLs, marca las caídas anómalas y decide si hay que avisar. La primera vez no hay contra qué comparar, así que no avisa.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
-| PRO-6 | 🖥️ Motor de mejor precio | Calcula el mejor precio vigente entre todas las URLs de la alerta. | ✅ | Funcionalidad | — (proceso interno de `core`) | Calcula y guarda el mejor precio vigente entre **todas las URLs** de la alerta. Cuando el mejor precio baja, **pide el aviso a `notify`** (CU-10) |
+| PRO-6 | 🖥️ Motor de mejor precio | Calcula el mejor precio vigente entre todas las URLs de la alerta. | ✅ | Funcionalidad | 🔌 `POST /api/internal/analysis` · `POST /api/analysis` (🆕, ver EJ-5) | Calcula y guarda el mejor precio vigente entre **todas las URLs** de la alerta. Cuando el mejor precio **baja** respecto del anterior, **pide el aviso a `notify`** (CU-10) |
+| **EJ-5** 🆕 | 🖥️🎨 **Lanzar el análisis** | Permite correr el análisis a mano o agendado. | 🆕 | Funcionalidad | 🔌 `POST /api/analysis` (interfaz → `core`) · `POST /api/internal/analysis` (`schedule` → `core`) | Mismo proceso con dos entradas: un botón de la interfaz y un job agendado en `schedule` (SCH-13 `api_call`). Las horas del análisis son parámetros de configuración |
 | PRO-5 | 🖥️ Validador de precio (marca) | Marca como anómala una caída sospechosa de precio. | ✅ | Regla [R9](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (proceso interno de `core`) | Una caída anómala **se marca** en el dato; no se descarta |
 
 **Criterios de aceptación** 🆕
-- El mejor precio de la alerta es el mínimo entre los últimos precios vigentes de sus URLs activas y con stock, y se actualiza en la misma transacción que el snapshot.
+- El mejor precio de la alerta es el mínimo entre los últimos precios vigentes de sus URLs activas y con stock, y lo calcula el análisis (no el guardado del snapshot).
+- Si no había un mejor precio anterior, el análisis solo lo guarda y **no avisa**.
+- El análisis se puede lanzar desde la interfaz y desde un job agendado, con el mismo resultado.
+- Un análisis genera a lo más un aviso por alerta, con un `transaction_id` por alerta analizada.
 - Una caída sospechosa se guarda con la marca de anomalía.
 - Una URL sin stock no cuenta para el mejor precio.
 - Con una sola URL, el mejor precio es su precio vigente.
-- Cuando el mejor precio **baja**, el motor pide el aviso a `notify` (CU-10) **después** de confirmar la transacción del snapshot y el mejor precio.
+- Cuando el mejor precio **baja**, el motor pide el aviso a `notify` (CU-10) **después** de confirmar la transacción que actualiza el mejor precio.
 
 ---
 
@@ -333,14 +345,15 @@ graph LR
 
 ### CU-10 · Notificar al correo registrado
 
-**Descripción.** Cuando el mejor precio de una alerta baja, `core` se la entrega a `notify` mediante una **llamada REST**, y `notify` arma el email y lo envía al correo escrito al crear la alerta. Cada email trae un enlace para darse de baja.
+**Descripción.** Cuando el análisis detecta que el mejor precio de una alerta bajó, `core` se la entrega a `notify` mediante una **llamada REST**, y `notify` arma el email y lo envía al correo escrito al crear la alerta. Cada email trae un enlace para darse de baja.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
 | NOT-1 | 🖥️ Envío de email | Envía el email por el servidor SMTP. | 🔧 | Funcionalidad | — (worker de `notify`) | En desarrollo y pruebas, a un SMTP de prueba desechable y local; el SMTP real solo con tu aprobación, con credenciales por entorno |
 | NOT-2 | 🖥️ Plantilla de aviso | Da formato al email de aviso (producto, precio, enlaces). | ✅ | Funcionalidad | — | Imágenes, links y precio; incluye el enlace de baja |
-| NOT-3 | 🖥️ Aviso al bajar el mejor precio | Pide el aviso cuando baja el mejor precio. | 🔧 | Funcionalidad | 🔌 `POST /notify/notifications` | `core` llama a `notify` **por REST** (DEC-10) con `destination` = correo de la suscripción. Se notifica cuando el mejor precio **baja** respecto del vigente anterior; la primera captura no avisa (DEC-6). Contrato en la sección siguiente |
+| NOT-3 | 🖥️ Aviso al bajar el mejor precio | Pide el aviso cuando baja el mejor precio. | 🔧 | Funcionalidad | 🔌 `POST /notify/notifications` | `core` llama a `notify` **por REST** (DEC-10) con `destination` = correo de la suscripción. Se notifica cuando el mejor precio **baja** respecto del vigente anterior; la primera vez no avisa (DEC-6). El que decide es el análisis (CU-06). Contrato en la sección siguiente. `schedule` usa este mismo endpoint para avisar al administrador cuando el scraper no responde ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)) |
 | **EJ-3** 🆕 | 🖥️ **Semillas de `notify`** | Deja listos el canal de email y la plantilla del aviso. | 🆕 | Funcionalidad | — | `channel` = `email` y la plantilla del aviso (NOT-2) deben existir antes de enviar; se siembran con la migración de `notify` |
+| **EJ-6** 🆕 | 🖥️ **Barrido diario de errores** | Avisa al administrador, una vez al día, de lo que falló. | 🆕 | Funcionalidad | 🔌 `POST /notify/notifications` (`schedule` → `notify`) | Tarea agendada interna de `schedule` que corre todos los días: reúne las ejecuciones `failed` del día y pide **un solo correo** agrupado por alerta, con la plantilla `admin_alert` ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)). La dirección del administrador viene de una variable de entorno. Un día sin errores no envía correo |
 | NOT-5 | 🖥️ Advertencia de caída anómala | Añade «valida manualmente» al email si la caída es anómala. | ✅ | Funcionalidad | — | Badge y texto «valida manualmente» |
 | SUB-3 | 🎨🖥️ Baja por enlace | Incluye en cada email el enlace para darse de baja. | ✅ | Funcionalidad | — (el enlace apunta a la página de baja, CU-11) | Pasa a ser necesaria: el correo lo escribe cualquiera y no se verifica su dueño. En la base solo vive el hash del token (cómo se arma el enlace: DEC-13) |
 | SUB-1 | 🖥️ Suscripción al correo | Solo se avisa a las suscripciones activas. | ✅ | Funcionalidad | — | Solo se avisa a las `active`; una `unsubscribed` no recibe más |
@@ -349,7 +362,7 @@ graph LR
 
 **Criterios de aceptación** 🆕
 - Cuando el mejor precio baja, se crea una notificación por cada suscripción `active` de la alerta, con su correo como destino.
-- Un precio igual o más alto no avisa; la primera captura tampoco.
+- Un precio igual o más alto no avisa; la primera vez (sin mejor precio anterior) tampoco.
 - Una caída anómala llega con la advertencia «valida manualmente».
 - El email trae un enlace de baja; al usarlo la suscripción pasa a `unsubscribed` y no recibe más. Un token inválido o ya usado recibe una respuesta uniforme.
 - Si el envío falla, se reintenta (outbox de `notify`) y **no** bloquea ni revierte el análisis ni el snapshot.
@@ -408,7 +421,7 @@ graph LR
 | Supervisión (CU-09) | SCH-4..9, FE-6, SCR-14, SCR-16, SCR-17 | Se omite la administración |
 | Alertas, resto | ALE-3, ALE-6, ALE-7, ALE-9 | Etiquetas, wizard, preview y pausar |
 | Notificación, resto | NOT-4, PRO-3, PRO-4 | Log en NoSQL; sitios solo en COP, sin conversión |
-| Scraping, resto | SCR-5, SCR-6, SCR-11, SCR-12, SCR-13, SCR-15, SCR-19 | robots.txt, límite de tasa, adapters por dominio y su constructor, email al admin, HTML crudo. **SCR-5 y SCR-6 son obligatorios antes de scrapear un sitio real** |
+| Scraping, resto | SCR-5, SCR-6, SCR-11, SCR-12, SCR-13, SCR-15, SCR-19 | robots.txt, límite de tasa, adapters por dominio y su constructor, email al admin por adapter roto, HTML crudo. **SCR-5 y SCR-6 son obligatorios antes de scrapear un sitio real** |
 | Frontend extra | FE-5, FE-7, FE-8, FE-9 | Usuarios, i18n, PWA, roles |
 | Infraestructura de despliegue | INF-7..13, INF-15 | La versión corre solo en local |
 | Búsqueda por palabra clave con LLM | (ALE-2, «modo tema») | Solo queda el switch preparado (EJ-1) |
@@ -428,7 +441,7 @@ graph LR
 | DEC-3 | Switch de modo | Se agrega EJ-1; la búsqueda por palabra clave con LLM queda para otro momento |
 | DEC-4 | ¿El correo solo se registra o también se notifica? | **También se notifica**: entra CU-10 |
 | DEC-5 | `title` y `product_name` en la base | **Siguen obligatorios** (`NOT NULL`). El sistema los completa con el dominio de la primera URL |
-| DEC-6 | ¿Cuándo se notifica? | Cuando el mejor precio **baja** respecto del vigente anterior; la primera captura no avisa |
+| DEC-6 | ¿Cuándo se notifica? | Cuando el análisis ve que el mejor precio **bajó** respecto del vigente anterior; la primera vez no hay contra qué comparar y no avisa. El análisis es quien decide, no el guardado del snapshot |
 | DEC-7 | ¿Qué sitios? | **No se fijan sitios.** Se usa la cascada de estrategias (EJ-2): cada sitio se resuelve con la primera estrategia que aplique. Fixtures: uno por estrategia y uno que falle todas |
 | DEC-8 | Frecuencia del agendamiento | Cada alerta corre **2 veces al día** (SCH-1, SCH-6, SCH-7). La corrida inicial al crear la alerta cuenta dentro de ese tope 🆕 |
 | DEC-9 | Selector del modo | **Visible**, con «Palabra clave» deshabilitado; la disponibilidad la define `ALERT_CREATION_MODES` |
@@ -436,9 +449,12 @@ graph LR
 | DEC-12 | Fallo de la llamada REST (resto de D12) | **Cada pieza reintenta lo suyo con su outbox:** `notify` reintenta el envío del email (`notification_outbox`); `core` **no** crea outbox. `core` reintenta la llamada de forma acotada, **siempre con el mismo `transaction_id`**. **Limitación declarada:** si se agota, el aviso se pierde y queda en el log con ese `transactionId` |
 | DEC-13 | Enlace de baja con solo el hash guardado | **Token = HMAC(secreto del entorno, id de la suscripción)**; la base guarda su SHA-256. El requerimiento que cubre la baja es SUB-3 (CU-11) |
 | DEC-16 | Semántica del «mejor precio» | El **mínimo vigente** entre los últimos precios de las URLs de la alerta que tienen stock. Se avisa cuando baja respecto del anterior; si sube y vuelve a bajar, avisa otra vez |
-| DEC-19 | Forma del resultado del scrape en `job_execution_result` | Un documento por corrida con, por URL: `alert_url_id`, estado (`ok` o `no_price`), estrategia ganadora, `price_raw`, moneda, stock, título, metadatos y error |
+| DEC-19 | Forma del resultado del scrape en `job_execution_result` | Un documento por ejecución (una URL): `alert_url_id`, estado (`ok`, `no_price` o `error`), estrategia ganadora, `price_raw`, moneda, stock, título, metadatos y error |
 | DEC-22 | ¿El stock cuenta para el mejor precio? | **Una URL sin stock no cuenta**: ese precio no se puede comprar |
 | DEC-23 | Moneda distinta de COP | **Se descarta** y no se guarda: la versión solo trabaja en COP |
+| DEC-24 | Unidad de trabajo del scraping | **Una URL = una ejecución** con su `transaction_id`. `schedule` las envía una tras otra y cada resultado se entrega a `core` de inmediato. Tres estados: `ok`, `no_price` (definitivo) y `error` (único que se reintenta, hasta 3 veces con 10–15 min). Cambia R4 y SCR-8 respecto del original |
+| DEC-25 | Scraping y análisis | Son dos procesos que corren a horas distintas y no se solapan. Por defecto 2 capturas y 2 análisis al día, parametrizables (puede ser 1 y 1). El análisis se lanza desde la interfaz o por un job agendado |
+| DEC-26 | Aviso de errores al administrador | **Barrido diario** agendado en `schedule` que pide un solo correo a `notify`, en vez de un correo por ejecución fallida |
 
 **Abiertas**
 

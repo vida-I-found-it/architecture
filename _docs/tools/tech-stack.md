@@ -10,7 +10,6 @@
   - [Frontend (PWA)](#frontend-pwa)
   - [Calidad, seguridad y observabilidad](#calidad-seguridad-y-observabilidad)
   - [IA (Fase 2)](#ia-fase-2)
-- [Decisión clave: ¿HTTP simple o navegador headless?](#decisión-clave-http-simple-o-navegador-headless)
 - [Organización de repos](#organización-de-repos)
 - [Estructura interna (por repo)](#estructura-interna-por-repo)
 - [Interfaces reemplazables (contratos)](#interfaces-reemplazables-contratos)
@@ -42,7 +41,7 @@
 | Datos estructurados | **extruct** / **selectolax** / **BeautifulSoup** | Extrae JSON-LD / schema.org / microdata / `og:price` sin scraper por sitio. |
 | robots.txt + rate limit | **Protego** + **aiolimiter** | Respeta `robots.txt`/`Crawl-delay` y controla la tasa por dominio (SCR-5/6). |
 | Parseo precio/moneda | **price-parser** + **Babel** | Extrae precio numérico y normaliza moneda por locale (PRO-1, multi-moneda). |
-| Cola / workers | **Redis** + **Arq** (async) *(alt. RQ / Celery)* | Scraping en background escalonado; reintentos. **A confirmar:** con el scraper haciendo *pull* sobre `schedule`, puede que ya no haga falta Redis — [pendientes](../00-context/pending.md) B2. |
+| Cola / workers | **Redis** + **Arq** (async) *(alt. RQ / Celery)* | Scraping en background escalonado; reintentos. **Decidido ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)):** `schedule` envía el trabajo al scraper por HTTP, sin cola; Redis + Arq queda como evolución futura — [pendientes](../00-context/pending.md) B2. |
 | Scheduler | **APScheduler** (repo `schedule`) | Encola corridas en ventanas horarias (04–06 / 18–20, env). |
 | ORM relacional / migraciones | **SQLAlchemy 2 + Alembic** | Modelo versionado y migrable (PostgreSQL). |
 | Acceso MongoDB | **Motor** (async) / **Beanie** (ODM) | Cliente/ODM para las colecciones documentales. |
@@ -54,7 +53,7 @@
 
 | Store | Tecnología | Uso |
 |-------|-----------|-----|
-| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), dos roles por esquema (migraciones y servicio) sin permisos sobre el de los demás — ver [docs/deliverables/db](../data/db/README.md). Guarda RBAC, usuarios, alertas, urls, `price_snapshot` (por cambio, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Correos como `text` en minúsculas con `CHECK` (sin `citext` ni extensiones compartidas entre esquemas). |
+| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), dos roles por esquema (migraciones y servicio) sin permisos sobre el de los demás — ver [docs/deliverables/db](../data/scripts/README.md). Guarda RBAC, usuarios, alertas, urls, `price_snapshot` (por cambio, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Correos como `text` en minúsculas con `CHECK` (sin `citext` ni extensiones compartidas entre esquemas). |
 | Documental | **MongoDB** (compresión **zstd**, índices **TTL**) | Solo consulta, voluminoso/efímero: `job_state`, `run_summary`, `raw_capture`, `notification_log`, `exchange_rate`. Retenciones en [modelo de datos](../data/data-model.md#retención-resumen). |
 | Cola / caché | **Redis** | Backend de la cola de trabajos. |
 
@@ -93,21 +92,6 @@
 | Descubrimiento de links (Modo B) | **Google Gemini** (+ búsqueda) |
 | Constructor de adapters asistido | **API de Claude** *(a evaluar)* |
 
-## Decisión clave: ¿HTTP simple o navegador headless?
-
-```mermaid
-graph TD
-    A[Job de un sitio] --> Z{¿Adapter guardado<br/>para el dominio?}
-    Z -->|sí| USE[Usar adapter]
-    Z -->|no| B{¿Precio en el<br/>HTML inicial?}
-    B -->|Sí| C[httpx + extruct/selectolax<br/>JSON-LD / microdata / regex]
-    B -->|No, JS| D{¿Endpoint<br/>JSON interno?}
-    D -->|Sí| E[Interceptar XHR con Playwright<br/>o llamar el JSON]
-    D -->|No| F[Playwright render]
-```
-
-**Regla:** usar lo más ligero que funcione. Playwright solo cuando el precio se inyecta por JS y no hay JSON aprovechable. (Cascada completa en [arquitectura](../architecture/general-architecture.md#la-cascada-de-scraping-el-cerebro).)
-
 ## Organización de repos
 
 **Seis repos independientes** ([ADR-0001](../architecture/adr/0001-repo-and-service-structure.md)), sin paquete compartido entre ellos — cada uno con su propio esquema de BD (o base, en el caso de Mongo) y sin FK/import cruzando esa frontera:
@@ -119,7 +103,7 @@ graph LR
     GW --> CORE[repo core]
     GW --> SCHED[repo schedule]
     GW --> NOTIFY[repo notify]
-    SCR[repo scraper] -.pull / push.-> GW
+    SCR[repo scraper] -.callback.-> GW
     AUTH & CORE & SCHED & NOTIFY & SCR & FE -->|CI| REG[(Registry de imágenes)]
 ```
 
@@ -128,9 +112,9 @@ graph LR
 | **frontend** | React PWA; consume `auth`/`core`/`schedule` vía el contrato **OpenAPI** de cada uno, todo detrás del Gateway. |
 | **auth** | FastAPI: login/JWT, RBAC, reset, gestión de usuarios, `system` (multi-proyecto). Publica su JWKS. |
 | **core** | FastAPI: alertas, suscripciones, adapters, normalizador, tasa de cambio, validador, motor de decisión. Ensambla el detalle del job a pedido de `schedule`. |
-| **schedule** | FastAPI + APScheduler: `schedule`/`run`, ventanas horarias, y la API de *pull* que consulta el scraper. |
+| **schedule** | FastAPI + APScheduler: `schedule`/`run`, ventanas horarias, envía el trabajo al scraper y recibe su resultado por un callback. |
 | **notify** | FastAPI: outbox transaccional (`notification`, movido desde `core` el 2026-09-30), plantillas (Jinja2), envío SMTP, `notification_log`. Reutilizable por otros proyectos. |
-| **scraper** | Sin FastAPI ni BD: cliente que hace *pull* sobre `schedule`, ejecuta la cascada de extracción (httpx/Playwright) y le reporta a `schedule` — nunca a `core` (SCR-20). |
+| **scraper** | Sin FastAPI ni BD: expone solo un endpoint interno por el que `schedule` le envía el trabajo, ejecuta la cascada de extracción (httpx/Playwright) y responde por un callback configurable; en el ejercicio apunta a `schedule`, no a `core` (SCR-20). |
 
 > No hay un contrato "api↔workers" como en versiones anteriores de este doc: cada repo expone su **propio OpenAPI**, y las llamadas entre servicios (`schedule`→`core`, `core`→`notify`) son HTTP normales, validadas por JWT de servicio (`aud=system`).
 
@@ -152,7 +136,7 @@ core/
 └── main.py
 
 schedule/
-├── routers/                  # admin (ver/editar/lanzar) + pull del scraper
+├── routers/                  # admin (ver/editar/lanzar) + resultados del scraper
 ├── scheduler/                # APScheduler → decide qué run crear
 ├── models/                   # SQLAlchemy — esquema `schedule`
 └── main.py
@@ -166,7 +150,8 @@ scraper/
 ├── fetch/                    # httpx + Playwright
 ├── extract/                  # cascada: adapter → JSON-LD → microdata → XHR
 ├── ssrf_guard/               # validación de URL (SCR-18)
-└── poll/                     # cliente de pull hacia `schedule`/`core`
+├── api/                      # recibe el trabajo de `schedule` (red interna)
+└── callback/                 # ejecuta el callback con el resultado
 ```
 
 ## Interfaces reemplazables (contratos)
