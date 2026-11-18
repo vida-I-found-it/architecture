@@ -209,7 +209,7 @@ Restricciones ya conocidas para cuando se active (no se implementan ahora):
 
 ### CU-04 · Capturar el precio de un sitio
 
-**Descripción.** `schedule` envía al scraper **una URL a la vez** con un callback configurable y espera su resultado antes de enviar la siguiente. El scraper responde «recibido» y, para esa URL, la valida de nuevo contra SSRF, la descarga y aplica una **cascada de estrategias de extracción**: prueba la primera y, si no aplica a ese sitio, pasa a la siguiente, hasta obtener un precio válido. Cada estrategia es una adaptación de una forma de hacer scraping. Al terminar ejecuta el callback con uno de tres estados: `ok`, `no_price` (definitivo) o `error` (se reintenta). El callback, en el ejercicio, apunta a `schedule`, nunca a `core`.
+**Descripción.** `schedule` envía al scraper **una URL a la vez** con un callback configurable y espera su resultado antes de enviar la siguiente. El scraper responde «recibido» y, para esa URL, la valida de nuevo contra SSRF, la descarga y aplica una **cascada de estrategias de extracción**: prueba la primera y, si no aplica a ese sitio, pasa a la siguiente, hasta obtener un precio válido. Cada estrategia es una adaptación de una forma de hacer scraping. Al terminar ejecuta el callback con uno de tres estados: `ok`, `no_price` (definitivo) o `error` (se reintenta). El callback, en el ejercicio, apunta a `schedule`, nunca a `core`. **El contrato del scraper (petición `{url, callback_url}`, respuesta `202 {scraper_id}`, callback con `status`, `strategy`, `error_code` y `data`) lo define el README de `scraper-service`** (DEC-27); `schedule` correlaciona por `scraper_id`.
 
 ```mermaid
 graph LR
@@ -248,12 +248,12 @@ graph LR
 | Extensión | Agregar una estrategia es una clase nueva y una línea de configuración, sin tocar las demás. El adapter por dominio (SCR-11) sería una más al inicio de la cadena: **no se implementa en esta versión** |
 
 **Criterios de aceptación** 🆕
-- Con un fixture por estrategia gana la esperada: JSON-LD → la 1; microdata o regex sin JSON-LD → la 2; precio que solo aparece al ejecutar JavaScript → la 3; precio que llega por una API interna → la 4.
+- Con un fixture por estrategia gana la esperada (`strategy` = `structured_data`, `microdata_regex`, `browser` o `xhr`): JSON-LD u Open Graph → la 1; microdata, RDFa o regex sin JSON-LD → la 2; precio que solo aparece al ejecutar JavaScript → la 3; precio que llega por una API interna → la 4.
 - Con un fixture donde las cuatro fallan y la página responde bien: el scraper devuelve `no_price` sin esperar ni reintentar, «sin precio hoy» y ningún snapshot.
 - Con un fixture que no responde (*timeout* o 5xx): el scraper devuelve `error`; `schedule` reinyecta esa URL hasta 3 veces, y agotadas queda `failed` sin snapshot.
 - Las URLs de una alerta se envían una tras otra, nunca en paralelo.
 - La cascada se detiene en la primera que acierta (Playwright no se lanza si alcanzó la 1).
-- El resultado trae la estrategia ganadora.
+- El resultado trae la estrategia ganadora y, si no hubo precio, su `error_code`.
 - Una URL a una IP interna, o que redirige a una, se rechaza en el fetcher aunque haya pasado la validación del alta; el navegador de Playwright tampoco puede llegar a destinos no permitidos.
 - Si una URL falla, **las demás de la misma alerta siguen** y esa queda marcada «sin precio».
 - El scraper reporta solo a `schedule`; ninguna llamada va a `core`.
@@ -272,13 +272,15 @@ graph LR
 | PRO-2 | 🖥️ Historial de precios | Guarda cada snapshot de precio en PostgreSQL, solo de añadir. | ✅ | Funcionalidad | 🔌 `POST /api/internal/prices` | |
 | PRO-5 | 🖥️ Validador de precio (descarte) | Descarta precios inválidos (cero, negativos, páginas de error). | ✅ | Regla [R5](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Descarta lo realmente inválido: precio ≤ 0, HTML de error o moneda distinta de COP |
 | SCR-7 | 🖥️ Reintentos idempotentes | Evita duplicar el historial si se repite una corrida. | ✅ | Regla [R7](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Entra aunque sea P1: el snapshot se inserta solo si cambia el precio o el stock |
-| RNF-6 | 🎨🖥️ Saneamiento de datos | Sanea el título y los metadatos antes de guardarlos. | ✅ | Regla [R6](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | |
+| RNF-6 | 🎨🖥️ Saneamiento de datos | Sanea el título y los metadatos antes de guardarlos. | ✅ | Regla [R6](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | Aplica a **todo** el texto que devuelve el scraper (título, marca, SKU, GTIN, MPN) y a las URLs de las imágenes, que vienen del sitio y no son de confianza |
 
 **Criterios de aceptación** 🆕
 - Repetir la misma corrida con el mismo precio **no** duplica el snapshot.
 - Un precio ≤ 0 o una página de error no se guarda.
 - Una moneda distinta de COP se descarta y no se guarda.
 - El precio guardado es numérico, en COP, con el título saneado.
+- **`core` guarda todo lo que devuelve el scraper** (D38): el precio de lista y su vigencia van en el snapshot; esos mismos datos, la marca, el SKU, el GTIN, el MPN y las imágenes quedan como último valor en la URL (`alert_url.last_*`), sin historizar. Lo que el sitio no publica queda nulo.
+- Un precio de lista que no sea mayor que el precio se guarda como nulo (no hay promoción).
 - El `transactionId` (uno por URL) es el mismo en los logs de todos los servicios.
 - El resultado de una URL se guarda al llegar, sin esperar a las demás de la alerta.
 - Un resultado `no_price` o `error` no crea snapshot y queda registrado con su `transactionId`.
@@ -455,6 +457,7 @@ graph LR
 | DEC-24 | Unidad de trabajo del scraping | **Una URL = una ejecución** con su `transaction_id`. `schedule` las envía una tras otra y cada resultado se entrega a `core` de inmediato. Tres estados: `ok`, `no_price` (definitivo) y `error` (único que se reintenta, hasta 3 veces con 10–15 min). Cambia R4 y SCR-8 respecto del original |
 | DEC-25 | Scraping y análisis | Son dos procesos que corren a horas distintas y no se solapan. Por defecto 2 capturas y 2 análisis al día, parametrizables (puede ser 1 y 1). El análisis se lanza desde la interfaz o por un job agendado |
 | DEC-26 | Aviso de errores al administrador | **Barrido diario** agendado en `schedule` que pide un solo correo a `notify`, en vez de un correo por ejecución fallida |
+| DEC-27 | Quién manda sobre el contrato del scraper | El **README de `scraper-service`** manda sobre el contrato y el comportamiento del scraper (petición, callback, códigos de motivo, estrategias, variables `SCRAPER_*`); los docs de este repo lo siguen. Consecuencia: el scraper no recibe `transaction_id` ni `item`, y `schedule` correlaciona por `scraper_id`. Un 403 o captcha es `no_price` (definitivo) y `robots.txt` es principio sin verificación implementada | ✅ 2026-11-17 |
 
 **Abiertas**
 

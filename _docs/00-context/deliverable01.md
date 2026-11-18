@@ -152,10 +152,10 @@ Sin base de datos (usa httpx y Playwright). Recibe **una URL** de `schedule` y r
 
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
-| **Trabajador de captura**<br>`ScrapeWorker` | Pregunta a `schedule` si hay trabajo y le informa el estado y el resultado | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
+| **Trabajador de captura**<br>`ScrapeWorker` | Recibe de `schedule` una URL con su callback, responde `202` con un `scraper_id`, corre la cascada en segundo plano (con cupo de concurrencia) y entrega el resultado por el callback | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
 | **Descarga**<br>`Fetcher` | Descarga cada URL y la revalida contra direcciones peligrosas en cada descarga y en cada redirección | CU-04 | *Descarga HTTP*, *Protección anti-SSRF* |
-| **Extracción**<br>`ExtractionStrategy` | Busca el precio probando estrategias en orden, de la más simple a la más pesada: datos estructurados (JSON-LD, `og:price`), microdata o expresión regular, navegador (Playwright) e interceptar la llamada interna (XHR). Se detiene en la primera que lo encuentra | CU-04 | *Extractor genérico*, *Extracción por microdata y regex*, *Extracción con navegador*, *Interceptar la llamada interna*, *Cascada de estrategias de extracción* |
-| **Resultado por URL**<br>`PriceResult` | Hace una sola pasada de las 4 estrategias y devuelve `ok` o `no_price` con su motivo, sin reintentar. Los reintentos los administra `schedule` (`ScraperDispatcher`) | CU-04 | *Reintentos controlados* |
+| **Extracción**<br>`ExtractionStrategy` | Busca el precio probando estrategias en orden, de la más simple a la más pesada: datos estructurados (`structured_data`: JSON-LD y Open Graph), `microdata_regex` (microdata, RDFa o expresión regular), `browser` (Playwright) y `xhr` (interceptar la llamada interna), con una estrategia `custom:<nombre>` por dominio antes de todas, si existe. Se detiene en la primera que lo encuentra | CU-04 | *Extractor genérico*, *Extracción por microdata y regex*, *Extracción con navegador*, *Interceptar la llamada interna*, *Cascada de estrategias de extracción* |
+| **Resultado por URL**<br>`PriceResult` | Hace una sola pasada de las 4 estrategias y devuelve `ok`, `no_price` o `error` con su `error_code`, sin reintentar. Los reintentos los administra `schedule` (`ScraperDispatcher`) | CU-04 | *Reintentos controlados* |
 
 #### `notify` · notificaciones
 
@@ -318,7 +318,14 @@ erDiagram
         bool last_in_stock "Última disponibilidad conocida"
         datetime last_checked_at "Último chequeo exitoso, cambie o no el precio"
         string last_title "Último título capturado"
-        jsonb last_metadata "Últimos metadatos: vendedor, envío"
+        decimal last_list_price_cop "Precio antes de la promoción"
+        date last_price_valid_until "Fin de la promoción"
+        string last_brand "Última marca"
+        string last_sku "Referencia del vendedor"
+        string last_gtin "Código de barras"
+        string last_mpn "Referencia del fabricante"
+        text_array last_images "Imágenes (máx. 10, no confiables)"
+        jsonb last_metadata "Otros metadatos: vendedor, envío"
         datetime created_at "Creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
     }
@@ -327,6 +334,8 @@ erDiagram
         datetime captured_at PK "Momento de la captura (UTC)"
         bigint run_id "Corrida que lo generó: job_execution.id de schedule"
         decimal price_cop "Precio en COP, mayor que 0"
+        decimal list_price_cop "Precio antes de la promoción"
+        date price_valid_until "Fin de la promoción"
         bool in_stock "Disponibilidad"
         bool is_anomalous "Caída anómala"
     }
@@ -379,7 +388,8 @@ erDiagram
         uuid transaction_id UK "Trazabilidad de punta a punta (uno por URL)"
         uuid run_id "Agrupa las ejecuciones de un mismo disparo del job"
         smallint seq "Orden dentro del disparo (se procesan de una en una)"
-        jsonb item "Unidad de trabajo opaca (p.ej. la URL), se reenvía al reintentar"
+        jsonb item "Unidad de trabajo opaca para schedule (p.ej. la URL); no viaja al scraper"
+        uuid scraper_id "Id que el scraper devolvio en el 202; correlaciona el callback"
         smallint attempt "Intento en curso; sube al reinyectar tras un error"
         datetime next_attempt_at "Cuándo toca enviar o reintentar"
         string status "queued | running | completed | failed"
@@ -473,7 +483,7 @@ erDiagram
     JOB_EXECUTION_RESULT {
         uuid _id PK "Es el transaction_id de la corrida"
         datetime created_at "Base de la caducidad de 90 días"
-        object result "De esa URL: alert_url_id, status ok, no_price o error, strategy, price_raw, currency, in_stock, title, metadata, error"
+        object result "De esa URL: alert_url_id, scraper_id, status ok, no_price o error, strategy, error_code, started_at, duration_ms y data del scraper (price crudo, list_price, currency, price_valid_until, in_stock, title, brand, sku, gtin, mpn, images)"
     }
 ```
 

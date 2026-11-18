@@ -42,14 +42,14 @@ sequenceDiagram
     SC->>SC: dispara el job a su hora (franja y escalonado)
     SC->>CO: pide el detalle del job
     CO-->>SC: lista de URLs de la alerta
-    SC->>SC: crea una ejecución por URL (un transaction_id cada una)
+    SC->>SC: crea una ejecución por URL (un transaction_id cada una, solo de schedule)
     loop una URL a la vez, en secuencia
-        SC->>SR: envía la URL con su callback (HTTP, asíncrono)
-        SR-->>SC: 202 recibido
+        SC->>SR: envía { url, callback_url } (HTTP, asíncrono)
+        SR-->>SC: 202 { scraper_id } (schedule lo guarda para correlacionar)
         SR->>SR: valida la URL contra SSRF
         SR->>WEB: descarga y prueba la cascada de estrategias
         WEB-->>SR: HTML / JSON
-        SR->>SC: callback con ok, no_price o error
+        SR->>SC: callback { scraper_id, status, strategy, error_code, data }
         Note over SR,SC: el destino del callback es configuración, y en el ejercicio apunta a schedule
         alt ok o no_price
             SC->>CO: callback con ese resultado (si falla, su outbox reintenta)
@@ -154,12 +154,19 @@ graph TD
 
 ### Las estrategias
 
-| # | Estrategia | Qué lee | Cuándo «no aplica» | Herramienta | Req. | Alcance |
+> Los nombres de la columna `strategy` son los del callback del scraper (su [README](https://github.com/vida-I-found-it/scraper-service#readme) manda sobre este detalle).
+
+| # | `strategy` | Qué lee | Cuándo «no aplica» | Herramienta | Req. | Alcance |
 |---|------------|---------|--------------------|-------------|------|---------|
-| 1 | **Datos estructurados** | JSON-LD / schema.org (`Product`/`Offer`) y `og:price` del HTML descargado | La página no trae esos datos, o traen un precio vacío o no numérico | `httpx` + `extruct` / `selectolax` | SCR-3 | Ejercicio |
-| 2 | **Microdata, RDFa y regex** | Microdata, RDFa y metaetiquetas; si no hay, una expresión regular sobre el HTML | Ninguna de las fuentes devuelve un precio. Las regex llevan *timeout* (anti-ReDoS) | `httpx` + `extruct` / `selectolax` | SCR-9 | Ejercicio |
-| 3 | **Navegador** | La página ya renderizada, cuando el precio lo inyecta JavaScript | El precio no aparece ni tras renderizar | Playwright | SCR-4 | Ejercicio |
-| 4 | **Interceptar la llamada interna** | La respuesta JSON (XHR) con la que la propia página carga el precio | La página no hace esa llamada o su respuesta no trae precio | Playwright (o llamar el JSON) | SCR-10 | Ejercicio |
+| 0 | `custom:<nombre>` | Selectores escritos a mano para un dominio (coincidencia exacta de host); va primero y, con `fallback=True` (por defecto), si no halla precio siguen las genéricas | No hay custom para el dominio, o no halla precio | Lo que necesite | SCR-11 (mecanismo) | Mecanismo implementado, **sin customs concretas** |
+| 1 | `structured_data` | JSON-LD de `schema.org` (`Product` → `offers`, u `Offer`; tolera comentarios, saltos de línea y comas de más) y Open Graph (`product:price:amount`, `og:price:amount`, `product:sale_price:amount`) del HTML descargado | La página no trae esos datos, o traen un precio vacío o no numérico | httpx · selectolax | SCR-3 | Ejercicio |
+| 2 | `microdata_regex` | Microdata, RDFa y, como último recurso, regex sobre el JSON embebido y el texto visible (`$`, `COP`, `USD`) | Ninguna fuente devuelve un precio. La regex tiene *timeout* de 1 s sobre los primeros 2 MB (anti-ReDoS) | httpx · selectolax · regex | SCR-9 | Ejercicio |
+| 3 | `browser` | Los mismos lectores de la 1 y la 2 (sin regex) sobre el DOM ya renderizado, para precios que inyecta JavaScript | El precio no aparece ni tras renderizar | Playwright (Chromium) · selectolax | SCR-4 | Ejercicio |
+| 4 | `xhr` | El JSON de las llamadas internas (XHR/fetch) capturadas **durante el mismo render**: toma la primera clave de precio válida (`price`, `salePrice`, `sellingPrice`…) | La página no hace esa llamada o su respuesta no trae precio | Playwright (intercepción) | SCR-10 | Ejercicio |
+
+**Una sola descarga y un solo render por URL:** todas las estrategias leen de una misma `Page`; el HTML se descarga una vez con httpx y se renderiza una vez con Chromium solo si alguna lo pide. Un error de descarga también se guarda: si recibe un 403, la estrategia 2 recibe el mismo error sin volver a pedir la página.
+
+**Datos del producto.** Además del precio, todas las estrategias intentan traer `list_price`, `price_valid_until`, `currency`, `in_stock`, `title`, `brand`, `sku`, `gtin`, `mpn` e `images`; todo es opcional. El precio y la promoción salen **solo de la fuente ganadora** y el resto se completa con las demás fuentes de la misma página, sin peticiones nuevas. `list_price` solo se envía si es mayor que `price`. Las imágenes quedan absolutas, `http`/`https`, sin repetidos, máximo 10, y **no se descargan** (vienen del sitio: quien las use las trata como no confiables). Los textos se recortan a 500 caracteres. El precio viaja **crudo** y `core` lo normaliza.
 | 5 | **Captura + VLM** | Una captura de pantalla de la página renderizada, leída por un modelo de visión | El modelo no encuentra un precio | Playwright + modelo de visión (de pago) | — | Proyecto, Fase 2 |
 | A0 | **Adapter manual por dominio** | Reglas guardadas por un admin para ese dominio | — (si existe, se usa primero) | Constructor de adapters | SCR-11/12 | Proyecto |
 | A1 | **Estrategia recordada** | Salta directo a la estrategia que ganó antes en ese dominio | La estrategia recordada falla (el sitio cambió): se corre la cascada completa | — | candidato (D35) | Proyecto |
@@ -172,7 +179,7 @@ graph TD
 
 ### Reglas de la cascada
 
-- **Orden configurable;** por defecto 1 → 2 → 3 → 4, de la más barata a la más pesada.
+- **Orden configurable** (`SCRAPER_STRATEGY_ORDER`, sin tocar código); por defecto 1 → 2 → 3 → 4, de la más barata a la más pesada. La custom del dominio, si existe, va antes.
 - **Corte en la primera que acierta:** las siguientes no se ejecutan.
 - **Lo más ligero primero:** Playwright solo se lanza si las estrategias HTTP no bastaron, es decir, cuando el precio se inyecta por JavaScript y no hay datos estructurados aprovechables.
 - **Resultado:** incluye la **estrategia ganadora**, para logs y pruebas.
@@ -181,7 +188,7 @@ graph TD
 
 - **Anti-SSRF en cada descarga y en cada redirección (SCR-18, R3):** el fetcher es la autoridad. Dentro del navegador de Playwright se bloquea toda petición a destinos no permitidos.
 - **Playwright ejecuta JavaScript de terceros:** corre en un contenedor aislado, sin secretos ni acceso a la red interna. Lo que devuelve es dato no confiable y se sanea (RNF-6).
-- **Sin eludir protecciones:** ante un bloqueo, 403, 429 o captcha no se fuerza; el sitio queda sin precio y se respeta la [política legal](../00-context/legal-considerations.md).
+- **Sin eludir protecciones:** ante un 403, captcha o un `robots.txt` que lo prohíba, no se fuerza nada; se respeta la [política legal](../00-context/legal-considerations.md). Un 403 o captcha **no corta** la cascada (un captcha que bloquea a httpx todavía le deja su turno a Playwright); si al final no hubo precio, el resultado es el del primer fallo (`blocked_403` o `blocked_captcha`). `blocked_ssrf` sí corta siempre.
 - **Regex con *timeout*** para evitar ReDoS.
 
 ### Reintentos y resultado por URL
@@ -191,8 +198,8 @@ Cada URL termina en uno de tres estados ([ADR-0004](adr/0004-schedule-dispatches
 | Estado | Qué significa | Reintento |
 |--------|---------------|-----------|
 | `ok` | Precio válido, con la estrategia ganadora | No hace falta |
-| `no_price` | La página respondió bien y ninguna de las 4 estrategias halló precio, o la URL fue rechazada (anti-SSRF, política del sitio, exige sesión). **Definitivo** | **No se reintenta** |
-| `error` | No hubo respuesta fiable: *timeout*, red, 5xx, excepción del scraper | **Sí**: lo reinyecta `schedule`, hasta 3 veces (parametrizable, SCR-8) con espera de 10–15 min |
+| `no_price` | **Definitivo.** `error_code`: `not_found` (sin precio), `gone` (producto retirado), `login_required` (exige sesión o la URL final es una ruta de login), `http_4xx`, `blocked_ssrf`, `blocked_403`, `blocked_captcha` | **No se reintenta** |
+| `error` | Sin respuesta fiable. `error_code`: `timeout`, `network`, `http_5xx`, `http_429`, `internal` (excepción del scraper) | **Sí**: lo reinyecta `schedule`, hasta 3 veces (parametrizable, SCR-8) con espera de 10–15 min |
 
 - **El scraper no reintenta.** Hace una pasada por URL y devuelve el estado con lo que logró. Los reintentos los administra `schedule` y reenvía **únicamente esa URL**.
 - Al agotar los reintentos de un `error`, la ejecución queda `failed`, se entrega `error` a `core` (queda el log con el `transaction_id`, sin snapshot) y entra en el barrido diario de errores.
@@ -267,18 +274,18 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 
 | ID | Evento | Qué pasa | Estado |
 |----|--------|----------|--------|
-| EV-01 | La URL apunta a una red interna, un esquema no permitido o una IP privada (también por redirección) | Se rechaza al crear la alerta; si llega al scraper, se rechaza de nuevo en cada descarga y redirección, también dentro de Playwright. La URL queda `no_price` | ✅ R3, SCR-18 |
+| EV-01 | La URL apunta a una red interna, un esquema no permitido o una IP privada (también por redirección) | Se rechaza al crear la alerta; si llega al scraper, se rechaza de nuevo en cada descarga y redirección, también dentro de Playwright. La URL queda `no_price · blocked_ssrf` | ✅ R3, SCR-18 |
 | EV-02 | El sitio **no permite** scrapear (términos de servicio o `robots.txt`) | **No se fuerza ni se evade.** Ejercicio: el sitio queda sin precio. Proyecto: se respeta `robots.txt` (SCR-5) y el sitio se deja fuera. Quién detecta que un sitio está vetado y si se marca el dominio para no reintentarlo **no está definido** | ✅ política (ver [legal](../00-context/legal-considerations.md)) · ❓ detección y marca |
-| EV-03 | El sitio bloquea: 403, 429 o captcha | No se fuerzan ni se resuelven captchas, ni se insiste con un 403: queda `no_price`. Un 429 (límite de tasa) cuenta como `error` y se reintenta con la espera de 10–15 min. Proyecto: además baja la frecuencia. Si un `Retry-After` manda sobre esa espera **no está definido** | ✅ no forzar · ❓ uso de `Retry-After` |
-| EV-04 | El sitio responde pero el precio exige iniciar sesión | Se trata como «no aplica» en todas las estrategias: solo se leen datos públicos. Queda `no_price` | 💡 coherente con la política de datos públicos |
+| EV-03 | El sitio bloquea: 403, 429 o captcha | No se fuerzan ni se resuelven captchas, ni se insiste con un 403: queda `no_price` (`blocked_403` o `blocked_captcha`), aunque antes la cascada deja que las demás estrategias lo intenten. Un 429 (límite de tasa) cuenta como `error` y se reintenta con la espera de 10–15 min. Proyecto: además baja la frecuencia. Si un `Retry-After` manda sobre esa espera **no está definido** | ✅ no forzar · ❓ uso de `Retry-After` |
+| EV-04 | El sitio responde pero el precio exige iniciar sesión | Se trata como «no aplica» en todas las estrategias: solo se leen datos públicos. Queda `no_price · login_required` | ✅ README del scraper |
 
 ### Fallos de extracción
 
 | ID | Evento | Qué pasa | Estado |
 |----|--------|----------|--------|
-| EV-05 | El sitio no responde: timeout, error de red o 5xx | Las estrategias no obtienen respuesta y el scraper devuelve `error`. `schedule` reinyecta **solo esa URL**, hasta 3 veces (parametrizable), con espera de 10–15 min. Si se agota, la ejecución queda `failed`, se entrega `error` a `core` y entra en el barrido diario | ✅ SCR-8, R4 |
+| EV-05 | El sitio no responde: timeout, error de red o 5xx | Las estrategias no obtienen respuesta y el scraper devuelve `error` (`timeout`, `network` o `http_5xx`). `schedule` reinyecta **solo esa URL**, hasta 3 veces (parametrizable), con espera de 10–15 min. Si se agota, la ejecución queda `failed`, se entrega `error` a `core` y entra en el barrido diario | ✅ SCR-8, R4 |
 | EV-06 | Una estrategia no encuentra el precio | Responde «no aplica» y pasa a la siguiente. La primera que acierta corta la cascada | ✅ EJ-2 |
-| EV-07 | Las 4 estrategias fallan con la página respondiendo bien | El scraper devuelve `no_price`: es definitivo y **no se reintenta**. Proyecto: además se guarda la captura cruda y se avisa al admin para que construya un adapter (SCR-13) | ✅ SCR-8 · SCR-13 solo proyecto |
+| EV-07 | Las 4 estrategias fallan con la página respondiendo bien | El scraper devuelve `no_price · not_found`: es definitivo y **no se reintenta**. Proyecto: además se guarda la captura cruda y se avisa al admin para que construya un adapter (SCR-13) | ✅ SCR-8 · SCR-13 solo proyecto |
 | EV-08 | El sitio cambió su estructura y una estrategia que antes funcionaba deja de servir | La cascada sigue con las siguientes. Proyecto: si falla la estrategia recordada (A1), se corre la cascada completa | ✅ cascada · A1 candidata (D35) |
 | EV-09 | Una URL falla y las demás de la alerta no | Las demás siguen; la fallida queda `no_price` | ✅ CU-04 |
 | EV-10 | **Todas** las URLs de la alerta quedan sin precio en una corrida | No se guarda snapshot ni se avisa. El dashboard muestra «sin datos recientes» pasadas 24 h desde el último chequeo exitoso | 💡 DEC-17 (abierta) |
@@ -327,15 +334,15 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 - El snapshot se inserta **solo si cambia** el precio o el stock respecto al último (R7). Se bloquea la fila de `alert_url` mientras se compara, así que repetir una corrida o un callback no duplica datos (SCR-7). Ver [modelo de datos](../data/data-model.md).
 - Los snapshots son **solo de añadir**: el historial nunca se sobrescribe.
 - Un reintento reenvía solo la URL con `error` (lo decide `schedule`); las ya resueltas no se reprocesan. Cada resultado se identifica por `transaction_id` (uno por URL) e intento, y `schedule` procesa a lo más uno por intento.
-- Todo se correlaciona por `transaction_id`, que viaja en cada llamada entre piezas y en los logs; se observa con OpenTelemetry y Sentry.
+- Todo se correlaciona por `transaction_id`, que viaja entre `core`, `schedule` y `notify` y está en sus logs. **El scraper no lo conoce:** sus logs JSON llevan `scraper_id`, y `schedule` guarda el enlace `SCRAPER_ID` ↔ `transaction_id`. OpenTelemetry y Sentry están **pendientes** también en el scraper (hoy solo logs JSON); en el ejercicio basta con los logs.
 
 ## Qué se persiste y dónde
 
 | Pieza | PostgreSQL | MongoDB |
 |-------|-----------|---------|
 | `scraper` | Nada | Nada |
-| `schedule` | `job_execution` (una por URL: estado, intento y callback) y `job_callback_outbox` | `job_execution_result`: un documento por ejecución (una URL) con su estado (`ok`/`no_price`/`error`), estrategia ganadora, precio crudo, moneda, stock, título, metadatos y error (DEC-19). TTL de 90 días |
-| `core` | `price_snapshot` (por cambio), último precio y último chequeo en `alert_url`, y mejor precio en `alert` | **(solo proyecto)** `exchange_rate` |
+| `schedule` | `job_execution` (una por URL: estado, intento y callback) y `job_callback_outbox` | `job_execution_result`: un documento por ejecución (una URL) con `scraper_id`, estado (`ok`/`no_price`/`error`), estrategia ganadora, `error_code`, `started_at`, `duration_ms` y los `data` del scraper: precio crudo, precio de lista, vigencia, moneda, stock, título, marca, SKU, GTIN, MPN e imágenes (DEC-19). TTL de 90 días |
+| `core` | `price_snapshot` (por cambio, con precio de lista y vigencia), último precio, último chequeo y **todos los últimos datos del scraper** (título, marca, SKU, GTIN, MPN, imágenes…) en `alert_url`, y mejor precio en `alert` | **(solo proyecto)** `exchange_rate` |
 | `notify` | `notification` y `notification_outbox` | **(solo proyecto)** `notification_log` (su utilidad está en revisión, D18) |
 
 ## Pendientes y límites conocidos

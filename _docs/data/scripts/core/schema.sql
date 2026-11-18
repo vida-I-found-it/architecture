@@ -54,6 +54,14 @@ CREATE TABLE ALERT_URL (
     LAST_IN_STOCK   boolean,
     LAST_CHECKED_AT timestamptz,             -- último chequeo, cambie o no el precio
     LAST_TITLE      text,                    -- no se historiza
+    -- Último dato completo que devolvió el scraper (D38): se sobrescribe en cada chequeo exitoso, no se historiza.
+    LAST_LIST_PRICE_COP   numeric(14,2),     -- precio antes de la promoción; solo si > LAST_PRICE_COP
+    LAST_PRICE_VALID_UNTIL date,             -- fin de la promoción
+    LAST_BRAND      text,
+    LAST_SKU        text,                    -- referencia del vendedor
+    LAST_GTIN       text,                    -- código de barras (EAN/UPC)
+    LAST_MPN        text,                    -- referencia del fabricante
+    LAST_IMAGES     text[] CHECK (cardinality(LAST_IMAGES) <= 10), -- solo URLs http/https; el scraper no las descarga y vienen del sitio (no confiables)
     LAST_METADATA   jsonb,                   -- vendedor, envío… (no se historiza)
     CREATED_AT      timestamptz NOT NULL DEFAULT now(),
     UPDATED_AT      timestamptz NOT NULL DEFAULT now(),
@@ -115,10 +123,13 @@ CREATE TABLE PRICE_SNAPSHOT (
     RUN_ID              bigint NOT NULL,        -- id de schedule.job_execution, sin FK (otro esquema)
     PRICE_COP           numeric(14,2) NOT NULL CHECK (PRICE_COP > 0),
     PRICE_ORIGINAL      numeric(14,2),          -- null si ya es COP
+    LIST_PRICE_COP      numeric(14,2),          -- precio antes de la promoción (null si no hay); CHECK > PRICE_COP
+    PRICE_VALID_UNTIL   date,                   -- fin de la promoción (null si no la publica)
     CURRENCY            text REFERENCES CURRENCY(CODE), -- null si COP
     EXCHANGE_RATE_DATE  date,                   -- 🔗 Mongo exchange_rate (null si COP)
     IN_STOCK            boolean NOT NULL,
     IS_ANOMALOUS        boolean NOT NULL DEFAULT false,
+    CHECK (LIST_PRICE_COP IS NULL OR LIST_PRICE_COP > PRICE_COP),
     PRIMARY KEY (ALERT_URL_ID, CAPTURED_AT)
 ) PARTITION BY RANGE (CAPTURED_AT);
 

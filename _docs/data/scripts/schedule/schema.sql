@@ -106,7 +106,8 @@ CREATE TABLE JOB_EXECUTION (
     -- de una en una, en orden de SEQ.
     RUN_ID            uuid NOT NULL,             -- agrupa las ejecuciones de un mismo disparo del job (id de correlación en los logs)
     SEQ               smallint NOT NULL CHECK (SEQ >= 1), -- orden dentro del disparo
-    ITEM              jsonb NOT NULL DEFAULT '{}'::jsonb, -- la unidad de trabajo, opaca para schedule (p.ej. {"alert_url_id": 7, "url": "..."}); se reenvía tal cual al reintentar
+    ITEM              jsonb NOT NULL DEFAULT '{}'::jsonb, -- la unidad de trabajo, opaca para schedule (p.ej. {"alert_url_id": 7, "url": "..."}); NO viaja al scraper; se reenvía tal cual al reintentar
+    SCRAPER_ID        uuid,                      -- id que el scraper devolvió en el 202 del intento en curso; correlaciona su callback (cambia en cada reintento)
     ATTEMPT           smallint NOT NULL DEFAULT 1 CHECK (ATTEMPT >= 1), -- intento en curso: sube al reinyectar tras un `error`
     NEXT_ATTEMPT_AT   timestamptz,               -- cuándo toca enviar o reintentar; NULL si ya no hay nada pendiente
     STATUS            text NOT NULL DEFAULT 'queued'
@@ -124,6 +125,8 @@ CREATE TABLE JOB_EXECUTION (
 );
 -- Procesamiento SECUENCIAL: a lo más una ejecución en curso por disparo.
 CREATE UNIQUE INDEX UX_JOB_EXECUTION_ONE_RUNNING_PER_RUN ON JOB_EXECUTION(RUN_ID) WHERE STATUS = 'running';
+-- Correlación del callback: se busca por el scraper_id del intento en curso.
+CREATE UNIQUE INDEX UX_JOB_EXECUTION_SCRAPER_ID ON JOB_EXECUTION(SCRAPER_ID) WHERE SCRAPER_ID IS NOT NULL;
 -- El worker toma lo vencido (envíos y reintentos por `error`) con FOR UPDATE SKIP LOCKED.
 CREATE INDEX IX_JOB_EXECUTION_DUE ON JOB_EXECUTION(NEXT_ATTEMPT_AT) WHERE STATUS = 'queued';
 CREATE INDEX IX_JOB_EXECUTION_JOB_STARTED ON JOB_EXECUTION(JOB_ID, STARTED_AT);

@@ -328,7 +328,14 @@ erDiagram
         bool last_in_stock "Última disponibilidad conocida"
         datetime last_checked_at "Último chequeo exitoso (cambie o no el precio)"
         string last_title "Último título capturado (no se historiza)"
-        jsonb last_metadata "Últimos datos útiles: vendedor, envío… (no se historiza)"
+        decimal last_list_price_cop "Precio antes de la promoción (solo si es mayor que el precio)"
+        date last_price_valid_until "Fin de la promoción"
+        string last_brand "Última marca"
+        string last_sku "Última referencia del vendedor"
+        string last_gtin "Último código de barras"
+        string last_mpn "Última referencia del fabricante"
+        text_array last_images "URLs de imágenes, máx. 10, solo http/https; no confiables"
+        jsonb last_metadata "Otros datos útiles: vendedor, envío… (no se historiza)"
         datetime created_at "Fecha de creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
     }
@@ -364,6 +371,8 @@ erDiagram
         bigint run_id "Corrida que lo generó — id de schedule.job_execution, sin FK (servicio distinto)"
         decimal price_cop "Precio en COP (CHECK > 0)"
         decimal price_original "Precio en moneda original (null si ya es COP)"
+        decimal list_price_cop "Precio antes de la promoción (null si no hay; CHECK > price_cop)"
+        date price_valid_until "Fin de la promoción"
         string currency "Código de moneda original, ISO 4217 (null si COP) — ref. informativa"
         date exchange_rate_date "🔗 Fecha de la tasa → NoSQL exchange_rate (null si COP)"
         bool in_stock "Disponibilidad"
@@ -391,7 +400,7 @@ erDiagram
 
 - **PK natural `(alert_url_id, captured_at)`**: sin id sustituto y **sin índice adicional** (la PK sirve para series temporales y comparador). Incluye la clave de partición, requisito de PostgreSQL para PK/UNIQUE en tablas particionadas.
 - **Idempotencia por diseño (SCR-7):** en una transacción, el worker bloquea la fila de `alert_url`, compara el precio/stock capturado con `last_price_cop`/`last_in_stock` e inserta **solo si difiere**. Un reintento de la misma corrida encuentra el mismo valor y no inserta. Reemplaza al antiguo `capture_hash` y a la clave única por corrida.
-- **Todo chequeo exitoso** actualiza `alert_url.last_checked_at` (y `last_title`/`last_metadata`), así el gráfico (VIS-2/VIS-3) reconstruye la línea de tiempo como **función escalonada**: el precio vale hasta el siguiente cambio o hasta `last_checked_at`.
+- **Todo chequeo exitoso** actualiza `alert_url.last_checked_at` y **todos los `last_*`** (título, precio de lista, vigencia, marca, SKU, GTIN, MPN, imágenes y metadatos: `core` guarda todo lo que devuelve el scraper, D38), así el gráfico (VIS-2/VIS-3) reconstruye la línea de tiempo como **función escalonada**: el precio vale hasta el siguiente cambio o hasta `last_checked_at`.
 - **Chequeos fallidos / sin precio:** no generan snapshot; quedan solo en `site_stats_daily` (agregado permanente) y en el resultado de la corrida (`job_execution_result`, con TTL, en `schedule`).
 - **Sin `title`, `metadata`, `transaction_id`, `capture_hash` ni `exchange_rate` en el snapshot:** título y metadata viven solo en su último valor (`alert_url`); el `transaction_id` se obtiene vía `run_id`; la tasa se deriva (`price_cop / price_original`) o se consulta por `exchange_rate_date`.
 - **Particionado anual por `captured_at`:** la retención, si se necesita, es un `DROP` de partición (libera espacio al instante, sin *vacuum*). Un job crea la partición del año siguiente.
@@ -463,7 +472,8 @@ erDiagram
         uuid transaction_id UK "Trazabilidad end-to-end (una por unidad de trabajo, p.ej. una URL); _id del resultado en la Mongo de schedule"
         uuid run_id "Agrupa las ejecuciones de un mismo disparo del job (ADR-0004)"
         smallint seq "Orden dentro del disparo; UNIQUE (run_id, seq); a lo más una en running por run_id"
-        jsonb item "Unidad de trabajo opaca para schedule; se reenvía tal cual al reintentar"
+        jsonb item "Unidad de trabajo opaca para schedule; se reenvía al reintentar. No viaja al scraper"
+        uuid scraper_id "Id que el scraper devuelve en el 202; correlaciona su callback (cambia en cada reintento; UNIQUE cuando no es nulo)"
         smallint attempt "Intento en curso (sube al reinyectar tras un error)"
         timestamptz next_attempt_at "Cuándo toca enviar o reintentar"
         string status "Estado del TRABAJO: queued | running | completed | failed (CHECK)"
@@ -608,7 +618,7 @@ erDiagram
 
 | Concepto | Antes | Ahora |
 |----------|-------|-------|
-| Fila de `price_snapshot` (heap + índices) | ~450 B (id, `transaction_id` texto, título, JSONB, hash, 3 índices) | **~100 B** (PK natural, sin título/metadata/hash) |
+| Fila de `price_snapshot` (heap + índices) | ~450 B (id, `transaction_id` texto, título, JSONB, hash, 3 índices) | **~110 B** (PK natural; añade precio de lista y vigencia; sin título/metadata/hash, que van en `alert_url.last_*`) |
 | Filas por año | 22 M (una por chequeo) | **2–7 M** si el precio cambia en el 10–30 % de los chequeos *(supuesto)* |
 | `price_snapshot` por año | **~10 GB** | **~0,2–0,7 GB** |
 | `job_execution_result` (90 d) | — | *por estimar* (forma libre según `execution_type`; sin supuestos todavía) |

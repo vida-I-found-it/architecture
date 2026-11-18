@@ -38,8 +38,9 @@
 | Auth | **JWT** (access + refresh) · **argon2/bcrypt** | Access ~15 min + refresh ~7 días con rotación/revocación. |
 | HTTP simple | **httpx** | Cliente async, HTTP/2 — la vía por defecto (HTTP-first). |
 | Navegador headless | **Playwright** | Fallback cuando el precio requiere JS; también intercepta XHR/JSON interno. |
-| Datos estructurados | **extruct** / **selectolax** / **BeautifulSoup** | Extrae JSON-LD / schema.org / microdata / `og:price` sin scraper por sitio. |
-| robots.txt + rate limit | **Protego** + **aiolimiter** | Respeta `robots.txt`/`Crawl-delay` y controla la tasa por dominio (SCR-5/6). |
+| Datos estructurados | **selectolax** (Lexbor) + `json` | Extrae JSON-LD / schema.org / microdata / RDFa / Open Graph sin scraper por sitio. Es lo que usa el `scraper-service` (su README manda); `extruct` y `BeautifulSoup` no se usan. |
+| Regex con timeout | **regex** (mrab-regex) | Último recurso de la estrategia 2, con *timeout* de 1 s sobre los primeros 2 MB (anti-ReDoS). |
+| robots.txt + rate limit | **Protego** + **aiolimiter** *(proyecto; no implementado en el scraper v1.0.0)* | Respeta `robots.txt`/`Crawl-delay` y controla la tasa por dominio (SCR-5/6). El README del scraper lo declara como principio, sin verificación implementada. |
 | Parseo precio/moneda | **price-parser** + **Babel** | Extrae precio numérico y normaliza moneda por locale (PRO-1, multi-moneda). |
 | Cola / workers | **Redis** + **Arq** (async) *(alt. RQ / Celery)* | Scraping en background escalonado; reintentos. **Decidido ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)):** `schedule` envía el trabajo al scraper por HTTP, sin cola; Redis + Arq queda como evolución futura — [pendientes](../00-context/pending.md) B2. |
 | Scheduler | **APScheduler** (repo `schedule`) | Encola corridas en ventanas horarias (04–06 / 18–20, env). |
@@ -148,7 +149,7 @@ notify/
 
 scraper/
 ├── fetch/                    # httpx + Playwright
-├── extract/                  # cascada: adapter → JSON-LD → microdata → XHR
+├── strategies/               # cascada: custom → structured_data → microdata_regex → browser → xhr
 ├── ssrf_guard/               # validación de URL (SCR-18)
 ├── api/                      # recibe el trabajo de `schedule` (red interna)
 └── callback/                 # ejecuta el callback con el resultado
