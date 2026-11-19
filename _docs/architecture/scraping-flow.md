@@ -226,7 +226,7 @@ Todos son pasos de `core`, no del scraper:
 | 1 · Sanear | Limpia título y metadatos (trim, sin caracteres de control, Unicode NFC) | R6 |
 | 2 · Normalizar | Precio numérico, moneda, stock y título | PRO-1 |
 | 3 · Validar | Descarta precio ≤ 0, páginas de error y moneda distinta de COP **(ejercicio)** | R5 |
-| 4 · Guardar | Inserta el snapshot **solo si** cambió el precio o el stock; actualiza el último chequeo | R7 |
+| 4 · Guardar | Inserta el snapshot **solo si** cambió el precio; actualiza el último chequeo | R7 |
 
 Aquí **no se calcula el mejor precio ni se avisa**.
 
@@ -246,7 +246,7 @@ Es otro proceso de `core`, a otra hora, que se lanza **desde la interfaz de usua
 
 ```mermaid
 graph TD
-    A[Análisis de la alerta] --> MIN[Mínimo entre los últimos precios vigentes<br/>de las URLs activas con stock · en COP]
+    A[Análisis de la alerta] --> MIN[Mínimo entre los últimos precios vigentes<br/>de las URLs activas · en COP]
     MIN --> P{¿hay mejor precio<br/>anterior?}
     P -->|no, primera vez| G[Guarda el mejor precio<br/>sin avisar]
     P -->|sí| C{¿bajó?}
@@ -256,7 +256,7 @@ graph TD
     OK --> N[Pide el aviso a notify]
 ```
 
-> **Regla (DEC-6, DEC-16, DEC-22):** el mejor precio de una alerta es el **mínimo vigente** entre los últimos precios de sus URLs que tienen stock; una URL sin stock no cuenta. Se avisa cuando baja respecto del anterior. La primera vez no hay contra qué comparar y **no avisa**; el análisis es quien decide cuándo se avisa. Si el precio sube y vuelve a bajar, avisa otra vez. El aviso se pide **después** de confirmar la transacción y usa un `transaction_id` por alerta analizada. La estrategia va detrás de una interfaz (patrón Strategy), reemplazable. El dashboard muestra el último precio por sitio al día, pero el mejor precio puede estar atrasado hasta el siguiente análisis.
+> **Regla (DEC-6, DEC-16, DEC-22):** el mejor precio de una alerta es el **mínimo vigente** entre los últimos precios de sus URLs activas; **el stock no se tiene en cuenta por ahora** (DEC-22). Se avisa cuando baja respecto del anterior. La primera vez no hay contra qué comparar y **no avisa**; el análisis es quien decide cuándo se avisa. Si el precio sube y vuelve a bajar, avisa otra vez. El aviso se pide **después** de confirmar la transacción y usa un `transaction_id` por alerta analizada. La estrategia va detrás de una interfaz (patrón Strategy), reemplazable. El dashboard muestra el último precio por sitio al día, pero el mejor precio puede estar atrasado hasta el siguiente análisis.
 
 ## Manejo de eventos
 
@@ -298,8 +298,8 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | EV-12 | Precio ≤ 0 o no numérico | `core` lo descarta; no contamina el historial | ✅ R5 |
 | EV-13 | Moneda distinta de COP | Se descarta y no se guarda (ejercicio). Proyecto: se convierte con la tasa del día | ✅ DEC-23 |
 | EV-14 | Caída sospechosa de precio | Se **guarda y se marca** como anómala; no se descarta. El umbral lo da una estrategia intercambiable (comparación con otros productos) | ✅ R9 · DEC-18 ✅ |
-| EV-15 | La URL no tiene stock | Su precio no cuenta para el mejor precio | ✅ DEC-22 |
-| EV-16 | El sitio no informa el stock | Se asume un valor por defecto; cuál es no está decidido | ❓ DEC-21 |
+| EV-15 | La URL no tiene stock | Su precio sigue contando para el mejor precio: el análisis ignora el stock por ahora | ✅ DEC-22 |
+| EV-16 | El sitio no informa el stock | Se guarda nulo; no se asume ningún valor | ✅ DEC-21 |
 
 ### Caída de piezas
 
@@ -310,7 +310,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | EV-19 | `schedule` cae y no dispara jobs a su hora | No se pierde nada: las alertas viven en `core`. La infraestructura lo reinicia y, al volver, `schedule` **toma el trabajo que no hizo**. El tope de 2 corridas al día (R2) sigue vigente | ✅ decisión del equipo |
 | EV-20 | `core` no responde cuando `schedule` pide el detalle del job | El job no se pierde: queda pendiente y se retoma cuando `core` vuelve. Cómo se espera (reintentos o reinicio de la infraestructura) y si se avisa al administrador no está decidido | 💡 pendiente de confirmar |
 | EV-21 | `core` no responde al callback con los precios | El outbox de `schedule` reintenta la entrega; el estado del callback es independiente del estado del trabajo | ✅ `job_callback_outbox` |
-| EV-22 | La corrida o el callback llegan dos veces | No se duplica nada: el snapshot se inserta solo si cambió el precio o el stock | ✅ R7, SCR-7 |
+| EV-22 | La corrida o el callback llegan dos veces | No se duplica nada: el snapshot se inserta solo si cambió el precio | ✅ R7, SCR-7 |
 | EV-23 | Falla crear el job en `schedule` después de guardar la alerta | La alerta queda detectable como «sin schedule». La consistencia entre ambas escrituras sigue abierta | ✅ criterio CU-03 · ❓ DEC-15 (D7) |
 | EV-26 | **Los pods del scraper no están disponibles** (problema de infraestructura): no hay ningún scraper corriendo y no responde absolutamente nada | `schedule` recibe un 404, un 500 o un *timeout* al enviar la URL. Reintenta con backoff exponencial hasta *n* veces; agotados, la ejecución queda `failed`. Mientras tanto el **trabajo queda bloqueado**: las URLs pendientes siguen en cola y se retoman cuando el scraper vuelve. El barrido diario lo avisa al administrador. Qué pasa con las corridas acumuladas al volver, dado el tope de 2 al día, no está definido | ✅ decisión del equipo · ADR-0004 · ❓ corridas acumuladas |
 | EV-27 | **`schedule` no puede llegar hasta el scraper**: por red, por una caída o porque simplemente no está accesible | Desde `schedule` no se distingue de EV-26: el envío falla y se aplica el mismo tratamiento (backoff exponencial, ejecución `failed`, aviso en el barrido diario y trabajo bloqueado) | ✅ ADR-0004 |
@@ -331,7 +331,7 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 
 ## Idempotencia y trazabilidad
 
-- El snapshot se inserta **solo si cambia** el precio o el stock respecto al último (R7). Se bloquea la fila de `alert_url` mientras se compara, así que repetir una corrida o un callback no duplica datos (SCR-7). Ver [modelo de datos](../data/data-model.md).
+- El snapshot se inserta **solo si cambia** el precio respecto al último (R7). Se bloquea la fila de `alert_url` mientras se compara, así que repetir una corrida o un callback no duplica datos (SCR-7). Ver [modelo de datos](../data/data-model.md).
 - Los snapshots son **solo de añadir**: el historial nunca se sobrescribe.
 - Un reintento reenvía solo la URL con `error` (lo decide `schedule`); las ya resueltas no se reprocesan. Cada resultado se identifica por `transaction_id` (uno por URL) e intento, y `schedule` procesa a lo más uno por intento.
 - Todo se correlaciona por `transaction_id`, que viaja entre `core`, `schedule` y `notify` y está en sus logs. **El scraper no lo conoce:** sus logs JSON llevan `scraper_id`, y `schedule` guarda el enlace `SCRAPER_ID` ↔ `transaction_id`. OpenTelemetry y Sentry están **pendientes** también en el scraper (hoy solo logs JSON); en el ejercicio basta con los logs.

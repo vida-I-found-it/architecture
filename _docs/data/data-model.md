@@ -34,7 +34,7 @@
   4. **Índices justos:** cada índice ocupa espacio y frena escrituras; solo se crea con una consulta real que lo justifique (`EXPLAIN`).
   5. **Toda tabla/colección de log declara su retención** (TTL o partición). Nada crece sin tope.
   6. **Medir antes de micro-optimizar:** las cifras de este doc son **estimaciones con supuestos declarados**; se validan con datos reales.
-- **Append-only por cambio para precios:** se inserta un snapshot **solo cuando cambia el precio o el stock** respecto al último; nunca se sobrescribe. Cada chequeo (cambie o no) actualiza `alert_url.last_checked_at`.
+- **Append-only por cambio para precios:** se inserta un snapshot **solo cuando cambia el precio** respecto al último; el stock se guarda como llegó (nulo si el sitio no lo informa) pero no genera snapshots ni lo usa el análisis (DEC-21, DEC-22); nunca se sobrescribe. Cada chequeo (cambie o no) actualiza `alert_url.last_checked_at`.
 - **Políglota por rol:** PostgreSQL para relaciones/consistencia; **MongoDB** para documentos de alto volumen, con TTL y solo lectura.
 - **Puente relacional → NoSQL por id compartido:** el `_id` del documento **es** el id de la fila relacional (sin columnas puente extra); para ver el **detalle** de algo cuyo grano vive en NoSQL, se parte de la fila relacional y se usa su id — el relacional queda liviano y el detalle voluminoso queda en documentos con TTL. Cada puente vive documentado dentro de la sección de su propio esquema y es siempre interno a un servicio.
 - **Correlación por `transaction_id`** (`uuid`): todo lo de una corrida comparte el mismo id de trazabilidad.
@@ -326,7 +326,7 @@ erDiagram
         decimal best_price_cop "Mejor precio POR SITIO (materializado, COP)"
         datetime best_price_at "Cuándo se registró el mejor precio del sitio"
         decimal last_price_cop "Último precio vigente en COP (para VIS-1 sin escanear snapshots)"
-        bool last_in_stock "Última disponibilidad conocida"
+        bool last_in_stock "Última disponibilidad informada (null si no se informa)"
         datetime last_checked_at "Último chequeo exitoso (cambie o no el precio)"
         string last_title "Último título capturado (no se historiza)"
         decimal last_list_price_cop "Precio antes de la promoción (solo si es mayor que el precio)"
@@ -376,7 +376,7 @@ erDiagram
         date price_valid_until "Fin de la promoción"
         string currency "Código de moneda original, ISO 4217 (null si COP) — ref. informativa"
         date exchange_rate_date "🔗 Fecha de la tasa → NoSQL exchange_rate (null si COP)"
-        bool in_stock "Disponibilidad"
+        bool in_stock "Disponibilidad informada (null si no se informa)"
     }
     PRICE_ANOMALY {
         int alert_url_id PK, FK "Snapshot evaluado (FK compuesta con captured_at)"
@@ -412,7 +412,7 @@ erDiagram
 ### Cómo funciona el snapshot "por cambio"
 
 - **PK natural `(alert_url_id, captured_at)`**: sin id sustituto y **sin índice adicional** (la PK sirve para series temporales y comparador). Incluye la clave de partición, requisito de PostgreSQL para PK/UNIQUE en tablas particionadas.
-- **Idempotencia por diseño (SCR-7):** en una transacción, el worker bloquea la fila de `alert_url`, compara el precio/stock capturado con `last_price_cop`/`last_in_stock` e inserta **solo si difiere**. Un reintento de la misma corrida encuentra el mismo valor y no inserta. Reemplaza al antiguo `capture_hash` y a la clave única por corrida.
+- **Idempotencia por diseño (SCR-7):** en una transacción, el worker bloquea la fila de `alert_url`, compara el precio capturado con `last_price_cop` e inserta **solo si difiere**. Un reintento de la misma corrida encuentra el mismo valor y no inserta. Reemplaza al antiguo `capture_hash` y a la clave única por corrida.
 - **Todo chequeo exitoso** actualiza `alert_url.last_checked_at` y **todos los `last_*`** (título, precio de lista, vigencia, marca, SKU, GTIN, MPN, imágenes y metadatos: `core` guarda todo lo que devuelve el scraper, D38), así el gráfico (VIS-2/VIS-3) reconstruye la línea de tiempo como **función escalonada**: el precio vale hasta el siguiente cambio o hasta `last_checked_at`.
 - **Chequeos fallidos / sin precio:** no generan snapshot; quedan solo en `site_stats_daily` (agregado permanente) y en el resultado de la corrida (`job_execution_result`, con TTL, en `schedule`).
 - **Sin `title`, `metadata`, `transaction_id`, `capture_hash` ni `exchange_rate` en el snapshot:** título y metadata viven solo en su último valor (`alert_url`); el `transaction_id` se obtiene vía `run_id`; la tasa se deriva (`price_cop / price_original`) o se consulta por `exchange_rate_date`.

@@ -51,7 +51,7 @@ CREATE TABLE ALERT_URL (
     BEST_PRICE_COP  numeric(14,2),           -- mejor precio POR SITIO (materializado)
     BEST_PRICE_AT   timestamptz,
     LAST_PRICE_COP  numeric(14,2),           -- último precio vigente (VIS-1 sin escanear snapshots)
-    LAST_IN_STOCK   boolean,
+    LAST_IN_STOCK   boolean,                 -- último stock informado; null si el sitio no lo informa (DEC-21). No se usa en el análisis (DEC-22)
     LAST_CHECKED_AT timestamptz,             -- último chequeo, cambie o no el precio
     LAST_TITLE      text,                    -- no se historiza
     -- Último dato completo que devolvió el scraper (D38): se sobrescribe en cada chequeo exitoso, no se historiza.
@@ -116,7 +116,7 @@ CREATE TABLE SITE_STATS_DAILY (
 -- (la tabla `RUN` vive en el esquema `SCHEDULE`, no aquí — ver ../README.md)
 
 -- Particionada por año. Solo se inserta un snapshot cuando cambia el
--- precio/stock respecto al último (idempotencia por diseño, SCR-7); un
+-- precio respecto al último (idempotencia por diseño, SCR-7); un
 -- job crea la partición del año siguiente (pendiente, ver docs/deliverables/db/README.md).
 CREATE TABLE PRICE_SNAPSHOT (
     ALERT_URL_ID        int NOT NULL REFERENCES ALERT_URL(ID),
@@ -128,7 +128,7 @@ CREATE TABLE PRICE_SNAPSHOT (
     PRICE_VALID_UNTIL   date,                   -- fin de la promoción (null si no la publica)
     CURRENCY            text REFERENCES CURRENCY(CODE), -- null si COP
     EXCHANGE_RATE_DATE  date,                   -- 🔗 Mongo exchange_rate (null si COP)
-    IN_STOCK            boolean NOT NULL,
+    IN_STOCK            boolean,                -- stock informado; null si el sitio no lo informa (DEC-21). El análisis no lo usa (DEC-22)
     CHECK (LIST_PRICE_COP IS NULL OR LIST_PRICE_COP > PRICE_COP),
     PRIMARY KEY (ALERT_URL_ID, CAPTURED_AT)
 ) PARTITION BY RANGE (CAPTURED_AT);

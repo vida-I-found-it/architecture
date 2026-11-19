@@ -31,7 +31,7 @@ La funcionalidad priorizada es **el recorrido completo de una alerta**: desde qu
 
 **1 · Crear la alerta (CU-02, CU-03).** El usuario elige el modo de creación (hoy solo «URL directa»; «Palabra clave» con LLM queda preparado pero deshabilitado), pega de 1 a 10 URLs, escribe el correo al que se le avisará y confirma en un modal que advierte que la acción es definitiva. La alerta es inmutable. Al guardarse, el sistema crea por debajo su agendamiento: **2 veces al día**, dentro de las ventanas 04:00–06:00 y 18:00–20:00. La primera corrida es inmediata, cuenta dentro de esas 2 y puede quedar fuera de las ventanas. El usuario no vuelve a intervenir.
 
-**2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL **solo cuando cambia el precio o el stock**. No calcula el mejor precio ni avisa.
+**2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL **solo cuando cambia el precio**. No calcula el mejor precio ni avisa.
 
 **3 · Analizar el resultado (CU-06, CU-10, CU-11).** El **análisis** es otro proceso, a otra hora (por defecto 2 al día, parametrizable), lanzado desde la interfaz o por un job agendado. Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. La primera vez no hay contra qué comparar y no avisa. Cuando el mejor precio baja, `notify` envía un email al correo registrado, con un enlace para darse de baja de esa alerta.
 
@@ -200,7 +200,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 
 | ID | Regla | Requerimientos |
 |---|---|---|
-| R7 | Solo se guarda un snapshot cuando **cambia el precio o el stock** respecto del último. El historial de snapshots es de solo añadir, y repetir una corrida no duplica datos | *Historial de precios*, *Reintentos idempotentes* |
+| R7 | Solo se guarda un snapshot cuando **cambia el precio** respecto del último; el stock se guarda como llegó (o nulo) pero no genera snapshots. El historial de snapshots es de solo añadir, y repetir una corrida no duplica datos | *Historial de precios*, *Reintentos idempotentes* |
 | R8 | Todo chequeo exitoso actualiza la **fecha del último chequeo**, cambie o no el precio. Así el histórico se reconstruye: el precio vale hasta el siguiente cambio | *Historial de precios*, *Histórico de precios* |
 
 **Análisis** (CU-06)
@@ -209,7 +209,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 |---|---|---|
 | R9 | Una caída sospechosa de precio **se guarda y se marca como anómala**; no se descarta. La primera captura de una URL nunca es anómala | *Validador de precio* |
 | R10 | El **mejor precio** de la alerta es el mínimo entre los últimos precios de sus URLs. Con una sola URL, es su precio vigente | *Motor de mejor precio* |
-| R11 | Una URL **sin stock no cuenta** para el mejor precio, porque ese precio no se puede comprar | *Motor de mejor precio* |
+| R11 | El **stock no se tiene en cuenta** para el mejor precio por ahora (DEC-22): una URL sin stock sigue contando. El stock se guarda como llegó y, si el sitio no lo informa, queda nulo | *Motor de mejor precio* |
 
 **Aviso** (CU-10, CU-11)
 
@@ -316,7 +316,7 @@ erDiagram
         string domain "Dominio normalizado"
         bool is_active "URL activa dentro de la alerta"
         decimal last_price_cop "Último precio vigente en COP"
-        bool last_in_stock "Última disponibilidad conocida"
+        bool last_in_stock "Última disponibilidad informada (null si no se informa)"
         datetime last_checked_at "Último chequeo exitoso, cambie o no el precio"
         string last_title "Último título capturado"
         decimal last_list_price_cop "Precio antes de la promoción"
@@ -337,7 +337,7 @@ erDiagram
         decimal price_cop "Precio en COP, mayor que 0"
         decimal list_price_cop "Precio antes de la promoción"
         date price_valid_until "Fin de la promoción"
-        bool in_stock "Disponibilidad"
+        bool in_stock "Disponibilidad informada (null si no se informa)"
     }
     PRICE_ANOMALY {
         int alert_url_id PK, FK "Snapshot evaluado"

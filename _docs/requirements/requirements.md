@@ -264,14 +264,14 @@ graph LR
 
 ### CU-05 · Procesar y almacenar
 
-**Descripción.** `schedule` entrega a `core`, por el callback y **de inmediato**, el resultado de cada URL (`ok` o `no_price`, y `error` si se agotaron los reintentos). `core` los sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL solo cuando el precio o el stock cambian. Aquí **no se calcula el mejor precio ni se avisa**: eso es el análisis (CU-06), otro proceso a otra hora.
+**Descripción.** `schedule` entrega a `core`, por el callback y **de inmediato**, el resultado de cada URL (`ok` o `no_price`, y `error` si se agotaron los reintentos). `core` los sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL solo cuando el precio cambia. Aquí **no se calcula el mejor precio ni se avisa**: eso es el análisis (CU-06), otro proceso a otra hora.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
 | PRO-1 | 🖥️ Normalizador de precio | Convierte lo extraído en datos limpios: precio numérico, moneda, stock y título. | ✅ | Funcionalidad | 🔌 `POST /api/internal/prices` | Con sitios en COP no se necesita conversión |
 | PRO-2 | 🖥️ Historial de precios | Guarda cada snapshot de precio en PostgreSQL, solo de añadir. | ✅ | Funcionalidad | 🔌 `POST /api/internal/prices` | |
 | PRO-5 | 🖥️ Validador de precio (descarte) | Descarta precios inválidos (cero, negativos, páginas de error). | ✅ | Regla [R5](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Descarta lo realmente inválido: precio ≤ 0, HTML de error o moneda distinta de COP |
-| SCR-7 | 🖥️ Reintentos idempotentes | Evita duplicar el historial si se repite una corrida. | ✅ | Regla [R7](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Entra aunque sea P1: el snapshot se inserta solo si cambia el precio o el stock |
+| SCR-7 | 🖥️ Reintentos idempotentes | Evita duplicar el historial si se repite una corrida. | ✅ | Regla [R7](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Entra aunque sea P1: el snapshot se inserta solo si cambia el precio |
 | RNF-6 | 🎨🖥️ Saneamiento de datos | Sanea el título y los metadatos antes de guardarlos. | ✅ | Regla [R6](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | Aplica a **todo** el texto que devuelve el scraper (título, marca, SKU, GTIN, MPN) y a las URLs de las imágenes, que vienen del sitio y no son de confianza |
 
 **Criterios de aceptación** 🆕
@@ -299,14 +299,15 @@ graph LR
 | PRO-5 | 🖥️ Validador de precio (marca) | Marca como anómala una caída sospechosa de precio. | ✅ | Regla [R9](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (proceso interno de `core`) | Una caída anómala **se marca** (veredicto aparte, `price_anomaly`); no se descarta ni se modifica el snapshot |
 
 **Criterios de aceptación** 🆕
-- El mejor precio de la alerta es el mínimo entre los últimos precios vigentes de sus URLs activas y con stock, y lo calcula el análisis (no el guardado del snapshot).
+- El mejor precio de la alerta es el mínimo entre los últimos precios vigentes de sus URLs activas, **sin considerar el stock** (DEC-22), y lo calcula el análisis (no el guardado del snapshot).
 - Si no había un mejor precio anterior, el análisis solo lo guarda y **no avisa**.
 - El análisis se puede lanzar desde la interfaz y desde un job agendado, con el mismo resultado.
 - Un análisis genera a lo más un aviso por alerta, con un `transaction_id` por alerta analizada.
 - Una caída sospechosa se marca: el análisis evalúa cada snapshot nuevo con la estrategia activa y guarda el veredicto en `price_anomaly`, sin tocar el snapshot (DEC-18, ADR-0005).
 - La primera captura de una URL nunca es anómala, y con muestra insuficiente de comparación no se marca nada.
 - Cambiar de estrategia no exige migrar ni reescribir datos.
-- Una URL sin stock no cuenta para el mejor precio.
+- El stock no se tiene en cuenta para el mejor precio: una URL sin stock sigue contando (DEC-22).
+- Si el scraper no informa el stock, se guarda nulo y no se inventa un valor (DEC-21). El snapshot se crea solo cuando cambia el precio.
 - Con una sola URL, el mejor precio es su precio vigente.
 - Cuando el mejor precio **baja**, el motor pide el aviso a `notify` (CU-10) **después** de confirmar la transacción que actualiza el mejor precio.
 
@@ -452,12 +453,13 @@ graph LR
 | DEC-10 | Comunicación `core` → `notify` (D12, el transporte) | **Llamada REST** que crea la notificación; el envío del email es asíncrono dentro de `notify`. Contrato en CU-10 |
 | DEC-12 | Fallo de la llamada REST (resto de D12) | **Cada pieza reintenta lo suyo con su outbox:** `notify` reintenta el envío del email (`notification_outbox`); `core` **no** crea outbox. `core` reintenta la llamada de forma acotada, **siempre con el mismo `transaction_id`**. **Limitación declarada:** si se agota, el aviso se pierde y queda en el log con ese `transactionId` |
 | DEC-13 | Enlace de baja con solo el hash guardado | **Token = HMAC(secreto del entorno, id de la suscripción)**; la base guarda su SHA-256. El requerimiento que cubre la baja es SUB-3 (CU-11) |
-| DEC-16 | Semántica del «mejor precio» | El **mínimo vigente** entre los últimos precios de las URLs de la alerta que tienen stock. Se avisa cuando baja respecto del anterior; si sube y vuelve a bajar, avisa otra vez |
+| DEC-16 | Semántica del «mejor precio» | El **mínimo vigente** entre los últimos precios de las URLs activas de la alerta, sin considerar el stock (DEC-22). Se avisa cuando baja respecto del anterior; si sube y vuelve a bajar, avisa otra vez |
 | DEC-17 | Cómo muestra el dashboard un sitio «sin precio» | **Se deriva sin cambiar el esquema:** el estado `no_price`/`error` vive en el resultado de `schedule` (Mongo, TTL 90 días) y `alert_url` solo guarda el último chequeo exitoso. La UI muestra la fecha de `last_checked_at` y marca «sin datos recientes» si pasaron más de 24 h (aprobada 2026-11-18) |
 | DEC-18 | Umbral de la «caída anómala» (PRO-5) | **Sin umbral fijo ni variable de entorno.** La caída se compara con los cambios de otros productos (mediana y MAD; anómala si el *modified z-score* ≤ −3,5, sobre 30 días y mínimo 30 cambios de comparación; valores de partida míos, sin medición). El algoritmo es una **estrategia intercambiable** (`AnomalyStrategy`) y el veredicto se guarda aparte en `price_anomaly`, así que cambiar de método no toca los datos. Ver [ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md) (aprobada 2026-11-19) |
 | DEC-19 | Forma del resultado del scrape en `job_execution_result` | Un documento por ejecución (una URL): `alert_url_id`, estado (`ok`, `no_price` o `error`), estrategia ganadora, `price_raw`, moneda, stock, título, metadatos y error |
 | DEC-20 | Hallazgos de modelo de datos | `alert_url` gana `UNIQUE (alert_id, url)` y `CHECK` de largo de URL (**≤ 2048**); `subscription.email` gana `CHECK` de largo (**≤ 254**, igual que `auth`). Los largos son valores de partida míos, sin medición. El agendamiento: `core` fija hora y minuto dentro de las franjas horarias (04–06 y 18–20, por entorno) y la primera corrida se dispara con `next_run_at = ahora` (aprobada 2026-11-18; largos de `title`, `product_name` y `notes` quedan pendientes) |
-| DEC-22 | ¿El stock cuenta para el mejor precio? | **Una URL sin stock no cuenta**: ese precio no se puede comprar |
+| DEC-21 | Stock desconocido | **Se guarda nulo**, sin asumir «disponible»: `price_snapshot.in_stock` admite nulo, igual que `alert_url.last_in_stock`. En Mongo el dato se guarda tal como llegue. Como el análisis no usa el stock (DEC-22), no hace falta un valor por defecto (aprobada 2026-11-19) |
+| DEC-22 | ¿El stock cuenta para el mejor precio? | **No, por ahora.** El análisis ignora el stock: una URL sin stock sigue contando. El stock se sigue guardando, así que retomarlo es cambiar una regla. Modifica la decisión inicial («una URL sin stock no cuenta»); aprobada 2026-11-19. Riesgo aceptado: un aviso puede basarse en el precio de una URL agotada |
 | DEC-23 | Moneda distinta de COP | **Se descarta** y no se guarda: la versión solo trabaja en COP |
 | DEC-24 | Unidad de trabajo del scraping | **Una URL = una ejecución** con su `transaction_id`. `schedule` las envía una tras otra y cada resultado se entrega a `core` de inmediato. Tres estados: `ok`, `no_price` (definitivo) y `error` (único que se reintenta, hasta 3 veces con 10–15 min). Cambia R4 y SCR-8 respecto del original |
 | DEC-25 | Scraping y análisis | Son dos procesos que corren a horas distintas y no se solapan. Por defecto 2 capturas y 2 análisis al día, parametrizables (puede ser 1 y 1). El análisis se lanza desde la interfaz o por un job agendado |
@@ -471,4 +473,3 @@ graph LR
 | DEC-11 | **Correo como destino** (D16): el original dice que no hay mecanismo para avisar a un correo distinto al de la cuenta, pero `notification.destination` ya existe | Llevar el correo de la suscripción como `destination`. Ojo: `UNIQUE (transaction_id, app_user_id, channel)` choca si una alerta tuviera varios correos con el mismo usuario fijo; hoy el formulario pide uno solo |
 | DEC-14 | Doble confirmación del correo antes de activar la suscripción | No en esta versión; se anota como mejora |
 | DEC-15 | Consistencia `core`↔`schedule` (D7) y cola (B2) | Siguen abiertos del original |
-| DEC-21 | **Stock desconocido.** `in_stock` es obligatorio en la base y un sitio puede no informarlo | Si el scraper no lo informa, se guarda como disponible |
