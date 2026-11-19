@@ -236,7 +236,7 @@ Es otro proceso de `core`, a otra hora, que se lanza **desde la interfaz de usua
 
 | Paso | Qué hace | Regla |
 |------|----------|-------|
-| 5 · Marcar | Una caída sospechosa se guarda y se marca como anómala; no se descarta | R9 |
+| 5 · Marcar | El análisis evalúa cada snapshot nuevo con la estrategia de anomalía activa y guarda el veredicto en `price_anomaly`; la caída sospechosa no se descarta | R9 · ADR-0005 |
 | 6 · Decidir | Recalcula el mejor precio con los últimos snapshots (sección siguiente) | PRO-6 |
 | 7 · Avisar | Si el mejor precio bajó y no es la primera vez, pide el aviso a `notify` | NOT-3 |
 
@@ -288,7 +288,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | EV-07 | Las 4 estrategias fallan con la página respondiendo bien | El scraper devuelve `no_price · not_found`: es definitivo y **no se reintenta**. Proyecto: además se guarda la captura cruda y se avisa al admin para que construya un adapter (SCR-13) | ✅ SCR-8 · SCR-13 solo proyecto |
 | EV-08 | El sitio cambió su estructura y una estrategia que antes funcionaba deja de servir | La cascada sigue con las siguientes. Proyecto: si falla la estrategia recordada (A1), se corre la cascada completa | ✅ cascada · A1 candidata (D35) |
 | EV-09 | Una URL falla y las demás de la alerta no | Las demás siguen; la fallida queda `no_price` | ✅ CU-04 |
-| EV-10 | **Todas** las URLs de la alerta quedan sin precio en una corrida | No se guarda snapshot ni se avisa. El dashboard muestra «sin datos recientes» pasadas 24 h desde el último chequeo exitoso | 💡 DEC-17 (abierta) |
+| EV-10 | **Todas** las URLs de la alerta quedan sin precio en una corrida | No se guarda snapshot ni se avisa. El dashboard muestra «sin datos recientes» pasadas 24 h desde el último chequeo exitoso | DEC-17 ✅ |
 | EV-11 | El precio llega pero el HTML es una página de error | Se descarta, no se guarda | ✅ R5 |
 
 ### Calidad del dato
@@ -297,7 +297,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 |----|--------|----------|--------|
 | EV-12 | Precio ≤ 0 o no numérico | `core` lo descarta; no contamina el historial | ✅ R5 |
 | EV-13 | Moneda distinta de COP | Se descarta y no se guarda (ejercicio). Proyecto: se convierte con la tasa del día | ✅ DEC-23 |
-| EV-14 | Caída sospechosa de precio | Se **guarda y se marca** como anómala; no se descarta. El umbral no tiene valor | ✅ R9 · ❓ umbral (DEC-18) |
+| EV-14 | Caída sospechosa de precio | Se **guarda y se marca** como anómala; no se descarta. El umbral lo da una estrategia intercambiable (comparación con otros productos) | ✅ R9 · DEC-18 ✅ |
 | EV-15 | La URL no tiene stock | Su precio no cuenta para el mejor precio | ✅ DEC-22 |
 | EV-16 | El sitio no informa el stock | Se asume un valor por defecto; cuál es no está decidido | ❓ DEC-21 |
 
@@ -352,5 +352,3 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 - **Barrido diario y aviso al administrador:** falta escribir la plantilla `admin_alert` en `notify` y sembrarla (EJ-3). Un día sin errores no envía correo (EV-29).
 - **D15:** dónde se persiste el detalle por etapa (`job_state`, `raw_capture`) tras genericizar `schedule`. Hoy `schedule` solo conserva el resultado genérico de la corrida; ver [pendientes](../00-context/pending.md).
 - **DEC-15 / D7:** la consistencia entre crear la alerta en `core` y su job en `schedule` sigue abierta.
-- **DEC-17:** cómo muestra el dashboard un sitio «sin precio» (la propuesta es derivarlo de la fecha del último chequeo exitoso).
-- **DEC-18:** el umbral de la «caída anómala» no tiene valor definido.

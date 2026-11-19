@@ -301,6 +301,7 @@ erDiagram
     ALERT ||--o{ ALERT_TAG : classified_by
     TAG ||--o{ ALERT_TAG : in
     ALERT_URL ||--o{ PRICE_SNAPSHOT : captured_at_site
+    PRICE_SNAPSHOT ||--o{ PRICE_ANOMALY : evaluated_by
     ALERT ||--o{ SUBSCRIPTION : receives
 
     ALERT {
@@ -319,7 +320,7 @@ erDiagram
     ALERT_URL {
         int id PK "Identificador"
         int alert_id FK "Alerta a la que pertenece"
-        string url "URL del producto en el sitio (validada anti-SSRF, SCR-18)"
+        string url "URL del producto en el sitio (validada anti-SSRF, SCR-18; ≤ 2048; única por alerta)"
         string domain "Dominio normalizado (para lookup de adapter)"
         bool is_active "URL activa dentro de la alerta"
         decimal best_price_cop "Mejor precio POR SITIO (materializado, COP)"
@@ -376,7 +377,17 @@ erDiagram
         string currency "Código de moneda original, ISO 4217 (null si COP) — ref. informativa"
         date exchange_rate_date "🔗 Fecha de la tasa → NoSQL exchange_rate (null si COP)"
         bool in_stock "Disponibilidad"
-        bool is_anomalous "Desplome sospechoso (marca en email)"
+    }
+    PRICE_ANOMALY {
+        int alert_url_id PK, FK "Snapshot evaluado (FK compuesta con captured_at)"
+        datetime captured_at PK "Momento de captura del snapshot"
+        string strategy PK "Estrategia que lo evaluó (ADR-0005)"
+        int strategy_version PK "Versión de la estrategia"
+        bool is_anomalous "Desplome sospechoso (marca en email y dashboard)"
+        string reason "ok, first_capture, insufficient_sample, no_dispersion u outlier"
+        decimal score "Puntaje de la estrategia (null si no aplica)"
+        jsonb params "Parámetros usados (ventana, umbral, muestra)"
+        datetime evaluated_at "Cuándo se evaluó"
     }
     SUBSCRIPTION {
         int id PK "Identificador"
@@ -395,6 +406,8 @@ erDiagram
 > **`site_stats_daily`** es un agregado diminuto (1 fila por dominio y día, con *upsert*) que permite la tasa de éxito por sitio a largo plazo (SCR-17) aunque el detalle de cada corrida ya haya expirado por TTL.
 >
 > **`site_adapter.definition`** es **declarativa** (selectores/JSONPath): nunca código ejecutable ni `eval`; las regex llevan timeout (anti-ReDoS).
+
+> **El veredicto de anomalía no vive en el snapshot** ([ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md)): `price_anomaly` guarda un veredicto por snapshot, estrategia y versión, append-only. Cambiar de estrategia agrega filas y no reescribe datos; el dashboard y el aviso leen la de la estrategia activa.
 
 ### Cómo funciona el snapshot "por cambio"
 
@@ -664,7 +677,8 @@ erDiagram
 
 - `price_snapshot`: **solo la PK** `(alert_url_id, captured_at)`. Sin índices por `run_id` ni `transaction_id` (no se consulta por ahí; se navega job_execution → MongoDB).
 - `job_execution (job_id, started_at)` — historial de corridas por job · `job_execution (status) WHERE status IN ('queued','running')` (parcial) — detectar corridas atascadas · `job_execution (system)`.
-- `alert_url (alert_id)` y `alert_url (domain)` — lookup de adapter.
+- `price_anomaly`: solo la PK `(alert_url_id, captured_at, strategy, strategy_version)`; el análisis busca los snapshots sin veredicto de la estrategia activa con un anti-join sobre ella.
+- `alert_url (alert_id)` y `alert_url (domain)` — lookup de adapter · `alert_url (alert_id, url)` único (DEC-20).
 - `job (next_run_at) WHERE is_active` (parcial) — el scheduler toma lo vencido con `FOR UPDATE SKIP LOCKED` (sin doble encolado con varias instancias) · `job (system)`.
 - `job_callback_outbox (next_retry_at)` — mismo patrón que `notification_outbox`; sin `WHERE`, la tabla ya solo contiene lo que está activamente en reintento.
 - `job_execution (id) WHERE callback_status = 'failed'` (parcial) — panel de salud, D8.

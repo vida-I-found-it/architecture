@@ -293,6 +293,7 @@ Lo que usan CU-02 (crear la alerta), CU-05 (guardar el precio), CU-06 (mejor pre
 erDiagram
     ALERT ||--o{ ALERT_URL : monitorea
     ALERT_URL ||--o{ PRICE_SNAPSHOT : "snapshots de precio"
+    PRICE_SNAPSHOT ||--o{ PRICE_ANOMALY : "veredicto de anomalía"
     ALERT ||--o{ SUBSCRIPTION : avisa
 
     ALERT {
@@ -337,7 +338,14 @@ erDiagram
         decimal list_price_cop "Precio antes de la promoción"
         date price_valid_until "Fin de la promoción"
         bool in_stock "Disponibilidad"
+    }
+    PRICE_ANOMALY {
+        int alert_url_id PK, FK "Snapshot evaluado"
+        datetime captured_at PK "Momento de la captura"
+        string strategy PK "Estrategia que lo evaluó"
+        int strategy_version PK "Versión de la estrategia"
         bool is_anomalous "Caída anómala"
+        string reason "Motivo del veredicto"
     }
     SUBSCRIPTION {
         int id PK "Identificador"

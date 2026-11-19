@@ -296,14 +296,16 @@ graph LR
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
 | PRO-6 | 🖥️ Motor de mejor precio | Calcula el mejor precio vigente entre todas las URLs de la alerta. | ✅ | Funcionalidad | 🔌 `POST /api/internal/analysis` · `POST /api/analysis` (🆕, ver EJ-5) | Calcula y guarda el mejor precio vigente entre **todas las URLs** de la alerta. Cuando el mejor precio **baja** respecto del anterior, **pide el aviso a `notify`** (CU-10) |
 | **EJ-5** 🆕 | 🖥️🎨 **Lanzar el análisis** | Permite correr el análisis a mano o agendado. | 🆕 | Funcionalidad | 🔌 `POST /api/analysis` (interfaz → `core`) · `POST /api/internal/analysis` (`schedule` → `core`) | Mismo proceso con dos entradas: un botón de la interfaz y un job agendado en `schedule` (SCH-13 `api_call`). Las horas del análisis son parámetros de configuración |
-| PRO-5 | 🖥️ Validador de precio (marca) | Marca como anómala una caída sospechosa de precio. | ✅ | Regla [R9](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (proceso interno de `core`) | Una caída anómala **se marca** en el dato; no se descarta |
+| PRO-5 | 🖥️ Validador de precio (marca) | Marca como anómala una caída sospechosa de precio. | ✅ | Regla [R9](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (proceso interno de `core`) | Una caída anómala **se marca** (veredicto aparte, `price_anomaly`); no se descarta ni se modifica el snapshot |
 
 **Criterios de aceptación** 🆕
 - El mejor precio de la alerta es el mínimo entre los últimos precios vigentes de sus URLs activas y con stock, y lo calcula el análisis (no el guardado del snapshot).
 - Si no había un mejor precio anterior, el análisis solo lo guarda y **no avisa**.
 - El análisis se puede lanzar desde la interfaz y desde un job agendado, con el mismo resultado.
 - Un análisis genera a lo más un aviso por alerta, con un `transaction_id` por alerta analizada.
-- Una caída sospechosa se guarda con la marca de anomalía.
+- Una caída sospechosa se marca: el análisis evalúa cada snapshot nuevo con la estrategia activa y guarda el veredicto en `price_anomaly`, sin tocar el snapshot (DEC-18, ADR-0005).
+- La primera captura de una URL nunca es anómala, y con muestra insuficiente de comparación no se marca nada.
+- Cambiar de estrategia no exige migrar ni reescribir datos.
 - Una URL sin stock no cuenta para el mejor precio.
 - Con una sola URL, el mejor precio es su precio vigente.
 - Cuando el mejor precio **baja**, el motor pide el aviso a `notify` (CU-10) **después** de confirmar la transacción que actualiza el mejor precio.
@@ -451,7 +453,10 @@ graph LR
 | DEC-12 | Fallo de la llamada REST (resto de D12) | **Cada pieza reintenta lo suyo con su outbox:** `notify` reintenta el envío del email (`notification_outbox`); `core` **no** crea outbox. `core` reintenta la llamada de forma acotada, **siempre con el mismo `transaction_id`**. **Limitación declarada:** si se agota, el aviso se pierde y queda en el log con ese `transactionId` |
 | DEC-13 | Enlace de baja con solo el hash guardado | **Token = HMAC(secreto del entorno, id de la suscripción)**; la base guarda su SHA-256. El requerimiento que cubre la baja es SUB-3 (CU-11) |
 | DEC-16 | Semántica del «mejor precio» | El **mínimo vigente** entre los últimos precios de las URLs de la alerta que tienen stock. Se avisa cuando baja respecto del anterior; si sube y vuelve a bajar, avisa otra vez |
+| DEC-17 | Cómo muestra el dashboard un sitio «sin precio» | **Se deriva sin cambiar el esquema:** el estado `no_price`/`error` vive en el resultado de `schedule` (Mongo, TTL 90 días) y `alert_url` solo guarda el último chequeo exitoso. La UI muestra la fecha de `last_checked_at` y marca «sin datos recientes» si pasaron más de 24 h (aprobada 2026-11-18) |
+| DEC-18 | Umbral de la «caída anómala» (PRO-5) | **Sin umbral fijo ni variable de entorno.** La caída se compara con los cambios de otros productos (mediana y MAD; anómala si el *modified z-score* ≤ −3,5, sobre 30 días y mínimo 30 cambios de comparación; valores de partida míos, sin medición). El algoritmo es una **estrategia intercambiable** (`AnomalyStrategy`) y el veredicto se guarda aparte en `price_anomaly`, así que cambiar de método no toca los datos. Ver [ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md) (aprobada 2026-11-19) |
 | DEC-19 | Forma del resultado del scrape en `job_execution_result` | Un documento por ejecución (una URL): `alert_url_id`, estado (`ok`, `no_price` o `error`), estrategia ganadora, `price_raw`, moneda, stock, título, metadatos y error |
+| DEC-20 | Hallazgos de modelo de datos | `alert_url` gana `UNIQUE (alert_id, url)` y `CHECK` de largo de URL (**≤ 2048**); `subscription.email` gana `CHECK` de largo (**≤ 254**, igual que `auth`). Los largos son valores de partida míos, sin medición. El agendamiento: `core` fija hora y minuto dentro de las franjas horarias (04–06 y 18–20, por entorno) y la primera corrida se dispara con `next_run_at = ahora` (aprobada 2026-11-18; largos de `title`, `product_name` y `notes` quedan pendientes) |
 | DEC-22 | ¿El stock cuenta para el mejor precio? | **Una URL sin stock no cuenta**: ese precio no se puede comprar |
 | DEC-23 | Moneda distinta de COP | **Se descarta** y no se guarda: la versión solo trabaja en COP |
 | DEC-24 | Unidad de trabajo del scraping | **Una URL = una ejecución** con su `transaction_id`. `schedule` las envía una tras otra y cada resultado se entrega a `core` de inmediato. Tres estados: `ok`, `no_price` (definitivo) y `error` (único que se reintenta, hasta 3 veces con 10–15 min). Cambia R4 y SCR-8 respecto del original |
@@ -466,7 +471,4 @@ graph LR
 | DEC-11 | **Correo como destino** (D16): el original dice que no hay mecanismo para avisar a un correo distinto al de la cuenta, pero `notification.destination` ya existe | Llevar el correo de la suscripción como `destination`. Ojo: `UNIQUE (transaction_id, app_user_id, channel)` choca si una alerta tuviera varios correos con el mismo usuario fijo; hoy el formulario pide uno solo |
 | DEC-14 | Doble confirmación del correo antes de activar la suscripción | No en esta versión; se anota como mejora |
 | DEC-15 | Consistencia `core`↔`schedule` (D7) y cola (B2) | Siguen abiertos del original |
-| DEC-17 | **Cómo muestra el dashboard un sitio «sin precio».** Ese estado vive en el resultado de `schedule` (Mongo, TTL 90 días); `alert_url` solo guarda el último chequeo exitoso | Derivarlo sin cambiar el esquema: se muestra la fecha del último chequeo exitoso y se marca «sin datos recientes» si pasaron más de 24 h 🆕 |
-| DEC-18 | **Umbral de la «caída anómala»** (PRO-5). En lo que revisé no hay un valor definido | Parámetro por entorno; el valor lo defines tú |
-| DEC-20 | **Hallazgos de modelo de datos** (`alert_url` sin `UNIQUE (alert_id, url)` ni límites de longitud; el agendamiento solo tiene `schedule_cron`, sin corrida inicial ni escalonado) | Agregar el `UNIQUE` y los límites en la migración de esta versión; `core` fija hora y minuto dentro de la ventana y `next_run_at = ahora` para la primera corrida |
 | DEC-21 | **Stock desconocido.** `in_stock` es obligatorio en la base y un sitio puede no informarlo | Si el scraper no lo informa, se guarda como disponible |

@@ -45,7 +45,7 @@ CREATE TABLE ALERT (
 CREATE TABLE ALERT_URL (
     ID              int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ALERT_ID        int NOT NULL REFERENCES ALERT(ID),
-    URL             text NOT NULL,           -- validada anti-SSRF (SCR-18)
+    URL             text NOT NULL CHECK (char_length(URL) <= 2048), -- validada anti-SSRF (SCR-18); largo DEC-20
     DOMAIN          text NOT NULL,           -- normalizado, lookup de adapter
     IS_ACTIVE       boolean NOT NULL DEFAULT true,
     BEST_PRICE_COP  numeric(14,2),           -- mejor precio POR SITIO (materializado)
@@ -65,7 +65,8 @@ CREATE TABLE ALERT_URL (
     LAST_METADATA   jsonb,                   -- vendedor, envío… (no se historiza)
     CREATED_AT      timestamptz NOT NULL DEFAULT now(),
     UPDATED_AT      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (ALERT_ID, ID)                    -- soporta la FK compuesta de `ALERT`
+    UNIQUE (ALERT_ID, ID),                   -- soporta la FK compuesta de `ALERT`
+    UNIQUE (ALERT_ID, URL)                   -- una URL no se repite dentro de la alerta (DEC-20)
 );
 CREATE INDEX IX_ALERT_URL_ALERT ON ALERT_URL(ALERT_ID);
 CREATE INDEX IX_ALERT_URL_DOMAIN ON ALERT_URL(DOMAIN);
@@ -128,7 +129,6 @@ CREATE TABLE PRICE_SNAPSHOT (
     CURRENCY            text REFERENCES CURRENCY(CODE), -- null si COP
     EXCHANGE_RATE_DATE  date,                   -- 🔗 Mongo exchange_rate (null si COP)
     IN_STOCK            boolean NOT NULL,
-    IS_ANOMALOUS        boolean NOT NULL DEFAULT false,
     CHECK (LIST_PRICE_COP IS NULL OR LIST_PRICE_COP > PRICE_COP),
     PRIMARY KEY (ALERT_URL_ID, CAPTURED_AT)
 ) PARTITION BY RANGE (CAPTURED_AT);
@@ -136,13 +136,30 @@ CREATE TABLE PRICE_SNAPSHOT (
 CREATE TABLE PRICE_SNAPSHOT_2026 PARTITION OF PRICE_SNAPSHOT
     FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
 
+-- Veredicto de «caída anómala» (R9, DEC-18, ADR-0005). Append-only y aparte del
+-- snapshot: cambiar de estrategia agrega filas, nunca reescribe las anteriores.
+-- El dashboard y el aviso leen las filas de la estrategia activa.
+CREATE TABLE PRICE_ANOMALY (
+    ALERT_URL_ID     int NOT NULL,
+    CAPTURED_AT      timestamptz NOT NULL,
+    STRATEGY         text NOT NULL,           -- nombre en el registro de estrategias, p.ej. 'peer_robust_outlier'
+    STRATEGY_VERSION int NOT NULL,
+    IS_ANOMALOUS     boolean NOT NULL,
+    REASON           text NOT NULL CHECK (REASON IN ('ok', 'first_capture', 'insufficient_sample', 'no_dispersion', 'outlier')),
+    SCORE            numeric,                 -- p.ej. modified z-score; null si no aplica
+    PARAMS           jsonb NOT NULL DEFAULT '{}'::jsonb, -- parámetros usados (ventana, umbral, muestra)
+    EVALUATED_AT     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (ALERT_URL_ID, CAPTURED_AT, STRATEGY, STRATEGY_VERSION),
+    FOREIGN KEY (ALERT_URL_ID, CAPTURED_AT) REFERENCES PRICE_SNAPSHOT (ALERT_URL_ID, CAPTURED_AT)
+);
+
 -- CREATED_BY es obligatorio (2026-09-30, D13): toda suscripción exige
 -- cuenta — se retiró el rol incógnito y notify.notification exige
 -- app_user_id, así que ya no existe la suscripción "solo por email".
 CREATE TABLE SUBSCRIPTION (
     ID                     int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ALERT_ID               int NOT NULL REFERENCES ALERT(ID),
-    EMAIL                  text NOT NULL CHECK (EMAIL = lower(EMAIL)), -- normalizado a minúsculas (lo exige la base); se precarga con el de la cuenta (SUB-1)
+    EMAIL                  text NOT NULL CHECK (EMAIL = lower(EMAIL) AND char_length(EMAIL) <= 254), -- normalizado a minúsculas (lo exige la base); se precarga con el de la cuenta (SUB-1)
     STATUS                 text NOT NULL DEFAULT 'active' CHECK (STATUS IN ('active', 'unsubscribed')),
     CREATED_BY             uuid NOT NULL,       -- id de auth.app_user, sin FK — usuario dueño de la suscripción
     UNSUBSCRIBE_TOKEN_HASH bytea NOT NULL,       -- nunca en claro
