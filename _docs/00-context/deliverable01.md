@@ -308,6 +308,7 @@ erDiagram
         decimal best_price_cop "Mejor precio vigente de la alerta (CU-06)"
         datetime best_price_at "Cuándo se registró ese mejor precio"
         int best_price_alert_url_id FK "URL con el mejor precio"
+        int schedule_job_id "Job en schedule; null = sin schedule"
     }
     ALERT_URL {
         int id PK "Identificador"
@@ -380,6 +381,7 @@ erDiagram
         string name "Nombre legible"
         string execution_type FK "Tipo de ejecución"
         jsonb payload "Entrada del job: identifica la alerta, opaca para schedule"
+        string external_key "Llave de idempotencia (única por system)"
         string schedule_cron "Expresión cron de la programación"
         bool is_active "Programación activa"
         string callback_type "api_call"

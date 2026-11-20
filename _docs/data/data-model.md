@@ -316,6 +316,7 @@ erDiagram
         decimal best_price_cop "Mejor precio GLOBAL vigente (materializado, COP)"
         datetime best_price_at "Cuándo se registró ese mejor precio"
         int best_price_alert_url_id FK "Sitio (URL) con el mejor precio (FK compuesta, ver nota)"
+        int schedule_job_id "Job en schedule, sin FK; null = sin schedule (DEC-15)"
     }
     ALERT_URL {
         int id PK "Identificador"
@@ -457,6 +458,7 @@ erDiagram
         int id PK "Identificador"
         string system "Código de auth.system, sin FK — dueño del job (multi-proyecto)"
         string name "Etiqueta legible, ej. 'Limpieza semanal de snapshots'"
+        string external_key "Llave de idempotencia de quien crea el job, única por system (DEC-15)"
         string execution_type FK "FK real a execution_type (misma esquema)"
         jsonb payload "Entrada específica del execution_type — OPACA para schedule"
         string schedule_cron "Expresión cron estándar (soportada nativa por APScheduler)"
@@ -679,7 +681,7 @@ erDiagram
 - `job_execution (job_id, started_at)` — historial de corridas por job · `job_execution (status) WHERE status IN ('queued','running')` (parcial) — detectar corridas atascadas · `job_execution (system)`.
 - `price_anomaly`: solo la PK `(alert_url_id, captured_at, strategy, strategy_version)`; el análisis busca los snapshots sin veredicto de la estrategia activa con un anti-join sobre ella.
 - `alert_url (alert_id)` y `alert_url (domain)` — lookup de adapter · `alert_url (alert_id, url)` único (DEC-20).
-- `job (next_run_at) WHERE is_active` (parcial) — el scheduler toma lo vencido con `FOR UPDATE SKIP LOCKED` (sin doble encolado con varias instancias) · `job (system)`.
+- `job (system, external_key)` único parcial (DEC-15) · `job (next_run_at) WHERE is_active` (parcial) — el scheduler toma lo vencido con `FOR UPDATE SKIP LOCKED` (sin doble encolado con varias instancias) · `job (system)`.
 - `job_callback_outbox (next_retry_at)` — mismo patrón que `notification_outbox`; sin `WHERE`, la tabla ya solo contiene lo que está activamente en reintento.
 - `job_execution (id) WHERE callback_status = 'failed'` (parcial) — panel de salud, D8.
 - `notification (app_user_id)` · `notification (system)` · `notification (id) WHERE status = 'failed'` (parcial) — ver notificaciones fallidas sin escanear todo · `template (code) WHERE is_active` (parcial) — lookup de la versión vigente · `notification_outbox (next_retry_at)` — el worker de reintento toma lo vencido con `FOR UPDATE SKIP LOCKED`; sin `WHERE`, mismo motivo que en `job_callback_outbox`.

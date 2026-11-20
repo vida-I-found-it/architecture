@@ -188,7 +188,7 @@ Restricciones ya conocidas para cuando se active (no se implementan ahora):
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
-| ALE-8 | 🖥️ Programar la captura al crear la alerta | Al crear la alerta, deja programado su scraping automático. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/jobs` | `core` crea el job en `schedule` después de guardar la alerta. La consistencia entre ambas escrituras sigue abierta (D7) |
+| ALE-8 | 🖥️ Programar la captura al crear la alerta | Al crear la alerta, deja programado su scraping automático. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/jobs` | `core` crea el job en `schedule` después de guardar la alerta. La llamada lleva una llave de idempotencia (`alert-<id>`) y se reintenta hasta 3 veces (1, 2 y 4 s); si falla, la alerta queda con `schedule_job_id` nulo y se reintenta al inicio de cada análisis (DEC-15) |
 | SCH-1 | 🖥️ Programación por alerta | Define cuántas veces al día corre cada alerta (2). | ✅ | Regla [R2](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (cron del job al crearlo) | Cada alerta corre **2 veces al día**, una diurna y una nocturna (DEC-8) |
 | SCH-2 | 🖥️ Ejecución en segundo plano | Ejecuta las corridas solas, en segundo plano. | ✅ | Funcionalidad | — | |
 | SCH-3 | 🖥️ Ejecución escalonada | Reparte las corridas en horas distintas para no sobrecargar. | ✅ | Funcionalidad | — | Con pocas alertas casi no se nota, pero se conserva |
@@ -200,7 +200,9 @@ Restricciones ya conocidas para cuando se active (no se implementan ahora):
 | SCH-14 | 🖥️ Callback del job | Indica a `schedule` a qué URL entregar el resultado. | ✅ | Funcionalidad | — (`schedule` llama a `POST /api/internal/prices`) | `core` indica la URL a la que `schedule` entrega el precio; el destino debe estar en la lista blanca de backends registrados. El callback del scraper es otro, definido por `schedule` (SCR-20) |
 
 **Criterios de aceptación** 🆕
-- Al crear la alerta existe **un job por alerta** con su callback configurado; si falla su creación, la alerta queda detectable como «sin schedule» (según D7).
+- Al crear la alerta existe **un job por alerta** con su callback configurado y su `job_id` guardado en `alert.schedule_job_id`.
+- Si falla la creación del job, la alerta queda creada con `schedule_job_id` nulo («sin schedule») y el usuario no ve un error; `core` reintenta al inicio de cada análisis (DEC-15).
+- Repetir la creación del job con la misma llave no crea un segundo job: `schedule` devuelve el existente con 200.
 - La captura corre sola, sin botón, dentro de las ventanas configuradas.
 - Ninguna alerta corre más de 2 veces al día.
 - Las pruebas controlan el reloj o la ventana (inyectados) en vez de esperar al horario real.
@@ -457,6 +459,7 @@ graph LR
 | DEC-12 | Fallo de la llamada REST (resto de D12) | **Cada pieza reintenta lo suyo con su outbox:** `notify` reintenta el envío del email (`notification_outbox`); `core` **no** crea outbox. `core` reintenta la llamada de forma acotada, **siempre con el mismo `transaction_id`**. **Limitación declarada:** si se agota, el aviso se pierde y queda en el log con ese `transactionId` |
 | DEC-13 | Enlace de baja con solo el hash guardado | **Token = HMAC(secreto del entorno, id de la suscripción)**; la base guarda su SHA-256. El requerimiento que cubre la baja es SUB-3 (CU-11) |
 | DEC-14 | Doble confirmación del correo antes de activar la suscripción | **No en esta versión; queda como mejora.** Mitigación actual: solo correos de prueba mientras D21 siga pendiente, y cada aviso trae su enlace de baja (DEC-13). Antes de abrir el sistema a correos reales hará falta un estado `pending` en `subscription.status`, un token con caducidad, el correo de confirmación y su endpoint (aprobada 2026-11-19) |
+| DEC-15 | Consistencia `core`↔`schedule` (D7) y cola (B2) | **Cola: no** (ADR-0004: sin cola de mensajería). **Consistencia:** `core` guarda alerta, URLs y suscripciones en una transacción con `alert.schedule_job_id` nulo; luego llama a `schedule` con la llave `alert-<id>` (3 reintentos con 1, 2 y 4 s) y guarda el `job_id`. Si todo falla, la alerta queda «sin schedule» y `core` reintenta al inicio de cada análisis, sin duplicar por la llave. `schedule` gana `job.external_key` con `UNIQUE (system, external_key)`. Una alerta puede pasar hasta ~12 h sin captura si `schedule` está caído (aprobada 2026-11-19) |
 | DEC-16 | Semántica del «mejor precio» | El **mínimo vigente** entre los últimos precios de las URLs activas de la alerta, sin considerar el stock (DEC-22). Se avisa cuando baja respecto del anterior; si sube y vuelve a bajar, avisa otra vez |
 | DEC-17 | Cómo muestra el dashboard un sitio «sin precio» | **Se deriva sin cambiar el esquema:** el estado `no_price`/`error` vive en el resultado de `schedule` (Mongo, TTL 90 días) y `alert_url` solo guarda el último chequeo exitoso. La UI muestra la fecha de `last_checked_at` y marca «sin datos recientes» si pasaron más de 24 h (aprobada 2026-11-18) |
 | DEC-18 | Umbral de la «caída anómala» (PRO-5) | **Sin umbral fijo ni variable de entorno.** La caída se compara con los cambios de otros productos (mediana y MAD; anómala si el *modified z-score* ≤ −3,5, sobre 30 días y mínimo 30 cambios de comparación; valores de partida míos, sin medición). El algoritmo es una **estrategia intercambiable** (`AnomalyStrategy`) y el veredicto se guarda aparte en `price_anomaly`, así que cambiar de método no toca los datos. Ver [ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md) (aprobada 2026-11-19) |
@@ -475,4 +478,3 @@ graph LR
 
 | ID | Decisión | Propuesta |
 |---|----------|-----------|
-| DEC-15 | Consistencia `core`↔`schedule` (D7) y cola (B2) | Siguen abiertos del original |

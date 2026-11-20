@@ -39,7 +39,8 @@ CREATE TABLE ALERT (
     UPDATED_AT              timestamptz NOT NULL DEFAULT now(),
     BEST_PRICE_COP          numeric(14,2),         -- mejor precio GLOBAL vigente (materializado)
     BEST_PRICE_AT           timestamptz,
-    BEST_PRICE_ALERT_URL_ID int                    -- FK compuesta, ver abajo
+    BEST_PRICE_ALERT_URL_ID int,                   -- FK compuesta, ver abajo
+    SCHEDULE_JOB_ID         int                    -- id de schedule.job, sin FK (otro esquema); NULL = «sin schedule», pendiente de crear el job (DEC-15)
 );
 
 CREATE TABLE ALERT_URL (

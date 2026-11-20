@@ -240,6 +240,8 @@ Es otro proceso de `core`, a otra hora, que se lanza **desde la interfaz de usua
 | 6 · Decidir | Recalcula el mejor precio con los últimos snapshots (sección siguiente) | PRO-6 |
 | 7 · Avisar | Si el mejor precio bajó y no es la primera vez, pide el aviso a `notify` | NOT-3 |
 
+> **Antes de los pasos:** al iniciar, el análisis reintenta crear en `schedule` el job de las alertas con `schedule_job_id` nulo, con la llave `alert-<id>` (DEC-15).
+
 > **(solo proyecto)** Con sitios en otras monedas se convierte USD→COP con la tasa del día (se guarda en la base de `core`). El ejercicio solo trabaja en COP (DEC-23).
 
 ## Motor de decisión: el «mejor precio»
@@ -311,7 +313,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | EV-20 | `core` no responde cuando `schedule` pide el detalle del job | El job no se pierde: queda pendiente y se retoma cuando `core` vuelve. Cómo se espera (reintentos o reinicio de la infraestructura) y si se avisa al administrador no está decidido | 💡 pendiente de confirmar |
 | EV-21 | `core` no responde al callback con los precios | El outbox de `schedule` reintenta la entrega; el estado del callback es independiente del estado del trabajo | ✅ `job_callback_outbox` |
 | EV-22 | La corrida o el callback llegan dos veces | No se duplica nada: el snapshot se inserta solo si cambió el precio | ✅ R7, SCR-7 |
-| EV-23 | Falla crear el job en `schedule` después de guardar la alerta | La alerta queda detectable como «sin schedule». La consistencia entre ambas escrituras sigue abierta | ✅ criterio CU-03 · ❓ DEC-15 (D7) |
+| EV-23 | Falla crear el job en `schedule` después de guardar la alerta | La alerta queda creada con `schedule_job_id` nulo («sin schedule»); `core` reintenta al inicio de cada análisis con la misma llave, sin duplicar | ✅ criterio CU-03 · DEC-15 ✅ |
 | EV-26 | **Los pods del scraper no están disponibles** (problema de infraestructura): no hay ningún scraper corriendo y no responde absolutamente nada | `schedule` recibe un 404, un 500 o un *timeout* al enviar la URL. Reintenta con backoff exponencial hasta *n* veces; agotados, la ejecución queda `failed`. Mientras tanto el **trabajo queda bloqueado**: las URLs pendientes siguen en cola y se retoman cuando el scraper vuelve. El barrido diario lo avisa al administrador. Qué pasa con las corridas acumuladas al volver, dado el tope de 2 al día, no está definido | ✅ decisión del equipo · ADR-0004 · ❓ corridas acumuladas |
 | EV-27 | **`schedule` no puede llegar hasta el scraper**: por red, por una caída o porque simplemente no está accesible | Desde `schedule` no se distingue de EV-26: el envío falla y se aplica el mismo tratamiento (backoff exponencial, ejecución `failed`, aviso en el barrido diario y trabajo bloqueado) | ✅ ADR-0004 |
 
@@ -351,4 +353,3 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 - **Valores y parámetros ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)):** reintentos, plazos, concurrencia y horas ya tienen un valor por defecto y son **variables de entorno** (sección «Parámetros» del ADR). Son estimaciones sin medir; se ajustan con los fixtures.
 - **Barrido diario y aviso al administrador:** falta escribir la plantilla `admin_alert` en `notify` y sembrarla (EJ-3). Un día sin errores no envía correo (EV-29).
 - **D15:** dónde se persiste el detalle por etapa (`job_state`, `raw_capture`) tras genericizar `schedule`. Hoy `schedule` solo conserva el resultado genérico de la corrida; ver [pendientes](../00-context/pending.md).
-- **DEC-15 / D7:** la consistencia entre crear la alerta en `core` y su job en `schedule` sigue abierta.

@@ -53,6 +53,7 @@ CREATE TABLE JOB (
     ID              int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     SYSTEM          text NOT NULL,            -- código de auth.system, sin FK — dueño del job (multi-proyecto)
     NAME            text NOT NULL,            -- etiqueta legible, p.ej. 'Limpieza semanal de snapshots'
+    EXTERNAL_KEY    text,                     -- llave de idempotencia que manda quien crea el job, p.ej. 'alert-17' (DEC-15)
     EXECUTION_TYPE  text NOT NULL REFERENCES EXECUTION_TYPE(CODE), -- FK real, misma esquema
     PAYLOAD         jsonb NOT NULL DEFAULT '{}'::jsonb, -- entrada específica del execution_type; opaca aquí
     SCHEDULE_CRON   text NOT NULL,            -- expresión cron estándar (soportada nativa por APScheduler)
@@ -66,6 +67,8 @@ CREATE TABLE JOB (
 );
 -- El scheduler toma lo vencido con FOR UPDATE SKIP LOCKED sobre este índice.
 CREATE INDEX IX_JOB_NEXT_RUN ON JOB(NEXT_RUN_AT) WHERE IS_ACTIVE;
+-- La misma llave nunca crea dos jobs: repetir la creación devuelve el existente.
+CREATE UNIQUE INDEX UX_JOB_EXTERNAL_KEY ON JOB(SYSTEM, EXTERNAL_KEY) WHERE EXTERNAL_KEY IS NOT NULL;
 CREATE INDEX IX_JOB_SYSTEM ON JOB(SYSTEM); -- toda consulta multi-proyecto filtra primero por system
 
 -- Código fuente — 1:1 con JOB, SOLO existe cuando execution_type='script'.
