@@ -70,7 +70,7 @@ sequenceDiagram
 
     rect rgba(70, 130, 220, 0.14)
         Note over U,PG: CU-02 · Registrar la alerta
-        U->>FE: elige el modo URL, pega 1..N URLs y escribe el correo
+        U->>FE: elige el modo URL, pega 1..N URLs y escribe uno o varios correos
         FE->>CO: crea la alerta (tras el modal de confirmación)
         CO->>CO: valida y sanea (URLs anti-SSRF, correo)
         CO->>PG: guarda alerta, URLs y suscripción
@@ -135,15 +135,15 @@ sequenceDiagram
 
 ### CU-02 · Registrar una alerta con URLs
 
-**Descripción.** El usuario elige el modo de creación, pega **una o varias URLs** (1..N, máximo 10), escribe el correo al que se le avisará y confirma. El sistema guarda la alerta (inmutable), sus URLs y la suscripción.
+**Descripción.** El usuario elige el modo de creación, pega **una o varias URLs** (1..N, máximo 10), escribe **uno o varios correos** (máximo 5) a los que se les avisará, puede añadir una nota y confirma. El sistema guarda la alerta (inmutable), sus URLs y una suscripción por correo.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
 | ALE-1 | 🖥️ Modelo de alerta | Define los datos de una alerta: título, producto, estado y quién la creó. | 🔧 | Funcionalidad | — | `title` y `product_name` **siguen obligatorios en la base** (decisión cerrada). Como el formulario solo pide URLs y correo, los completa el sistema con el dominio de la primera URL. El nombre real del producto se lee del sitio (`alert_url.last_title`) y se muestra en el dashboard. Sin cambio de esquema |
 | ALE-2 | 🎨🖥️ Crear alerta por URL | El usuario crea la alerta pegando una o varias URLs. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` | Campo repetible, **mínimo 1, máximo 10**. Sin duplicados tras normalizar. Cada URL se valida contra SCR-18 |
 | ALE-4 | 🎨🖥️ Alerta inmutable | Tras crearla, la alerta no se edita; antes de guardar se pide confirmar. | ✅ | Regla [R13](../00-context/deliverable01.md#6--regla-de-negocio-principal) | Sin rutas `PUT` / `PATCH` / `DELETE` | El modal advierte que la acción es definitiva |
-| SUB-1 | 🖥️ Suscripción al correo | Guarda el correo que recibirá los avisos de la alerta. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` (mismo cuerpo) | El correo se escribe **en el mismo formulario** y crea la `subscription` junto con la alerta, en una sola transacción. `created_by` = usuario fijo. `unsubscribe_token_hash` se genera al crear (lo usa CU-10) |
-| SUB-2 | 🎨🖥️ Suscribirse a una alerta | Permite indicar ese correo al crear la alerta. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` (mismo cuerpo) | No hay módulo aparte: el correo va en el alta, sin precarga de cuenta |
+| SUB-1 | 🖥️ Suscripción al correo | Guarda el correo que recibirá los avisos de la alerta. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` (mismo cuerpo) | Los correos (1 a 5, 💡 tope mío) se escriben **en el mismo formulario** y crean una `subscription` por correo junto con la alerta, en una sola transacción. `created_by` = usuario fijo. `unsubscribe_token_hash` se genera al crear (lo usa CU-10) |
+| SUB-2 | 🎨🖥️ Suscribirse a una alerta | Permite indicar ese correo al crear la alerta. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` (mismo cuerpo) | No hay módulo aparte: los correos van en el alta, sin precarga de cuenta |
 | SCR-18 | 🖥️ Protección anti-SSRF | Rechaza URLs peligrosas (redes internas, esquemas raros) antes de guardarlas. | 🔧 | Regla [R3](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (se valida dentro de `POST /api/alerts`) | Aquí solo la validación **al crear**; la autoridad está en el fetcher (CU-04) |
 | FE-1 | 🎨 App base React + Vite + TS + shadcn/ui | Base de la aplicación web que usa el usuario. | ✅ | Funcionalidad | — | |
 | FE-4 | 🎨 Pantallas de alertas | Pantalla donde se crea la alerta. | 🔧 | Funcionalidad | — (consume `POST /api/alerts`) | Una pantalla de alta: modo, URLs, correo y modal |
@@ -153,11 +153,13 @@ sequenceDiagram
 | **EJ-1** 🆕 | 🎨🖥️ **Selector de modo de creación** | Selector de modo: URL directa hoy, palabra clave con LLM más adelante. | 🆕 | Funcionalidad | 🔌 `POST /api/alerts` (campo `mode`) · `GET /api/alert-modes` | `url` activo; `keyword` (palabra clave + LLM) preparado pero deshabilitado. Detalle abajo |
 
 **Criterios de aceptación** 🆕
-- Con 1 a 10 URLs válidas y un correo válido se crea la alerta (`active`), sus URLs y la suscripción, **o nada**.
+- Con 1 a 10 URLs válidas y 1 a 5 correos válidos se crea la alerta (`active`), sus URLs y una suscripción por correo, **o nada**.
+- Correos repetidos tras normalizar se deduplican; más de 5 → rechazado.
+- La nota es opcional, de hasta 500 caracteres y saneada; se guarda con la alerta y se muestra en su detalle como texto, sin interpretar HTML (DEC-28).
 - La alerta se guarda con `title` y `product_name` no vacíos.
 - Una URL con esquema distinto de `http`/`https`, con un puerto distinto de 80 o 443, con credenciales o que resuelve a una IP privada o reservada → 422 con el índice de la URL fallida; ninguna se guarda.
 - 0 URLs o más de 10 → rechazado. URLs repetidas tras normalizar → se deduplican.
-- Correo vacío, con formato inválido o enorme → rechazado.
+- Lista de correos vacía, o algún correo con formato inválido o enorme → rechazado.
 - El modal de confirmación aparece antes de enviar; cancelar no crea nada; el botón se deshabilita mientras se envía.
 - No existe ninguna ruta para editar o borrar la alerta.
 - El correo no aparece completo en la pantalla ni en los logs.
@@ -383,7 +385,7 @@ graph LR
 | Llamada | `POST /notify/notifications` (ruta bajo `/notify/*`, la de la arquitectura) |
 | Cuerpo | `transaction_id`, `system`, `app_user_id` (usuario fijo), `channel` (`email`), `destination` (correo de la suscripción), `template` (plantilla del aviso) y `payload` (datos de negocio: alerta, URL, precio nuevo y anterior, marca de anomalía, enlace de baja) |
 | Respuesta | **202** con el id y `status: pending`. La llamada solo **crea** la notificación; el envío del email es asíncrono dentro de `notify` (su worker y su outbox) |
-| Idempotencia | Llave natural `(transaction_id, app_user_id, channel)`, que ya es `UNIQUE` en `notification`. Repetir la llamada devuelve **200** con la notificación existente y no crea otra |
+| Idempotencia | Llave natural `(transaction_id, app_user_id, channel, destination)`, que es `UNIQUE` en `notification` (DEC-11). Repetir la llamada devuelve **200** con la notificación existente y no crea otra |
 | Errores | **4xx**: error del contrato; `core` no reintenta y lo deja en el log. **5xx o sin respuesta**: `core` reintenta |
 | Reintentos | `core` reintenta de forma acotada (hasta 3 intentos con espera creciente). **Todos los reintentos usan el mismo `transaction_id`**, así la llave de idempotencia evita duplicar el aviso. El reintento del **envío del email** es responsabilidad de `notify`, con su outbox |
 | Momento | `core` llama **después** de confirmar el snapshot y el mejor precio, fuera de esa transacción: si la llamada falla, el análisis no se revierte |
@@ -424,7 +426,7 @@ graph LR
 |-------|----------------|--------|
 | Sesión, cuentas y autenticación entre servicios (CU-01) | AUTH-1..21, USR-*, FE-2, FE-3 | Se omite el login y también el token entre servicios: ningún endpoint valida autenticación ni autorización |
 | Supervisión (CU-09) | SCH-4..9, FE-6, SCR-14, SCR-16, SCR-17 | Se omite la administración |
-| Alertas, resto | ALE-3, ALE-6, ALE-7, ALE-9 | Etiquetas, wizard, preview y pausar |
+| Alertas, resto | ALE-3, ALE-6, ALE-7, ALE-9 | Etiquetas, wizard, preview y pausar. Las **etiquetas** quedan para la siguiente fase o el proyecto completo (DEC-28); el modelo ya las tiene |
 | Notificación, resto | NOT-4, PRO-3, PRO-4 | Log en NoSQL; sitios solo en COP, sin conversión |
 | Scraping, resto | SCR-5, SCR-6, SCR-11, SCR-12, SCR-13, SCR-15, SCR-19 | robots.txt, límite de tasa, adapters por dominio y su constructor, email al admin por adapter roto, HTML crudo. **SCR-5 y SCR-6 son obligatorios antes de scrapear un sitio real** |
 | Frontend extra | FE-5, FE-7, FE-8, FE-9 | Usuarios, i18n, PWA, roles |
@@ -451,8 +453,10 @@ graph LR
 | DEC-8 | Frecuencia del agendamiento | Cada alerta corre **2 veces al día** (SCH-1, SCH-6, SCH-7). La corrida inicial al crear la alerta cuenta dentro de ese tope 🆕 |
 | DEC-9 | Selector del modo | **Visible**, con «Palabra clave» deshabilitado; la disponibilidad la define `ALERT_CREATION_MODES` |
 | DEC-10 | Comunicación `core` → `notify` (D12, el transporte) | **Llamada REST** que crea la notificación; el envío del email es asíncrono dentro de `notify`. Contrato en CU-10 |
+| DEC-11 | Correo como destino (D16) y varios correos por alerta | **Una alerta se notifica a uno o varios correos** (1 a 5). Cada suscripción lleva su correo como `destination` y genera **una notificación por destino**: una fila de `notification` es un destinatario × un canal × un destino. Para que el mismo usuario pueda tener varios destinos en la misma transacción, la llave pasa a `UNIQUE (transaction_id, app_user_id, channel, destination)` en `notify` (aprobada 2026-11-19; el tope de 5 es un valor de partida mío, sin medición) |
 | DEC-12 | Fallo de la llamada REST (resto de D12) | **Cada pieza reintenta lo suyo con su outbox:** `notify` reintenta el envío del email (`notification_outbox`); `core` **no** crea outbox. `core` reintenta la llamada de forma acotada, **siempre con el mismo `transaction_id`**. **Limitación declarada:** si se agota, el aviso se pierde y queda en el log con ese `transactionId` |
 | DEC-13 | Enlace de baja con solo el hash guardado | **Token = HMAC(secreto del entorno, id de la suscripción)**; la base guarda su SHA-256. El requerimiento que cubre la baja es SUB-3 (CU-11) |
+| DEC-14 | Doble confirmación del correo antes de activar la suscripción | **No en esta versión; queda como mejora.** Mitigación actual: solo correos de prueba mientras D21 siga pendiente, y cada aviso trae su enlace de baja (DEC-13). Antes de abrir el sistema a correos reales hará falta un estado `pending` en `subscription.status`, un token con caducidad, el correo de confirmación y su endpoint (aprobada 2026-11-19) |
 | DEC-16 | Semántica del «mejor precio» | El **mínimo vigente** entre los últimos precios de las URLs activas de la alerta, sin considerar el stock (DEC-22). Se avisa cuando baja respecto del anterior; si sube y vuelve a bajar, avisa otra vez |
 | DEC-17 | Cómo muestra el dashboard un sitio «sin precio» | **Se deriva sin cambiar el esquema:** el estado `no_price`/`error` vive en el resultado de `schedule` (Mongo, TTL 90 días) y `alert_url` solo guarda el último chequeo exitoso. La UI muestra la fecha de `last_checked_at` y marca «sin datos recientes» si pasaron más de 24 h (aprobada 2026-11-18) |
 | DEC-18 | Umbral de la «caída anómala» (PRO-5) | **Sin umbral fijo ni variable de entorno.** La caída se compara con los cambios de otros productos (mediana y MAD; anómala si el *modified z-score* ≤ −3,5, sobre 30 días y mínimo 30 cambios de comparación; valores de partida míos, sin medición). El algoritmo es una **estrategia intercambiable** (`AnomalyStrategy`) y el veredicto se guarda aparte en `price_anomaly`, así que cambiar de método no toca los datos. Ver [ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md) (aprobada 2026-11-19) |
@@ -465,11 +469,10 @@ graph LR
 | DEC-25 | Scraping y análisis | Son dos procesos que corren a horas distintas y no se solapan. Por defecto 2 capturas y 2 análisis al día, parametrizables (puede ser 1 y 1). El análisis se lanza desde la interfaz o por un job agendado |
 | DEC-26 | Aviso de errores al administrador | **Barrido diario** agendado en `schedule` que pide un solo correo a `notify`, en vez de un correo por ejecución fallida |
 | DEC-27 | Quién manda sobre el contrato del scraper | El **README de `scraper-service`** manda sobre el contrato y el comportamiento del scraper (petición, callback, códigos de motivo, estrategias, variables `SCRAPER_*`); los docs de este repo lo siguen. Consecuencia: el scraper no recibe `transaction_id` ni `item`, y `schedule` correlaciona por `scraper_id`. Un 403 o captcha es `no_price` (definitivo) y `robots.txt` es principio sin verificación implementada | ✅ 2026-11-17 |
+| DEC-28 | Notas y etiquetas de la alerta | **Entran las notas:** campo opcional de hasta 500 caracteres, saneado, que se guarda y se muestra como texto. **Las etiquetas quedan para la siguiente fase o el proyecto completo**; el modelo (`tag`, `alert_tag`) ya las tiene (aprobada 2026-11-19; el largo de 500 es un valor mío, sin medición) |
 
 **Abiertas**
 
 | ID | Decisión | Propuesta |
 |---|----------|-----------|
-| DEC-11 | **Correo como destino** (D16): el original dice que no hay mecanismo para avisar a un correo distinto al de la cuenta, pero `notification.destination` ya existe | Llevar el correo de la suscripción como `destination`. Ojo: `UNIQUE (transaction_id, app_user_id, channel)` choca si una alerta tuviera varios correos con el mismo usuario fijo; hoy el formulario pide uno solo |
-| DEC-14 | Doble confirmación del correo antes de activar la suscripción | No en esta versión; se anota como mejora |
 | DEC-15 | Consistencia `core`↔`schedule` (D7) y cola (B2) | Siguen abiertos del original |

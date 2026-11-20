@@ -118,7 +118,7 @@ CREATE TABLE NOTIFICATION (
     LAST_ERROR     varchar(500),       -- motivo del fallo final — solo si STATUS='failed'; nunca se expone al usuario
     CREATED_AT     timestamptz NOT NULL DEFAULT now(),
     UPDATED_AT     timestamptz NOT NULL DEFAULT now(), -- cambia al resolverse (STATUS, SENT_AT, ATTEMPTS)
-    UNIQUE (TRANSACTION_ID, APP_USER_ID, CHANNEL_ID) -- no duplica el aviso al mismo usuario/canal por la misma transacción
+    UNIQUE (TRANSACTION_ID, APP_USER_ID, CHANNEL_ID, DESTINATION) -- no duplica el aviso al mismo usuario/canal/destino por la misma transacción; un mismo usuario puede tener varios destinos (DEC-11)
 );
 CREATE INDEX IX_NOTIFICATION_USER ON NOTIFICATION(APP_USER_ID);
 CREATE INDEX IX_NOTIFICATION_SYSTEM ON NOTIFICATION(SYSTEM);

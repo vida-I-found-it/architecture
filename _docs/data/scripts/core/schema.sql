@@ -32,7 +32,7 @@ CREATE TABLE ALERT (
     ID                      int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     TITLE                   text NOT NULL,
     PRODUCT_NAME            text NOT NULL,
-    NOTES                   text,
+    NOTES                   text CHECK (char_length(NOTES) <= 500), -- opcional, la escribe el usuario al crear (DEC-28)
     STATUS                  text NOT NULL DEFAULT 'active' CHECK (STATUS IN ('active', 'inactive')),
     CREATED_BY              uuid NOT NULL,        -- id de auth.app_user, sin FK
     CREATED_AT              timestamptz NOT NULL DEFAULT now(),

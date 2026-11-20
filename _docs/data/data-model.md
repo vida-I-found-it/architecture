@@ -668,7 +668,7 @@ erDiagram
 
 - `price_snapshot.price_cop > 0` · CHECK en cada columna `status` (sin tabla catálogo) y en `job_script.language`/`job.callback_type`.
 - Emails como `text` en minúsculas con `CHECK (email = lower(email))` (único en `auth`); sin `citext` ni extensiones, para que cada esquema siga independiente · `person_id` UNIQUE en `app_user` · `role (system_code, code)` y `permission (system_code, code)` UNIQUE · `user_system_role (user_id, system_code)` PK (un solo rol por `system`) · `password_reset.attempts` ≤ 5 · `person.gender` IN (`H`, `M`) · `person`: completa **o** anonimizada (`CHECK`), nombres saneados, `birth_date` entre 1900 y hace 18 años, `phone` E.164 · `app_user.email` con forma válida · `code` de `system` en minúscula y de `role`/`permission` en MAYÚSCULAS · `refresh_token.token_hash` y `password_reset.code_hash` de 32 bytes · `app_user`: una cuenta `@anonymized.invalid` no puede estar activa · `audit_log`: `action`, `entity` y `entity_id` de 1 a 100 caracteres · `refresh_token`: `replaced_by` exige `revoked_at` (un token rotado siempre está revocado) · `anonymization_event`: un solo evento por usuario.
-- `subscription (alert_id, email)` UNIQUE · `notification (transaction_id, app_user_id, channel_id)` UNIQUE · `template (code, version)` UNIQUE · `site_adapter (domain)` UNIQUE · `job_execution (transaction_id)` UNIQUE.
+- `subscription (alert_id, email)` UNIQUE · `notification (transaction_id, app_user_id, channel_id, destination)` UNIQUE (DEC-11) · `template (code, version)` UNIQUE · `site_adapter (domain)` UNIQUE · `job_execution (transaction_id)` UNIQUE.
 - Importes en `NUMERIC(14,2)`; fechas en `timestamptz` (UTC).
 
 ## Índices

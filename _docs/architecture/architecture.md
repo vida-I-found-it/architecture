@@ -61,7 +61,7 @@ sequenceDiagram
 
     rect rgba(70, 130, 220, 0.14)
         Note over U,PG: CU-02 · Registrar la alerta
-        U->>FE: elige el modo URL, pega 1..N URLs y escribe el correo
+        U->>FE: elige el modo URL, pega 1..N URLs y escribe uno o varios correos
         FE->>CO: crea la alerta (tras el modal de confirmación)
         CO->>CO: valida y sanea (URLs anti-SSRF, correo)
         CO->>PG: guarda alerta, URLs y suscripción
