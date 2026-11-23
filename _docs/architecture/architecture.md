@@ -91,8 +91,8 @@ sequenceDiagram
     end
 
     rect rgba(70, 130, 220, 0.14)
-        Note over CO,PG: CU-06 · Analizar el mejor precio (otro proceso, a otra hora)
-        SC->>CO: lanza el análisis (job agendado, o desde la interfaz)
+        Note over CO,PG: CU-06 · Analizar el mejor precio (al terminar la corrida, DEC-33)
+        SC->>CO: corrida terminada (job_id, run_id), o la interfaz lo pide para una alerta
         CO->>PG: calcula el mejor precio, lo compara con el anterior y marca anomalías
     end
 
@@ -138,8 +138,8 @@ sequenceDiagram
 | `schedule` → `core` | `POST /api/internal/prices` | Entregar el resultado de una URL (`ok`, `no_price` o `error`) |
 | `core` → `notify` | `POST /notify/notifications` | Pedir el aviso por correo |
 | `schedule` → `notify` | `POST /notify/notifications` | Barrido diario: un solo correo al administrador con los errores del día (mismo endpoint que el de `core`) |
-| Frontend → `core` | `POST /api/analysis` | Lanzar el análisis a mano (EJ-5) |
-| `schedule` → `core` | `POST /api/internal/analysis` | Lanzar el análisis agendado (EJ-5) |
+| Frontend → `core` | `POST /api/alerts/{alert_id}/analysis` | Lanzar el análisis de una alerta a mano (EJ-5) |
+| `schedule` → `core` | `POST /api/internal/run-completed` | Corrida terminada: `core` analiza la alerta de ese job (EJ-5, DEC-33) |
 | docker-compose → cada pieza | `GET /api/health` · `GET /schedule/health` · `GET /scraper/health` · `GET /notify/health` | Healthcheck: la pieza está viva y alcanza sus dependencias (EJ-4). Sin datos de negocio, sin autenticación, no se publican fuera de la red interna |
 
 ## Vista de despliegue
@@ -218,7 +218,7 @@ flowchart LR
 - **Orden de arranque:**
   1. PostgreSQL y MongoDB, hasta quedar sanos.
   2. Aprovisionamiento de roles y esquemas (una sola vez).
-  3. Migraciones y semillas de cada pieza (INF-4): el canal y la plantilla de `notify` (EJ-3), los tipos de ejecución de `schedule`, y los jobs agendados del análisis y del barrido diario.
+  3. Migraciones y semillas de cada pieza (INF-4): el canal (`schema.sql`) y las plantillas (`seed.sql`) de `notify` (EJ-3) y los tipos de ejecución de `schedule`. Al arrancar, `schedule` crea o actualiza su job de barrido y `core` reconcilia los jobs de alertas pendientes (DEC-33).
   4. `notify`, `schedule` y `scraper`; luego `core`; al final `frontend`.
   5. Cada paso espera al anterior con `depends_on: condition: service_healthy`.
 
@@ -251,7 +251,7 @@ Cloudflare, Worker Gateway, `auth`, JWT y despliegue en la nube pertenecen al pr
 - **REST con JSON** entre todas las piezas, y un contrato Swagger (OpenAPI) por pieza que expone endpoints.
 - **Cada pieza es dueña de sus datos:** su propia base, sin claves foráneas hacia otra pieza; se enlazan solo por identificadores.
 - **`schedule` envía el trabajo al scraper y este responde por un callback configurable** ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)): el scraper responde «recibido», trabaja en segundo plano y al terminar ejecuta el callback. En el ejercicio el callback apunta a `schedule`, que reenvía a `core`; así el scraper no llama a `core`. Solo es alcanzable desde la red interna. `schedule` envía **una URL a la vez** y cada resultado (`ok`, `no_price` o `error`) llega a `core` de inmediato.
-- **Scraping y análisis son procesos separados, a horas distintas** (DEC-25): el scraping guarda chequeos; el análisis (desde la interfaz o por un job agendado) calcula el mejor precio y decide los avisos. Por defecto 2 capturas y 2 análisis al día, parametrizable.
+- **Scraping y análisis son procesos separados** (DEC-25, DEC-33): el scraping guarda chequeos; el análisis de una alerta arranca al terminar su corrida (o a mano desde la interfaz), calcula el mejor precio y decide los avisos. Por defecto 2 capturas al día, parametrizable.
 - **Cada pieza reintenta lo suyo:** el scraper **no reintenta** (una pasada por URL). `schedule` administra los reintentos del scraper: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min) y reintenta el envío del trabajo (backoff exponencial); lo agotado queda `failed` y se avisa en el **barrido diario de errores**, que pide un solo correo a `notify`. `notify` reintenta el envío del email con su cola. `core` reintenta la llamada a `notify` con el mismo identificador de transacción.
 - **Idempotencia por llaves únicas:** repetir una corrida, un callback o un aviso no duplica datos.
 - **Estrategias reemplazables:** la forma de crear una alerta, la extracción del precio, la detección de caídas anómalas ([ADR-0005](adr/0005-anomaly-detection-as-strategy.md)) y el canal de notificación van detrás de interfaces, para cambiarlos sin tocar el resto.

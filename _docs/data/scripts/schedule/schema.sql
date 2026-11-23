@@ -62,8 +62,13 @@ CREATE TABLE JOB (
     PAYLOAD         jsonb NOT NULL DEFAULT '{}'::jsonb, -- entrada específica del execution_type; opaca aquí
     SCHEDULE_CRON   text NOT NULL,            -- expresión cron estándar (soportada nativa por APScheduler)
     IS_ACTIVE       boolean NOT NULL DEFAULT true,
-    CALLBACK_TYPE   text NOT NULL CHECK (CALLBACK_TYPE IN ('api_call', 'python_script', 'topic_message')), -- SCH-13
+    CALLBACK_TYPE   text CHECK (CALLBACK_TYPE IN ('api_call', 'python_script', 'topic_message')), -- SCH-13; NULL = sin callback por ejecución (p.ej. error_sweep, DEC-33)
     CALLBACK_CONFIG jsonb NOT NULL DEFAULT '{}'::jsonb, -- p.ej. {"url": "..."} si CALLBACK_TYPE='api_call'
+    -- Aviso de «corrida terminada» (DEC-33): una llamada por corrida, no por
+    -- ejecución, cuando TODAS las ejecuciones del RUN_ID quedaron resueltas y
+    -- sus callbacks también. Genérico: lleva job_id y run_id. NULL = sin aviso.
+    -- Destino validado contra la misma lista blanca de SCH-14.
+    RUN_CALLBACK_CONFIG jsonb,                -- p.ej. {"url": ".../api/internal/run-completed"}
     NEXT_RUN_AT     timestamptz,
     LAST_RUN_AT     timestamptz,
     CREATED_AT      timestamptz NOT NULL DEFAULT now(),
@@ -103,6 +108,30 @@ CREATE TABLE JOB_SCRIPT (
 -- al éxito): no había motivo de espacio/rendimiento para una tabla
 -- aparte. Lo que SÍ sigue aparte es JOB_CALLBACK_OUTBOX, porque eso sí
 -- muta en cada reintento — ver su comentario abajo.
+-- Una corrida (un disparo del job): agrupa sus ejecuciones y lleva el
+-- estado del aviso de «corrida terminada» (DEC-33). No guarda inicio ni fin:
+-- se derivan de sus ejecuciones. Al resolver la última ejecución y su
+-- callback, el worker bloquea esta fila (FOR UPDATE), confirma que no queda
+-- nada pendiente y programa el aviso; un reenvío es inocuo (core vuelve a
+-- analizar y da not_lower).
+CREATE TABLE JOB_RUN (
+    RUN_ID                uuid PRIMARY KEY,
+    JOB_ID                int NOT NULL REFERENCES JOB(ID),
+    RUN_CALLBACK_STATUS   text NOT NULL DEFAULT 'waiting'
+                              CHECK (RUN_CALLBACK_STATUS IN ('none', 'waiting', 'pending', 'sent', 'failed')),
+                              -- none: el job no tiene RUN_CALLBACK_CONFIG · waiting: faltan ejecuciones ·
+                              -- pending: listo para enviar o reintentando · sent / failed: resuelto
+    RUN_CALLBACK_ATTEMPTS smallint NOT NULL DEFAULT 0,
+    RUN_CALLBACK_NEXT_AT  timestamptz,       -- cuándo toca enviar o reintentar; solo si 'pending'
+    RUN_CALLBACK_SENT_AT  timestamptz,       -- solo si 'sent'
+    CREATED_AT            timestamptz NOT NULL DEFAULT now(),
+    UPDATED_AT            timestamptz NOT NULL DEFAULT now(),
+    CHECK ((RUN_CALLBACK_STATUS = 'pending') = (RUN_CALLBACK_NEXT_AT IS NOT NULL)),
+    CHECK ((RUN_CALLBACK_STATUS = 'sent') = (RUN_CALLBACK_SENT_AT IS NOT NULL))
+);
+CREATE INDEX IX_JOB_RUN_CALLBACK_DUE ON JOB_RUN(RUN_CALLBACK_NEXT_AT) WHERE RUN_CALLBACK_STATUS = 'pending';
+CREATE INDEX IX_JOB_RUN_JOB ON JOB_RUN(JOB_ID);
+
 CREATE TABLE JOB_EXECUTION (
     ID                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     JOB_ID            int NOT NULL REFERENCES JOB(ID), -- FK real, misma esquema
@@ -111,7 +140,7 @@ CREATE TABLE JOB_EXECUTION (
     -- ADR-0004 (2026-11-12): una ejecución = UNA unidad de trabajo (p.ej. una URL).
     -- Un disparo del job crea N ejecuciones que comparten RUN_ID y se procesan
     -- de una en una, en orden de SEQ.
-    RUN_ID            uuid NOT NULL,             -- agrupa las ejecuciones de un mismo disparo del job (id de correlación en los logs)
+    RUN_ID            uuid NOT NULL REFERENCES JOB_RUN(RUN_ID), -- corrida a la que pertenece (id de correlación en los logs)
     SEQ               smallint NOT NULL CHECK (SEQ >= 1), -- orden dentro del disparo
     ITEM              jsonb NOT NULL DEFAULT '{}'::jsonb, -- la unidad de trabajo, opaca para schedule (p.ej. {"alert_url_id": 7, "url": "..."}); NO viaja al scraper; se reenvía tal cual al reintentar
     SCRAPER_ID        uuid,                      -- id que el scraper devolvió en el 202 del intento en curso; correlaciona su callback (cambia en cada reintento)

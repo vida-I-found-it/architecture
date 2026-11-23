@@ -19,8 +19,9 @@
 |---|---|---|---|
 | [`auth/`](auth/schema.sql) ⚠️ **desfasado · pendiente por revisar** | esquema `auth` (rol `auth_service`) | PostgreSQL | `person`, `app_user`, `role`/`permission`, `refresh_token`, `password_reset`, `audit_log`, `system` |
 | [`core/`](core/schema.sql) | esquema `core` (rol `core_service`) | PostgreSQL | `alert`, `alert_url`, `tag`, `site_adapter`, `alert_snapshot` (particionado), `price_anomaly`, vistas derivadas, `subscription` |
-| [`schedule/`](schedule/schema.sql) | esquema `schedule` (rol `schedule_service`) | PostgreSQL | `execution_type`, `job`, `job_script`, `job_execution`, `job_callback_sent`, `job_callback_outbox` — motor de jobs genérico, sin ningún concepto de `core` (2026-10-01) |
-| [`notify/`](notify/schema.sql) | esquema `notify` (rol `notify_service`) | PostgreSQL | `notification` (configurada), `notification_sent` (enviada), `notification_outbox` (cola de reintento) |
+| [`schedule/`](schedule/schema.sql) | esquema `schedule` (rol `schedule_service`) | PostgreSQL | `execution_type`, `job`, `job_script`, `job_run` (DEC-33), `job_execution`, `job_callback_outbox` — motor de jobs genérico, sin ningún concepto de `core` (2026-10-01) |
+| [`notify/`](notify/schema.sql) | esquema `notify` (rol `notify_service`) | PostgreSQL | `channel`, `template`, `notification` (configurada y resuelta), `notification_outbox` (cola de reintento) |
+| [`notify/seed.sql`](notify/seed.sql) | esquema `notify` (rol `notify_service`), **después** de `schema.sql` | PostgreSQL | Plantillas `price-drop-email` y `admin-alert-email` v1; idempotente (EJ-3, DEC-33) |
 | [`core/mongo-setup.js`](core/mongo-setup.js) | base Mongo de `core` | MongoDB | `exchange_rate` |
 | [`schedule/mongo-setup.js`](schedule/mongo-setup.js) | base Mongo de `schedule` | MongoDB | `job_execution_result` |
 | [`notify/mongo-setup.js`](notify/mongo-setup.js) | base Mongo de `notify` | MongoDB | `notification_log` |

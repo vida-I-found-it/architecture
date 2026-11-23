@@ -5,6 +5,8 @@
 - **Reemplaza (en parte):** el modelo de *pull* del [ADR-0001](0001-repo-and-service-structure.md) («el scraper es un cliente, no un servidor») y la forma de entrega de SCR-20
 - **Requerimientos / casos de uso afectados:** SCR-1, SCR-8, SCR-20, CU-03, CU-04, CU-05, CU-06, CU-10 · eventos EV-17, EV-18, EV-26 y EV-27 del [flujo de scraping](../scraping-flow.md)
 
+> **Enmienda (2026-11-22, DEC-33):** el análisis ya no es un job agendado ni corre a horas propias: arranca por alerta cuando `schedule` avisa «corrida terminada» (`job.run_callback_config`, tabla `job_run`), o a mano desde la interfaz; sale `SCHEDULE_ANALYSIS_TIMES`. `job.callback_type` es opcional. La plantilla del barrido se llama `admin-alert-email`.
+
 > **Enmienda (2026-11-22, DEC-32):** el resultado de cada URL no se repite en el PostgreSQL de `schedule` (solo `completed`/`failed`); el documento de Mongo guarda un array `attempts` con un elemento por intento. El barrido es un job `error_sweep` creado al arrancar, que también reporta los callbacks a `core` agotados.
 
 > **Enmienda (2026-11-22, DEC-29):** `price_snapshot` (por cambio) se reemplazó por `alert_snapshot`, una fila por chequeo con su estado; el último precio, el mejor precio y las estadísticas por sitio ya no se materializan, son vistas. Donde este ADR dice «snapshot», léase «chequeo `ok`». Ver [modelo de datos](../../data/data-model.md).
@@ -29,7 +31,7 @@ Hasta ahora el scraper hacía *pull*: preguntaba a `schedule` si había trabajo 
    El scraper **no reintenta**: hace una pasada por URL y devuelve el estado con lo que logró. Quien administra todos los reintentos es `schedule`.
 5. **El destino del callback es configuración que viaja con el trabajo**, no una dirección fija en el scraper. En el ejercicio el callback del scraper apunta a `schedule` (`POST /schedule/internal/results`) y el de `schedule` a `core` (`POST /api/internal/prices`). Así se mantiene la regla de que el scraper no llama a `core`, ahora **por configuración** y no por diseño rígido.
 6. **El envío va detrás de una interfaz** (`ScraperDispatcher`). Hoy es HTTP; si el volumen o la disponibilidad lo exigen, puede sustituirse por una cola (Redis + Arq) sin reescribir `schedule`.
-7. **El scraping solo guarda datos; el análisis decide los avisos.** Son dos procesos que corren a horas distintas y no se solapan. Al recibir un resultado, `core` solo **sanea, normaliza, valida y guarda el snapshot** si cambió el precio (CU-05); no calcula el mejor precio ni avisa. El **análisis** (CU-06 y CU-10) es otro proceso de `core`: calcula el mejor precio, marca las caídas anómalas, compara con el mejor precio anterior y pide el aviso a `notify`. La primera vez no hay contra qué comparar, así que no avisa. Se lanza de dos formas: desde la interfaz de usuario, o por un job agendado en `schedule` (`api_call`). Un análisis genera a lo más un aviso por alerta.
+7. **El scraping solo guarda datos; el análisis decide los avisos.** Son dos procesos distintos (desde DEC-33, el análisis arranca al terminar la corrida de la alerta; ver la enmienda). Al recibir un resultado, `core` solo **sanea, normaliza, valida y guarda el snapshot** si cambió el precio (CU-05); no calcula el mejor precio ni avisa. El **análisis** (CU-06 y CU-10) es otro proceso de `core`: calcula el mejor precio, marca las caídas anómalas, compara con el mejor precio anterior y pide el aviso a `notify`. La primera vez no hay contra qué comparar, así que no avisa. Se lanza de dos formas: desde la interfaz de usuario, o por un job agendado en `schedule` (`api_call`). Un análisis genera a lo más un aviso por alerta.
 8. **Frecuencia parametrizable.** Por día hay **2 capturas y 2 análisis** por defecto, cada análisis un tiempo después de su captura; es configuración y puede reducirse a 1 y 1 (R2 mantiene el tope de 2 capturas al día).
 9. **Los errores se avisan al administrador en un barrido diario, no uno por uno.** Enlazar cada ejecución con su alerta para armar un correo por alerta es costoso, así que una **tarea agendada interna de `schedule` corre todos los días sin falta**, reúne las ejecuciones que quedaron `failed` en el día y pide **un solo correo** a `notify` (`POST /notify/notifications`, el mismo endpoint que usa `core`), agrupado por alerta. Se reutilizan el envío por correo y el outbox de reintento de `notify`; a `schedule` no se le añade SMTP. La dirección del administrador es configuración por entorno.
 10. **El contrato del scraper lo define el README de `scraper-service`** y este ADR lo adopta (ver «Contrato con el scraper»). Consecuencia: el scraper **no conoce** nuestro `transaction_id` ni la unidad de trabajo; `schedule` correlaciona cada callback por el `scraper_id` que el scraper devuelve en el `202`.
@@ -94,7 +96,6 @@ Ningún valor va fijo en el código (INF-3): todos son variables de entorno con 
 | `SCHEDULE_CALLBACK_DEADLINE_SECONDS` | `120` | Plazo del callback **por URL**; vencido, la URL cuenta como `error` |
 | `SCHEDULE_MAX_ACTIVE_RUNS` | `2` | Corridas activas a la vez entre alertas distintas |
 | `SCHEDULE_SCRAPE_WINDOWS` | `04:00-06:00,18:00-20:00` | Franjas de captura (SCH-7); con una sola franja, 1 captura al día |
-| `SCHEDULE_ANALYSIS_TIMES` | `08:00,22:00` | Horas del análisis agendado; con una sola, 1 análisis al día |
 | `SCHEDULE_SWEEP_TIME` | `23:00` | Hora del barrido diario de errores |
 | `SCHEDULE_CALLBACK_ALLOWLIST` | solo `core` | Lista blanca de destinos de callback de `schedule` |
 | `ADMIN_ALERT_EMAIL` | sin defecto, obligatoria | Dirección del administrador para el barrido |
@@ -125,7 +126,6 @@ Los nombres y los valores del scraper son los de su README (ya implementados); l
 **Reglas entre parámetros** (no las puede validar una sola pieza, se documentan):
 - `SCHEDULE_CALLBACK_DEADLINE_SECONDS` debe ser mayor que `SCRAPER_URL_TIMEOUT_SECONDS` **más** el peor caso de entrega del callback (3 reintentos de 5 s más 1 + 2 + 4 s de espera, unos 22 s): por defecto 120 frente a 90 + 22 = 112.
 - `SCHEDULE_MAX_ACTIVE_RUNS` no debe superar `SCRAPER_MAX_CONCURRENCY`, para que el 503 sea la excepción.
-- Cada hora de `SCHEDULE_ANALYSIS_TIMES` debe caer después del fin de su franja de captura más el tiempo de los reintentos (por defecto, al menos 2 h; ~1 h en el peor caso de una corrida).
 - `SCHEDULE_SWEEP_TIME` debe caer después de la última hora de análisis.
 
 **Cálculo de referencia (por defecto):** con 10 URLs, una pasada dura ~15 min en el peor caso (10 × 90 s). Un `error` vuelve a la cola con su espera sin frenar a las demás; con 3 reintentos, la corrida más lenta termina en ~1 h.
@@ -136,7 +136,7 @@ Los nombres y los valores del scraper son los de su README (ya implementados); l
 - **El análisis es único para todas las alertas**, con un `alert_id` opcional para que la interfaz pueda pedirlo de una sola.
 - **El tope de corridas activas entre alertas** es `SCHEDULE_MAX_ACTIVE_RUNS`, más el escalonado que fija `core` (DEC-20).
 - **El barrido** reúne lo que falló **desde su última ejecución** (marcador en `job.last_run_at`), no «las últimas 24 h».
-- **Aviso al administrador:** plantilla `admin_alert` en `notify`, agrupada por alerta, solo con identificadores y códigos de error (nunca contenido del sitio sin sanear); `app_user_id` es el usuario fijo por entorno de las demás piezas; un día sin errores no envía correo (EV-29).
+- **Aviso al administrador:** plantilla `admin-alert-email` en `notify`, agrupada por alerta, solo con identificadores y códigos de error (nunca contenido del sitio sin sanear); `app_user_id` es el usuario fijo por entorno de las demás piezas; un día sin errores no envía correo (EV-29).
 
 - **`core` guarda todo lo que devuelve el scraper (D38, 2026-11-17):** precio de lista y vigencia en el snapshot; precio de lista, vigencia, marca, SKU, GTIN, MPN e imágenes como último valor en `alert_url.last_*`.
 
@@ -147,7 +147,7 @@ Los nombres y los valores del scraper son los de su README (ya implementados); l
 - `robots.txt`: el README lo declara como principio del scraper («no fuerza un `robots.txt` que lo prohíba») pero no define código de motivo ni verificación; confirmar con el equipo del scraper.
 - Estrategias `custom:<nombre>` por dominio: el mecanismo existe, sin ninguna concreta (alcance en pausa).
 - Imagen Docker del scraper y su servicio en docker-compose (pendiente en su README).
-- Escribir la plantilla `admin_alert` y sembrarla con la migración de `notify` (EJ-3).
+- Escribir la plantilla `admin-alert-email` y sembrarla con la migración de `notify` (EJ-3).
 
 ## Alternativas descartadas
 

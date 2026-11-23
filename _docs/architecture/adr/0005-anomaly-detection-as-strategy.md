@@ -4,6 +4,8 @@
 - **Fecha:** 2026-11-19
 - **Requerimientos / casos de uso afectados:** PRO-5, PRO-6, CU-06, CU-07, CU-10, NOT-5; regla R9; decisión DEC-18; pendiente B5
 
+> **Enmienda (2026-11-22, DEC-33):** el análisis ahora es por alerta, al terminar su corrida. `PeerStats` se arma por análisis con una caché corta en memoria (duración por medir), en lugar de una vez por pasada global.
+
 > **Enmienda (2026-11-22, DEC-29):** `price_snapshot` (por cambio) se reemplazó por `alert_snapshot`, una fila por chequeo con su estado; el último precio, el mejor precio y las estadísticas por sitio ya no se materializan, son vistas. Donde este ADR dice «snapshot», léase «chequeo `ok`». Ver [modelo de datos](../../data/data-model.md).
 
 ## Contexto

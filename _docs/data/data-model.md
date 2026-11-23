@@ -436,7 +436,9 @@ erDiagram
 ```mermaid
 erDiagram
     EXECUTION_TYPE ||--o{ JOB : "define cómo se ejecuta"
-    JOB ||--o{ JOB_EXECUTION : triggers
+    JOB ||--o{ JOB_RUN : triggers
+    JOB_RUN ||--|{ JOB_EXECUTION : groups
+    JOB ||--o{ JOB_EXECUTION : owns
     JOB ||--o| JOB_SCRIPT : "si es serverless"
     JOB_EXECUTION ||--o| JOB_CALLBACK_OUTBOX : "si el callback se está reintentando"
 
@@ -457,8 +459,9 @@ erDiagram
         jsonb payload "Entrada específica del execution_type — OPACA para schedule"
         string schedule_cron "Expresión cron estándar (soportada nativa por APScheduler)"
         bool is_active "Programación activa"
-        string callback_type "api_call | python_script | topic_message (CHECK, SCH-13)"
+        string callback_type "api_call | python_script | topic_message (CHECK, SCH-13); null = sin callback por ejecución"
         jsonb callback_config "Config del callback, ej. {url} si es api_call"
+        jsonb run_callback_config "Aviso de corrida terminada, ej. {url}; null = sin aviso (DEC-33)"
         datetime next_run_at "Próxima corrida (UTC)"
         datetime last_run_at "Última corrida (UTC)"
         datetime created_at "Fecha de creación (UTC)"
@@ -474,12 +477,22 @@ erDiagram
         datetime created_at "Fecha de creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
     }
+    JOB_RUN {
+        uuid run_id PK "Una corrida (un disparo del job); inicio y fin se derivan de sus ejecuciones"
+        int job_id FK "Job que la disparó"
+        string run_callback_status "none | waiting | pending | sent | failed (CHECK, DEC-33)"
+        smallint run_callback_attempts "Intentos del aviso de corrida terminada"
+        datetime run_callback_next_at "Cuándo enviar o reintentar; solo si pending"
+        datetime run_callback_sent_at "Solo si sent"
+        datetime created_at "Creación (UTC)"
+        datetime updated_at "Última actualización (UTC)"
+    }
     JOB_EXECUTION {
         bigint id PK "Identificador"
         int job_id FK "Job que la disparó (mismo esquema, FK real)"
         string system "Código de auth.system, sin FK (denormalizado, lookup rápido)"
         uuid transaction_id UK "Trazabilidad end-to-end (una por unidad de trabajo, p.ej. una URL); _id del resultado en la Mongo de schedule"
-        uuid run_id "Agrupa las ejecuciones de un mismo disparo del job (ADR-0004)"
+        uuid run_id FK "Corrida a la que pertenece (job_run, ADR-0004)"
         smallint seq "Orden dentro del disparo; UNIQUE (run_id, seq); a lo más una en running por run_id"
         jsonb item "Unidad de trabajo opaca para schedule; se reenvía al reintentar. No viaja al scraper"
         uuid scraper_id "Id que el scraper devuelve en el 202; correlaciona su callback (cambia en cada reintento; UNIQUE cuando no es nulo)"

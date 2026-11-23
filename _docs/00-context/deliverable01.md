@@ -33,7 +33,7 @@ La funcionalidad priorizada es **el recorrido completo de una alerta**: desde qu
 
 **2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda **un chequeo por resultado** en PostgreSQL (`alert_snapshot`), sea `ok`, `no_price` o `error` (DEC-29). No calcula el mejor precio ni avisa.
 
-**3 · Analizar el resultado (CU-06, CU-10, CU-11).** El **análisis** es otro proceso, a otra hora (por defecto 2 al día, parametrizable), lanzado desde la interfaz o por un job agendado. Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. La primera vez no hay contra qué comparar y no avisa. Cuando el mejor precio baja, `notify` envía un email al correo registrado, con un enlace para darse de baja de esa alerta.
+**3 · Analizar el resultado (CU-06, CU-10, CU-11).** El **análisis** es otro proceso, por alerta: arranca solo cuando termina la corrida de la alerta, o a mano desde la interfaz (DEC-33). Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. La primera vez no hay contra qué comparar y no avisa. Cuando el mejor precio baja, `notify` envía un email al correo registrado, con un enlace para darse de baja de esa alerta.
 
 **4 · Mostrar en el dashboard (CU-07, CU-08).** El usuario ve la lista de alertas y, al abrir una, su dashboard: último precio por URL, mejor precio, marca de anomalía, histórico (el precio vale hasta el siguiente cambio) y un comparador con una serie por URL. El correo se muestra siempre enmascarado.
 
@@ -91,8 +91,8 @@ Catálogo de los endpoints que resuelven los requerimientos de backend, con su o
 | 15 | `GET /schedule/health` | docker-compose → `schedule` | Transversal | *Salud de cada pieza* (EJ-4) |
 | 16 | `GET /scraper/health` | docker-compose → `scraper` | Transversal | *Salud de cada pieza* (EJ-4) |
 | 17 | `GET /notify/health` | docker-compose → `notify` | Transversal | *Salud de cada pieza* (EJ-4) |
-| 18 | `POST /api/analysis` | Frontend → `core` | CU-06 | *Lanzar el análisis* (EJ-5) |
-| 19 | `POST /api/internal/analysis` | `schedule` → `core` | CU-06 | *Lanzar el análisis* (EJ-5) |
+| 18 | `POST /api/alerts/{alert_id}/analysis` | Frontend → `core` | CU-06 | *Lanzar el análisis* (EJ-5) |
+| 19 | `POST /api/internal/run-completed` | `schedule` → `core` | CU-06 | *Lanzar el análisis* al terminar la corrida (EJ-5, DEC-33) |
 
 Reglas del catálogo:
 - **Las alertas no se editan ni se borran** (requerimiento *Alerta inmutable*): por eso no existen las operaciones `PUT`, `PATCH` ni `DELETE` sobre `/api/alerts`.
@@ -129,7 +129,7 @@ FastAPI y PostgreSQL. Es el dueño del negocio.
 | **Suscripciones**<br>`SubscriptionService` | Guarda si el correo está activo o dado de baja y procesa la baja con el enlace del email | CU-11 | *Suscripción al correo*, *Baja por enlace* |
 | **Detalle del job**<br>`JobDetailService` | Le dice a `schedule` qué URLs tiene que visitar cada alerta | CU-04 | *El scraper entrega a schedule* |
 | **Ingesta de precios**<br>`PriceIngestService` | Recibe el precio capturado, lo limpia y lo convierte a número, descarta lo inválido (precio cero o página de error), marca las caídas sospechosas y guarda el precio solo si cambió. Procesa juntas todas las URLs de una alerta: si una es inválida, las demás se guardan igual | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes*, *Saneamiento de datos* |
-| **Análisis de precio**<br>`BestPriceStrategy` | En el análisis (a otra hora que el scraping), calcula cuál es el mejor precio vigente entre todas las URLs de la alerta, lo compara con el anterior y decide si hay que avisar | CU-06 | *Motor de mejor precio* |
+| **Análisis de precio**<br>`BestPriceStrategy` | En el análisis (al terminar la corrida de la alerta), calcula cuál es el mejor precio vigente entre todas las URLs de la alerta, lo compara con el anterior y decide si hay que avisar | CU-06 | *Motor de mejor precio* |
 | **Consulta de precios**<br>`PriceHistoryService` | Entrega el historial de cada URL y los datos del gráfico comparador | CU-08 | *Histórico de precios*, *Comparador entre sitios* |
 | **Cliente de agendamiento**<br>`SchedulerClient` | Le pide a `schedule` que programe las corridas de la alerta | CU-03 | *Programar la captura al crear la alerta*, *API de jobs* |
 | **Cliente de notificación**<br>`NotifierClient` | Le pide a `notify` que envíe el aviso. Si no responde, reintenta unas pocas veces con el mismo identificador de transacción | CU-10 | *Aviso al bajar el mejor precio* |
@@ -371,7 +371,8 @@ Lo que usan CU-03 (programar la captura), CU-04 (entrega de trabajo al scraper) 
 ```mermaid
 erDiagram
     EXECUTION_TYPE ||--o{ JOB : "define cómo se ejecuta"
-    JOB ||--o{ JOB_EXECUTION : dispara
+    JOB ||--o{ JOB_RUN : dispara
+    JOB_RUN ||--|{ JOB_EXECUTION : agrupa
     JOB_EXECUTION ||--o| JOB_CALLBACK_OUTBOX : "si el callback se reintenta"
 
     EXECUTION_TYPE {
@@ -388,19 +389,28 @@ erDiagram
         string external_key "Llave de idempotencia (única por system)"
         string schedule_cron "Expresión cron de la programación"
         bool is_active "Programación activa"
-        string callback_type "api_call"
+        string callback_type "api_call; null = sin callback"
         jsonb callback_config "URL a la que se entrega el resultado"
+        jsonb run_callback_config "URL del aviso de corrida terminada (DEC-33)"
         datetime next_run_at "Próxima corrida (UTC)"
         datetime last_run_at "Última corrida (UTC)"
         datetime created_at "Creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
+    }
+    JOB_RUN {
+        uuid run_id PK "Una corrida del job"
+        int job_id FK "Job que la disparó"
+        string run_callback_status "none | waiting | pending | sent | failed"
+        smallint run_callback_attempts "Intentos del aviso de corrida terminada"
+        datetime run_callback_next_at "Cuándo enviar o reintentar"
+        datetime run_callback_sent_at "Cuándo se entregó"
     }
     JOB_EXECUTION {
         bigint id PK "Identificador de la corrida"
         int job_id FK "Job que la disparó"
         string system "Proyecto dueño: valor fijo en esta versión"
         uuid transaction_id UK "Trazabilidad de punta a punta (uno por URL)"
-        uuid run_id "Agrupa las ejecuciones de un mismo disparo del job"
+        uuid run_id FK "Corrida a la que pertenece (job_run)"
         smallint seq "Orden dentro del disparo (se procesan de una en una)"
         jsonb item "Unidad de trabajo opaca para schedule (p.ej. la URL); no viaja al scraper"
         uuid scraper_id "Id que el scraper devolvio en el 202; correlaciona el callback"

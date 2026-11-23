@@ -27,7 +27,7 @@
 
 ## Diagrama de secuencia
 
-Dos procesos distintos que corren a horas distintas: el **scraping** guarda datos y el **análisis** decide los avisos.
+Dos procesos distintos: el **scraping** guarda datos y el **análisis** decide los avisos. El análisis de una alerta arranca cuando termina su corrida (DEC-33).
 
 ### 1 · Scraping (una URL a la vez)
 
@@ -60,7 +60,7 @@ sequenceDiagram
     end
 ```
 
-### 2 · Análisis (a otra hora)
+### 2 · Análisis (al terminar la corrida)
 
 ```mermaid
 sequenceDiagram
@@ -70,15 +70,16 @@ sequenceDiagram
     participant CO as 🧠 core
     participant NT as 📣 notify
 
-    alt agendado
-        SC->>CO: dispara el análisis (job api_call)
+    alt al terminar la corrida
+        SC->>CO: POST /api/internal/run-completed (job_id, run_id)
+        CO->>CO: busca la alerta por alert.schedule_job_id
     else manual
-        UI->>CO: pide el análisis
+        UI->>CO: POST /api/alerts/{alert_id}/analysis
     end
-    CO->>CO: mejor precio de cada alerta y marcas de anomalía
+    CO->>CO: bloquea la alerta (FOR UPDATE), mejor precio y marcas de anomalía
     CO->>CO: compara con el mejor precio anterior
     alt bajó y no es la primera vez
-        CO->>NT: pide el aviso (REST, un transaction_id por alerta analizada)
+        CO->>NT: pide el aviso (REST, con el transaction_id del análisis)
         NT->>NT: crea la notificación y arma el email
         NT-->>NT: envía por SMTP (si falla, su outbox reintenta)
     end
@@ -95,7 +96,7 @@ sequenceDiagram
     SC->>SC: job error_sweep: reúne las ejecuciones failed y los callbacks a core agotados desde su última corrida
     alt hubo errores
         SC->>NT: pide un solo correo al administrador, agrupado por alerta
-        NT->>NT: arma el email con la plantilla admin_alert
+        NT->>NT: arma el email con la plantilla admin-alert-email
         NT-->>NT: envía por SMTP (si falla, su outbox reintenta)
     end
 ```
@@ -234,7 +235,7 @@ Aquí **no se calcula el mejor precio ni se avisa**.
 
 ### El análisis (CU-06 y CU-10)
 
-Es otro proceso de `core`, a otra hora, que se lanza **desde la interfaz de usuario** o por un **job agendado** en `schedule`. Por defecto corre 2 veces al día, cada una un tiempo después de una captura (parametrizable, puede ser 1 y 1). Hace, por alerta:
+Es otro proceso de `core`, **por alerta**. Arranca solo cuando `schedule` avisa que terminó la corrida de esa alerta (todas sus URLs resueltas, incluidos los reintentos, y sus resultados ya entregados), o a mano desde la interfaz. No hay job de análisis y la API no es idempotente: cada llamada analiza de nuevo (DEC-33). Hace:
 
 | Paso | Qué hace | Regla |
 |------|----------|-------|
@@ -317,7 +318,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | EV-20 | `core` no responde cuando `schedule` pide el detalle del job | El job no se pierde: queda pendiente y se retoma cuando `core` vuelve. Cómo se espera (reintentos o reinicio de la infraestructura) y si se avisa al administrador no está decidido | 💡 pendiente de confirmar |
 | EV-21 | `core` no responde al callback con los precios | El outbox de `schedule` reintenta la entrega; el estado del callback es independiente del estado del trabajo | ✅ `job_callback_outbox` |
 | EV-22 | La corrida o el callback llegan dos veces | No se duplica nada: el reenvío trae el mismo `checked_at` y choca con la PK de `alert_snapshot` | ✅ R7, SCR-7 |
-| EV-23 | Falla crear el job en `schedule` después de guardar la alerta | La alerta queda creada con `schedule_job_id` nulo («sin schedule»); `core` reintenta al inicio de cada análisis con la misma llave, sin duplicar | ✅ criterio CU-03 · DEC-15 ✅ |
+| EV-23 | Falla crear el job en `schedule` después de guardar la alerta | La alerta queda creada con `schedule_job_id` nulo («sin schedule»); `core` reintenta al arrancar y al inicio de cualquier análisis con la misma llave, sin duplicar | ✅ criterio CU-03 · DEC-15 ✅ |
 | EV-26 | **Los pods del scraper no están disponibles** (problema de infraestructura): no hay ningún scraper corriendo y no responde absolutamente nada | `schedule` recibe un 404, un 500 o un *timeout* al enviar la URL. Reintenta con backoff exponencial hasta *n* veces; agotados, la ejecución queda `failed`. Mientras tanto el **trabajo queda bloqueado**: las URLs pendientes siguen en cola y se retoman cuando el scraper vuelve. El barrido diario lo avisa al administrador. Qué pasa con las corridas acumuladas al volver, dado el tope de 2 al día, no está definido | ✅ decisión del equipo · ADR-0004 · ❓ corridas acumuladas |
 | EV-27 | **`schedule` no puede llegar hasta el scraper**: por red, por una caída o porque simplemente no está accesible | Desde `schedule` no se distingue de EV-26: el envío falla y se aplica el mismo tratamiento (backoff exponencial, ejecución `failed`, aviso en el barrido diario y trabajo bloqueado) | ✅ ADR-0004 |
 
@@ -331,9 +332,9 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 |----|--------|----------|--------|
 | EV-24 | Se llega al tope de 2 corridas al día | No se dispara otra, aunque sea una recuperación. La corrida inicial al crear la alerta cuenta dentro del tope | ✅ R2, SCH-6 |
 | EV-25 | Una corrida cae fuera de las franjas horarias | No corre hasta la siguiente franja (por defecto 04:00–06:00 y 18:00–20:00) | ✅ SCH-7 |
-| EV-28 | El análisis corre cuando aún hay URLs pendientes de reintento | Usa los últimos chequeos disponibles; lo que se resuelva después entra en el siguiente análisis | ✅ por diseño (scraping y análisis son procesos separados) |
+| EV-28 | El análisis se lanza a mano cuando aún hay URLs pendientes de reintento | Usa los últimos chequeos disponibles; el análisis automático de fin de corrida toma lo que se resuelva después | ✅ por diseño (DEC-33) |
 | EV-29 | El barrido diario no encuentra errores | No envía correo (evita ruido) | ✅ ADR-0004 |
-| EV-30 | El análisis falla o no se lanza a su hora | No se pierde nada: los chequeos siguen guardados y el siguiente análisis los toma. Si el job de análisis queda `failed`, entra en el barrido diario | 💡 pendiente de confirmar |
+| EV-30 | El análisis falla, o `core` no recibe el aviso de «corrida terminada» | No se pierde nada: los chequeos siguen guardados y el siguiente análisis los toma. `schedule` reintenta el aviso (`job_run`); si se agota queda `failed` y entra en el barrido diario. Un análisis manual lo cubre | 💡 pendiente de confirmar |
 
 ## Idempotencia y trazabilidad
 
@@ -355,5 +356,5 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 
 - **Eventos por definir (❓) y propuestas (💡):** ver el catálogo de [manejo de eventos](#manejo-de-eventos). Los que más condicionan el diseño son EV-18 y EV-20.
 - **Valores y parámetros ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)):** reintentos, plazos, concurrencia y horas ya tienen un valor por defecto y son **variables de entorno** (sección «Parámetros» del ADR). Son estimaciones sin medir; se ajustan con los fixtures.
-- **Barrido diario y aviso al administrador:** falta escribir la plantilla `admin_alert` en `notify` y sembrarla (EJ-3). Un día sin errores no envía correo (EV-29).
+- **Barrido diario y aviso al administrador:** la plantilla `admin-alert-email` se siembra con `notify/seed.sql` (EJ-3, DEC-33). Un día sin errores no envía correo (EV-29).
 - **D15:** dónde se persiste el detalle por etapa (`job_state`, `raw_capture`) tras genericizar `schedule`. Hoy `schedule` solo conserva el resultado genérico de la corrida; ver [pendientes](../00-context/pending.md).

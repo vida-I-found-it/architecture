@@ -63,6 +63,8 @@ CREATE TABLE ALERT_URL (
     UNIQUE (ALERT_ID, ID),                   -- soporta la FK compuesta de `ALERT`
     UNIQUE (ALERT_ID, URL)                   -- una URL no se repite dentro de la alerta (DEC-20)
 );
+-- El aviso de «corrida terminada» trae el job_id: así core encuentra la alerta a analizar (DEC-33).
+CREATE UNIQUE INDEX UX_ALERT_SCHEDULE_JOB ON ALERT(SCHEDULE_JOB_ID) WHERE SCHEDULE_JOB_ID IS NOT NULL;
 CREATE INDEX IX_ALERT_URL_ALERT ON ALERT_URL(ALERT_ID);
 CREATE INDEX IX_ALERT_URL_DOMAIN ON ALERT_URL(DOMAIN);
 
