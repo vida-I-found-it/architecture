@@ -18,11 +18,14 @@
 --   JOB_SCRIPT         código fuente — SOLO si execution_type='script'
 --                      (serverless, lenguaje acotado por CHECK)
 --   JOB_EXECUTION      una corrida: trazabilidad de inicio/fin/estado
---   JOB_CALLBACK_SENT / JOB_CALLBACK_OUTBOX
---                      igual patrón que NOTIFICATION_SENT/OUTBOX en
---                      `notify`: "callback entregado" y "callback en
---                      reintento por fallo" son cosas distintas, no un
---                      status que muta en el sitio.
+--   JOB_CALLBACK_OUTBOX
+--                      cola angosta de reintento del callback; el
+--                      resultado final del callback queda en
+--                      JOB_EXECUTION (CALLBACK_*).
+-- El resultado de cada ejecución (ok/no_price/error, error_code, intentos)
+-- NO se repite aquí (DEC-32): vive completo en la Mongo de `schedule`
+-- (job_execution_result) y lo consultable en `core.alert_snapshot`. Aquí
+-- basta el estado del motor: completed | failed.
 -- =====================================================================
 
 -- El esquema lo crea provision-roles.sql (el rol de servicio no tiene CREATE sobre la base).
@@ -45,7 +48,8 @@ INSERT INTO EXECUTION_TYPE (CODE, DESCRIPTION, REQUIRES_SANDBOX) VALUES
     ('scrape',   'Cascada de extracción de precios (conector interno de confianza)', false),
     ('db_query', 'Consulta/mantenimiento parametrizado sobre una base de datos',      false),
     ('http_call','Llamada HTTP saliente genérica',                                   false),
-    ('script',   'Código serverless enviado por el cliente (Python/JavaScript)',     true);
+    ('script',   'Código serverless enviado por el cliente (Python/JavaScript)',     true),
+    ('error_sweep', 'Barrido diario interno: reúne lo fallido y pide un correo a notify (DEC-26, DEC-32)', false);
 
 -- La tarea CONFIGURADA. Sin alert_id, sin nada de core: PAYLOAD es la
 -- única entrada de negocio, y es opaca para SCHEDULE.
@@ -136,6 +140,8 @@ CREATE INDEX IX_JOB_EXECUTION_JOB_STARTED ON JOB_EXECUTION(JOB_ID, STARTED_AT);
 CREATE INDEX IX_JOB_EXECUTION_STATUS_ACTIVE ON JOB_EXECUTION(STATUS) WHERE STATUS IN ('queued', 'running');
 CREATE INDEX IX_JOB_EXECUTION_SYSTEM ON JOB_EXECUTION(SYSTEM);
 CREATE INDEX IX_JOB_EXECUTION_CALLBACK_FAILED ON JOB_EXECUTION(ID) WHERE CALLBACK_STATUS = 'failed'; -- panel de salud, D8
+-- Barrido diario (DEC-32): lo que quedó `failed` desde job.last_run_at del barrido.
+CREATE INDEX IX_JOB_EXECUTION_FAILED_FINISHED ON JOB_EXECUTION(FINISHED_AT) WHERE STATUS = 'failed';
 
 -- Cola de reintento del callback — SOLO contiene lo que está ACTIVAMENTE
 -- programado para reintentarse; es deliberadamente angosta (sin PAYLOAD

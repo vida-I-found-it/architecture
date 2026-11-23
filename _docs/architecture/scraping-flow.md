@@ -92,13 +92,15 @@ sequenceDiagram
     participant SC as ⏰ schedule
     participant NT as 📣 notify
 
-    SC->>SC: tarea agendada diaria: reúne las ejecuciones failed del día
+    SC->>SC: job error_sweep: reúne las ejecuciones failed y los callbacks a core agotados desde su última corrida
     alt hubo errores
         SC->>NT: pide un solo correo al administrador, agrupado por alerta
         NT->>NT: arma el email con la plantilla admin_alert
         NT-->>NT: envía por SMTP (si falla, su outbox reintenta)
     end
 ```
+
+> **Cómo se arma (DEC-32):** el barrido es un job de `schedule` con `execution_type = error_sweep`, que `schedule` crea al arrancar de forma idempotente (`external_key = error-sweep`, hora `SCHEDULE_SWEEP_TIME`). Lee de PostgreSQL las ejecuciones `failed` y las de `callback_status = failed` desde `job.last_run_at`, agrupa por job (una alerta = un job) y toma el `error_code` de cada una de su documento en Mongo.
 
 > Los pasos de `core` y `notify` son los casos de uso CU-05, CU-06 y CU-10. Aquí solo se muestran para ver el recorrido completo; su detalle y sus criterios de aceptación están en los [requerimientos](../requirements/requirements.md).
 
@@ -345,7 +347,7 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 | Pieza | PostgreSQL | MongoDB |
 |-------|-----------|---------|
 | `scraper` | Nada | Nada |
-| `schedule` | `job_execution` (una por URL: estado, intento y callback) y `job_callback_outbox` | `job_execution_result`: un documento por ejecución (una URL) con `scraper_id`, estado (`ok`/`no_price`/`error`), estrategia ganadora, `error_code`, `started_at`, `duration_ms` y los `data` del scraper: precio crudo, precio de lista, vigencia, moneda, stock, título, marca, SKU, GTIN, MPN e imágenes (DEC-19). TTL de 90 días |
+| `schedule` | `job_execution` (una por URL: estado, intento y callback) y `job_callback_outbox` | `job_execution_result`: un documento por ejecución (una URL) con `attempts` (un elemento por intento: `scraper_id`, estado `ok`/`no_price`/`error`, estrategia, `error_code`, `started_at`, `duration_ms`; DEC-32) y los `data` del intento final: precio crudo, precio de lista, vigencia, moneda, stock, título, marca, SKU, GTIN, MPN e imágenes (DEC-19). TTL de 90 días |
 | `core` | `alert_snapshot`: un chequeo por resultado (estado, precio, precio de lista, vigencia, stock), única fuente del histórico; la descripción del producto (título, marca, SKU, GTIN, MPN, imágenes…) en `alert_url`. Último estado, mejor precio y estadísticas son vistas, no se guardan (DEC-29) | **(solo proyecto)** `exchange_rate` |
 | `notify` | `notification` y `notification_outbox` | **(solo proyecto)** `notification_log` (su utilidad está en revisión, D18) |
 

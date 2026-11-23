@@ -497,7 +497,9 @@ erDiagram
     JOB_EXECUTION_RESULT {
         uuid _id PK "Es el transaction_id de la corrida"
         datetime createdAt "Base de la caducidad de 90 días (índice TTL)"
-        object result "De esa URL: alert_url_id, scraper_id, status ok, no_price o error, strategy, error_code, started_at, duration_ms y data del scraper (price crudo, list_price, currency, price_valid_until, in_stock, title, brand, sku, gtin, mpn, images)"
+        int alert_url_id "URL de la ejecución"
+        array attempts "Un elemento por intento, máx. 4: attempt, scraper_id, status ok, no_price o error, error_code, strategy, started_at, duration_ms"
+        object data "Datos del intento final: price crudo, list_price, currency, price_valid_until, in_stock, title, brand, sku, gtin, mpn, images"
     }
 ```
 

@@ -15,7 +15,12 @@
 //
 // Para un `scrape`, el documento es el resultado COMPLETO del scraper
 // para una URL (DEC-19); `core` guarda en alert_snapshot solo lo que
-// consulta (DEC-29). Sigue sin hogar el HTML crudo para construir
+// consulta (DEC-29). Forma (DEC-32):
+//   { _id: <transaction_id>, createdAt: Date, alert_url_id,
+//     attempts: [ { attempt, scraper_id, status, error_code, strategy,
+//                   started_at, duration_ms } ],   // $push por intento, máx. 4
+//     data: { ...datos del intento final } }
+// El estado final es el del último elemento de `attempts`; no se repite. Sigue sin hogar el HTML crudo para construir
 // adapters (solo proyecto, ver ../../../00-context/pending.md, D15).
 //
 // Los TTL requieren un campo `createdAt` (Date) en cada documento; el

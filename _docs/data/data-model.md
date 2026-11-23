@@ -441,7 +441,7 @@ erDiagram
     JOB_EXECUTION ||--o| JOB_CALLBACK_OUTBOX : "si el callback se está reintentando"
 
     EXECUTION_TYPE {
-        string code PK "scrape | db_query | http_call | script… (catálogo abierto)"
+        string code PK "scrape | db_query | http_call | script | error_sweep… (catálogo abierto)"
         string description "Qué hace este tipo de ejecución"
         bool requires_sandbox "true si ejecuta código del cliente (script) — exige runtime aislado"
         bool is_active "Tipo habilitado"
@@ -509,7 +509,7 @@ erDiagram
 
 ### MongoDB de `schedule`
 
-> Una sola colección genérica, de forma libre según el `execution_type` del job (opaca para `schedule`, igual que `payload` en PostgreSQL). Para un `scrape`, el documento es el **resultado completo** del scraper para una URL (DEC-19): `alert_url_id`, `scraper_id`, estado (`ok`, `no_price`, `error`), estrategia, `error_code`, `started_at`, `duration_ms` y los `data` crudos (precio, precio de lista, moneda, vigencia, stock, título, marca, SKU, GTIN, MPN, imágenes). `core` guarda en `alert_snapshot` solo lo que consulta (DEC-29). Sigue sin hogar el **HTML crudo** para construir adapters (solo proyecto) — ver [pendientes](../00-context/pending.md), D15.
+> Una sola colección genérica, de forma libre según el `execution_type` del job (opaca para `schedule`, igual que `payload` en PostgreSQL). Para un `scrape`, el documento es el **resultado completo** del scraper para una URL (DEC-19, DEC-32): `alert_url_id`; `attempts`, un array con un elemento por intento (`attempt`, `scraper_id`, `status`, `error_code`, `strategy`, `started_at`, `duration_ms`; `$push`, máximo 4), y `data` con los datos crudos del intento final (precio, precio de lista, moneda, vigencia, stock, título, marca, SKU, GTIN, MPN, imágenes). El estado final es el del último intento y no se repite. El PostgreSQL de `schedule` **no** guarda el resultado: solo `completed`/`failed` del motor. `core` guarda en `alert_snapshot` solo lo que consulta (DEC-29). Sigue sin hogar el **HTML crudo** para construir adapters (solo proyecto) — ver [pendientes](../00-context/pending.md), D15.
 
 | Colección | Contenido (documento) | Puente | Retención | Requerimiento |
 |-----------|------------------------|--------|-----------|---------------|
@@ -675,7 +675,7 @@ erDiagram
 > Solo los que una consulta real justifica (`EXPLAIN`). PostgreSQL **no** indexa las FK automáticamente.
 
 - `alert_snapshot`: la PK `(alert_url_id, checked_at)` (histórico y último chequeo) y un índice parcial `(alert_url_id, checked_at DESC) WHERE status = 'ok'` (último precio sin recorrer una racha de fallos). Sin índice por `transaction_id` (no se consulta por ahí; se navega de la ejecución al resultado en MongoDB).
-- `job_execution (job_id, started_at)` — historial de corridas por job · `job_execution (status) WHERE status IN ('queued','running')` (parcial) — detectar corridas atascadas · `job_execution (system)`.
+- `job_execution (job_id, started_at)` — historial de corridas por job · `job_execution (status) WHERE status IN ('queued','running')` (parcial) — detectar corridas atascadas · `job_execution (system)` · `job_execution (finished_at) WHERE status = 'failed'` (parcial) — barrido diario de errores (DEC-32; verificado con `EXPLAIN`, 112 kB con 200.000 ejecuciones y 2 % fallidas).
 - `alert_analysis`: la PK `(alert_id, analyzed_at)` da el último análisis de una alerta con un *index scan backward* (verificado con `EXPLAIN`) y `UNIQUE (transaction_id)`.
 - `price_anomaly`: solo la PK `(alert_url_id, checked_at, strategy, strategy_version)`; el análisis busca los chequeos `ok` sin veredicto de la estrategia activa con un anti-join sobre ella.
 - `alert_url (alert_id)` y `alert_url (domain)` — lookup de adapter · `alert_url (alert_id, url)` único (DEC-20).
