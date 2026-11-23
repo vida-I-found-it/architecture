@@ -4,6 +4,8 @@
 - **Fecha:** 2026-09-27
 - **Alcance:** qué piezas existen y qué es dueño de qué. **No** cubre *dónde* se despliega cada una (Cloudflare/GCP/Oracle, proveedor de BD, etc.) — eso queda deliberadamente **pendiente** en los [Pendientes](../../00-context/pending.md) hasta cerrar la PoC de infraestructura.
 
+> **Enmienda (2026-11-22, DEC-29):** `price_snapshot` (por cambio) se reemplazó por `alert_snapshot`, una fila por chequeo con su estado; el último precio, el mejor precio y las estadísticas por sitio ya no se materializan, son vistas. Donde este ADR dice «snapshot», léase «chequeo `ok`». Ver [modelo de datos](../../data/data-model.md).
+
 ## Tabla de contenido
 
 - [Contexto](#contexto)

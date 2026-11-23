@@ -14,7 +14,7 @@
   - [Catálogo de permisos de `ifoundit` (semilla)](#catálogo-de-permisos-de-ifoundit-semilla)
   - [SUPER_ADMIN: dueño de su system](#super_admin-dueño-de-su-system)
 - [B) core (Alertas, precios y suscripciones)](#b-core-alertas-precios-y-suscripciones)
-  - [Cómo funciona el snapshot "por cambio"](#cómo-funciona-el-snapshot-por-cambio)
+  - [Cómo funciona el seguimiento (`alert_snapshot`)](#cómo-funciona-el-seguimiento-alert_snapshot)
 - [C) schedule (Motor de jobs genérico)](#c-schedule-motor-de-jobs-genérico)
 - [D) notify (Notificaciones)](#d-notify-notificaciones)
 - [Retención (resumen)](#retención-resumen)
@@ -28,18 +28,18 @@
 
 - **🧼 Datos limpios (DoD crítico):** **todo dato se persiste saneado y normalizado** (sin espacios sobrantes, sin caracteres de control/invisibles, Unicode NFC, precios numéricos, fechas en UTC, emails/etiquetas normalizados). Ningún registro entra "sucio" → el análisis es congruente (RNF-6).
 - **💾 Almacenamiento mínimo (criterio de diseño):** el espacio es una restricción del proyecto. Reglas:
-  1. **Guardar solo lo que aporta valor:** no duplicar lo derivable ni repetir lo que no cambia (los snapshots se guardan **por cambio**, no por corrida).
+  1. **Guardar solo lo que aporta valor:** no duplicar lo derivable: cada dato vive en un solo sitio y lo que se calcula (último estado, mejor precio, estadísticas) es una vista (DEC-29).
   2. **Cada dato en el almacén que menos cuesta según su ciclo de vida:** larga vida y valor de negocio → PostgreSQL compacto; **voluminoso, efímero o de solo consulta → MongoDB con TTL y compresión**.
   3. **Tipos angostos y fijos** (`int`, `uuid`, `timestamptz`, `bool`, `date` en vez de texto), **sin id sustituto donde hay clave natural**, columnas de 8 bytes primero (menos *padding*).
   4. **Índices justos:** cada índice ocupa espacio y frena escrituras; solo se crea con una consulta real que lo justifique (`EXPLAIN`).
   5. **Toda tabla/colección de log declara su retención** (TTL o partición). Nada crece sin tope.
   6. **Medir antes de micro-optimizar:** las cifras de este doc son **estimaciones con supuestos declarados**; se validan con datos reales.
-- **Append-only por cambio para precios:** se inserta un snapshot **solo cuando cambia el precio** respecto al último; el stock se guarda como llegó (nulo si el sitio no lo informa) pero no genera snapshots ni lo usa el análisis (DEC-21, DEC-22); nunca se sobrescribe. Cada chequeo (cambie o no) actualiza `alert_url.last_checked_at`.
+- **Seguimiento append-only:** `alert_snapshot` guarda **una fila por ejecución y por URL**, sea cual sea el resultado (`ok`, `no_price`, `error`); nunca se sobrescribe. El stock se guarda como llegó (nulo si el sitio no lo informa) y el análisis no lo usa (DEC-21, DEC-22). El resultado completo del scraper vive en la Mongo de `schedule` (DEC-29).
 - **Políglota por rol:** PostgreSQL para relaciones/consistencia; **MongoDB** para documentos de alto volumen, con TTL y solo lectura.
 - **Puente relacional → NoSQL por id compartido:** el `_id` del documento **es** el id de la fila relacional (sin columnas puente extra); para ver el **detalle** de algo cuyo grano vive en NoSQL, se parte de la fila relacional y se usa su id — el relacional queda liviano y el detalle voluminoso queda en documentos con TTL. Cada puente vive documentado dentro de la sección de su propio esquema y es siempre interno a un servicio.
 - **Correlación por `transaction_id`** (`uuid`): todo lo de una corrida comparte el mismo id de trazabilidad.
 - **Valores controlados sin catálogo:** `currency` como código (tabla informativa); `gender` y los estados con **CHECK/enum** → sin FK innecesarias.
-- **Timestamps:** toda **entidad mutable** lleva `created_at` **+** `updated_at` (UTC); las tablas **append-only/log** (`price_snapshot`, `audit_log`) solo llevan su timestamp de evento. **No llevan `created_at`/`updated_at`** las tablas que no son entidades mutables: las de unión (`role_permission`, `alert_tag`), las informativas o catálogos inmutables (`currency`, `tag`), el agregado por día `site_stats_daily` (su `day` es su timestamp) y el estado de seguridad efímero (`refresh_token`, `password_reset`: solo `created_at`/`requested_at` y `expires_at`). **Los escribe siempre el backend**, de forma explícita en cada `INSERT` y `UPDATE`; no hay triggers de timestamps en la base (los únicos triggers son los de `SUPER_ADMIN`, ver la sección A; el `DEFAULT now()` es solo una red de seguridad del `INSERT`).
+- **Timestamps:** toda **entidad mutable** lleva `created_at` **+** `updated_at` (UTC); las tablas **append-only/log** (`alert_snapshot`, `price_anomaly`, `audit_log`) solo llevan su timestamp de evento. **No llevan `created_at`/`updated_at`** las tablas que no son entidades mutables: las de unión (`role_permission`, `alert_tag`), las informativas o catálogos inmutables (`currency`, `tag`), el agregado por día `site_stats_daily` (su `day` es su timestamp) y el estado de seguridad efímero (`refresh_token`, `password_reset`: solo `created_at`/`requested_at` y `expires_at`). **Los escribe siempre el backend**, de forma explícita en cada `INSERT` y `UPDATE`; no hay triggers de timestamps en la base (los únicos triggers son los de `SUPER_ADMIN`, ver la sección A; el `DEFAULT now()` es solo una red de seguridad del `INSERT`).
 
 ## Reparto de la persistencia
 
@@ -51,9 +51,9 @@ graph TB
         end
         subgraph PG_CORE["🧠 core"]
             A2["alert / alert_url / tag / alert_tag"]
-            A4["price_snapshot (por cambio, particionado)"]
+            A4["alert_snapshot (una fila por chequeo, particionado) / price_anomaly"]
             A5["subscription"]
-            A6["site_adapter / site_stats_daily"]
+            A6["site_adapter · vistas derivadas (último estado, mejor precio, estadísticas)"]
         end
         subgraph PG_SCHED["🗓️ schedule"]
             A3["execution_type / job / job_script / job_execution / job_callback_outbox"]
@@ -293,16 +293,18 @@ VIEW_MENU                        ver el menú (todo usuario con cuenta)
 
 > **Servicio dueño: `core`.** `APP_USER` **no** aparece en este diagrama: vive en la base de `auth`, un servicio distinto. `ALERT.created_by`, `SITE_ADAPTER.created_by` y `SUBSCRIPTION.created_by` guardan ese `uuid` sin FK. **`JOB`/`JOB_EXECUTION` no viven aquí:** son de `schedule` — ver [sección C](#c-schedule-motor-de-jobs-genérico). **`NOTIFICATION`/`NOTIFICATION_OUTBOX` tampoco:** son de `notify` — ver [sección D](#d-notify-notificaciones).
 >
-> **`currency` es tabla informativa, sin FK:** ISO 4217 (`COP`, `USD`, `EUR`, …); `price_snapshot.currency` guarda directamente el código (solo si ≠ COP).
+> **`currency` es tabla informativa, sin FK:** ISO 4217 (`COP`, `USD`, `EUR`, …); `alert_snapshot.currency` guarda directamente el código (solo si ≠ COP).
 
 ```mermaid
 erDiagram
     ALERT ||--o{ ALERT_URL : monitors
     ALERT ||--o{ ALERT_TAG : classified_by
     TAG ||--o{ ALERT_TAG : in
-    ALERT_URL ||--o{ PRICE_SNAPSHOT : captured_at_site
-    PRICE_SNAPSHOT ||--o{ PRICE_ANOMALY : evaluated_by
+    ALERT_URL ||--o{ ALERT_SNAPSHOT : tracked_by
+    ALERT_SNAPSHOT ||--o{ PRICE_ANOMALY : evaluated_by
     ALERT ||--o{ SUBSCRIPTION : receives
+    ALERT ||--o{ ALERT_ANALYSIS : analyzed_in
+    ALERT_SNAPSHOT ||--o{ ALERT_ANALYSIS : wins
 
     ALERT {
         int id PK "Identificador"
@@ -313,9 +315,6 @@ erDiagram
         uuid created_by "Usuario creador — id de auth.app_user, sin FK (servicio distinto)"
         datetime created_at "Fecha de creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
-        decimal best_price_cop "Mejor precio GLOBAL vigente (materializado, COP)"
-        datetime best_price_at "Cuándo se registró ese mejor precio"
-        int best_price_alert_url_id FK "Sitio (URL) con el mejor precio (FK compuesta, ver nota)"
         int schedule_job_id "Job en schedule, sin FK; null = sin schedule (DEC-15)"
     }
     ALERT_URL {
@@ -324,14 +323,7 @@ erDiagram
         string url "URL del producto en el sitio (validada anti-SSRF, SCR-18; ≤ 2048; única por alerta)"
         string domain "Dominio normalizado (para lookup de adapter)"
         bool is_active "URL activa dentro de la alerta"
-        decimal best_price_cop "Mejor precio POR SITIO (materializado, COP)"
-        datetime best_price_at "Cuándo se registró el mejor precio del sitio"
-        decimal last_price_cop "Último precio vigente en COP (para VIS-1 sin escanear snapshots)"
-        bool last_in_stock "Última disponibilidad informada (null si no se informa)"
-        datetime last_checked_at "Último chequeo exitoso (cambie o no el precio)"
-        string last_title "Último título capturado (no se historiza)"
-        decimal last_list_price_cop "Precio antes de la promoción (solo si es mayor que el precio)"
-        date last_price_valid_until "Fin de la promoción"
+        string last_title "Último título capturado (descripción del producto, no se historiza)"
         string last_brand "Última marca"
         string last_sku "Última referencia del vendedor"
         string last_gtin "Último código de barras"
@@ -360,18 +352,13 @@ erDiagram
         datetime created_at "Fecha de creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
     }
-    SITE_STATS_DAILY {
-        string domain PK "Dominio (PK compuesta con day)"
-        date day PK "Día (UTC)"
-        int ok_count "Chequeos exitosos del día"
-        int failed_count "Chequeos fallidos / sin precio del día"
-        jsonb by_strategy "Conteo por estrategia ganadora (adapter, json-ld, playwright…)"
-    }
-    PRICE_SNAPSHOT {
-        int alert_url_id PK "URL/sitio capturado (PK compuesta con captured_at)"
-        datetime captured_at PK "Momento de captura (UTC) · clave de partición anual"
-        bigint run_id "Corrida que lo generó — id de schedule.job_execution, sin FK (servicio distinto)"
-        decimal price_cop "Precio en COP (CHECK > 0)"
+    ALERT_SNAPSHOT {
+        int alert_url_id PK "URL chequeada (PK compuesta con checked_at)"
+        datetime checked_at PK "Momento del resultado (UTC) · clave de partición anual"
+        uuid transaction_id "Ejecución que lo generó — transaction_id de schedule.job_execution y _id del resultado en Mongo, sin FK (servicio distinto)"
+        string status "ok | no_price | error (CHECK)"
+        string strategy "Estrategia ganadora del scraper (solo si ok)"
+        decimal price_cop "Precio en COP (CHECK > 0; obligatorio si y solo si ok)"
         decimal price_original "Precio en moneda original (null si ya es COP)"
         decimal list_price_cop "Precio antes de la promoción (null si no hay; CHECK > price_cop)"
         date price_valid_until "Fin de la promoción"
@@ -380,8 +367,8 @@ erDiagram
         bool in_stock "Disponibilidad informada (null si no se informa)"
     }
     PRICE_ANOMALY {
-        int alert_url_id PK, FK "Snapshot evaluado (FK compuesta con captured_at)"
-        datetime captured_at PK "Momento de captura del snapshot"
+        int alert_url_id PK, FK "Chequeo evaluado (FK compuesta con checked_at)"
+        datetime checked_at PK "Momento del chequeo evaluado"
         string strategy PK "Estrategia que lo evaluó (ADR-0005)"
         int strategy_version PK "Versión de la estrategia"
         bool is_anomalous "Desplome sospechoso (marca en email y dashboard)"
@@ -389,6 +376,14 @@ erDiagram
         decimal score "Puntaje de la estrategia (null si no aplica)"
         jsonb params "Parámetros usados (ventana, umbral, muestra)"
         datetime evaluated_at "Cuándo se evaluó"
+    }
+    ALERT_ANALYSIS {
+        int alert_id PK, FK "Alerta analizada (PK compuesta con analyzed_at)"
+        datetime analyzed_at PK "Momento del análisis (UTC)"
+        uuid transaction_id UK "Uno por alerta analizada; llave idempotente hacia notify si avisa"
+        int best_alert_url_id FK "URL ganadora (FK compuesta con alert_id → alert_url); null si no_data"
+        datetime best_checked_at FK "Chequeo ganador (FK compuesta → alert_snapshot); el precio se lee por JOIN"
+        string outcome "first | dropped | not_lower | no_data (CHECK)"
     }
     SUBSCRIPTION {
         int id PK "Identificador"
@@ -402,28 +397,27 @@ erDiagram
     }
 ```
 
-> **Integridad de "mejor precio":** `alert.best_price_alert_url_id` usa **FK compuesta** `(id de la alerta, best_price_alert_url_id) → alert_url(alert_id, id)` para garantizar que la URL pertenece a esa misma alerta y evitar la referencia circular ingenua. El motor de decisión actualiza `best_price_*` **en la misma transacción** que inserta el snapshot, con la fila de `alert_url` bloqueada (`FOR UPDATE`).
->
-> **`site_stats_daily`** es un agregado diminuto (1 fila por dominio y día, con *upsert*) que permite la tasa de éxito por sitio a largo plazo (SCR-17) aunque el detalle de cada corrida ya haya expirado por TTL.
+> **Nada derivable se guarda (DEC-29):** el último estado de cada URL, el mejor precio y las estadísticas por sitio son **vistas** sobre `alert_snapshot` (`v_alert_url_last_check`, `v_alert_best_price`, `v_site_stats_daily`). Se materializan solo si una medición lo justifica. `alert_url` guarda solo la **descripción** del producto (`last_title`, marca, SKU, GTIN, MPN, imágenes, metadatos), que no está en `alert_snapshot`.
 >
 > **`site_adapter.definition`** es **declarativa** (selectores/JSONPath): nunca código ejecutable ni `eval`; las regex llevan timeout (anti-ReDoS).
 
-> **El veredicto de anomalía no vive en el snapshot** ([ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md)): `price_anomaly` guarda un veredicto por snapshot, estrategia y versión, append-only. Cambiar de estrategia agrega filas y no reescribe datos; el dashboard y el aviso leen la de la estrategia activa.
+> **El veredicto de anomalía no vive en el chequeo** ([ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md)): `price_anomaly` guarda un veredicto por chequeo `ok`, estrategia y versión, append-only. Cambiar de estrategia agrega filas y no reescribe datos; el dashboard y el aviso leen la de la estrategia activa.
 
-### Cómo funciona el snapshot "por cambio"
+### Cómo funciona el seguimiento (`alert_snapshot`)
 
-- **PK natural `(alert_url_id, captured_at)`**: sin id sustituto y **sin índice adicional** (la PK sirve para series temporales y comparador). Incluye la clave de partición, requisito de PostgreSQL para PK/UNIQUE en tablas particionadas.
-- **Idempotencia por diseño (SCR-7):** en una transacción, el worker bloquea la fila de `alert_url`, compara el precio capturado con `last_price_cop` e inserta **solo si difiere**. Un reintento de la misma corrida encuentra el mismo valor y no inserta. Reemplaza al antiguo `capture_hash` y a la clave única por corrida.
-- **Todo chequeo exitoso** actualiza `alert_url.last_checked_at` y **todos los `last_*`** (título, precio de lista, vigencia, marca, SKU, GTIN, MPN, imágenes y metadatos: `core` guarda todo lo que devuelve el scraper, D38), así el gráfico (VIS-2/VIS-3) reconstruye la línea de tiempo como **función escalonada**: el precio vale hasta el siguiente cambio o hasta `last_checked_at`.
-- **Chequeos fallidos / sin precio:** no generan snapshot; quedan solo en `site_stats_daily` (agregado permanente) y en el resultado de la corrida (`job_execution_result`, con TTL, en `schedule`).
-- **Sin `title`, `metadata`, `transaction_id`, `capture_hash` ni `exchange_rate` en el snapshot:** título y metadata viven solo en su último valor (`alert_url`); el `transaction_id` se obtiene vía `run_id`; la tasa se deriva (`price_cop / price_original`) o se consulta por `exchange_rate_date`.
-- **Particionado anual por `captured_at`:** la retención, si se necesita, es un `DROP` de partición (libera espacio al instante, sin *vacuum*). Un job crea la partición del año siguiente.
+- **Una fila por ejecución y por URL**, cada vez que se chequea, sea `ok`, `no_price` o `error` (DEC-29). Es la única fuente del histórico de la alerta: sus filas, ordenadas por `checked_at`. Reemplaza al antiguo `price_snapshot`, que solo guardaba cuando cambiaba el precio y perdía los días sin cambio y los fallos.
+- **Cada dato vive en un solo sitio:** precio, stock y estado solo en `alert_snapshot`; la descripción del producto solo en `alert_url`; el resultado completo del scraper solo en la Mongo de `schedule` (`job_execution_result`, `_id` = `transaction_id`, TTL 90 días).
+- **PK natural `(alert_url_id, checked_at)`**, sin id sustituto. Sirve para el histórico y para el último chequeo de una URL. Un índice parcial `(alert_url_id, checked_at DESC) WHERE status = 'ok'` da el último precio sin recorrer una racha de fallos. Incluye la clave de partición, requisito de PostgreSQL para PK/UNIQUE en tablas particionadas.
+- **Idempotencia (SCR-7):** `checked_at` es la hora del resultado que reporta `schedule` y es la misma en cada reenvío del callback; un reenvío choca con la PK y no duplica (`ON CONFLICT DO NOTHING`).
+- **Coherencia por `CHECK`:** solo un `ok` lleva precio (`(status = 'ok') = (price_cop IS NOT NULL)`); `no_price` y `error` no llevan ningún dato de precio ni stock.
+- **Un chequeo `ok`** también sobrescribe la descripción del producto en `alert_url` (`last_*`, D38).
+- **Particionado anual por `checked_at`:** la retención, si se necesita, es un `DROP` de partición (libera espacio al instante, sin *vacuum*). Un job crea la partición del año siguiente.
 
 ### MongoDB de `core`
 
 | Colección | Contenido (documento) | Puente | Retención | Requerimiento |
 |-----------|------------------------|--------|-----------|---------------|
-| **exchange_rate** | Histórico de tasa: `date` (día UTC, sin hora), `pair` (USD/COP), `rate`, `captured_at` (momento exacto de la consulta), `source`; ~1 documento/día | `date` + `pair` ↔ `price_snapshot.exchange_rate_date` | Sin TTL (volumen ínfimo) | PRO-3 |
+| **exchange_rate** | Histórico de tasa: `date` (día UTC, sin hora), `pair` (USD/COP), `rate`, `captured_at` (momento exacto de la consulta), `source`; ~1 documento/día | `date` + `pair` ↔ `alert_snapshot.exchange_rate_date` | Sin TTL (volumen ínfimo) | PRO-3 |
 
 ---
 
@@ -437,7 +431,7 @@ erDiagram
 >
 > **`JOB_SCRIPT` es la tarea serverless:** 1:1 con `JOB`, solo existe si `execution_type = 'script'`. `language` va acotado por **CHECK** a propósito — ampliar el lenguaje soportado es una decisión de seguridad explícita (migración), no un `INSERT` libre como `execution_type`.
 >
-> **Pendientes:** sandbox de ejecución serverless (D14) y nuevo hogar del detalle de scraping (D15) — ver [pendientes](../00-context/pending.md).
+> **Pendientes:** sandbox de ejecución serverless (D14) y nuevo hogar del HTML crudo para adapters (D15, solo proyecto) — ver [pendientes](../00-context/pending.md).
 
 ```mermaid
 erDiagram
@@ -515,11 +509,11 @@ erDiagram
 
 ### MongoDB de `schedule`
 
-> Una sola colección genérica, de forma libre según el `execution_type` del job (opaca para `schedule`, igual que `payload` en PostgreSQL). El detalle específico de scraping (progreso por sitio, HTML crudo para adapters, precio extraído) **no tiene hogar todavía** — ver [pendientes](../00-context/pending.md), D15.
+> Una sola colección genérica, de forma libre según el `execution_type` del job (opaca para `schedule`, igual que `payload` en PostgreSQL). Para un `scrape`, el documento es el **resultado completo** del scraper para una URL (DEC-19): `alert_url_id`, `scraper_id`, estado (`ok`, `no_price`, `error`), estrategia, `error_code`, `started_at`, `duration_ms` y los `data` crudos (precio, precio de lista, moneda, vigencia, stock, título, marca, SKU, GTIN, MPN, imágenes). `core` guarda en `alert_snapshot` solo lo que consulta (DEC-29). Sigue sin hogar el **HTML crudo** para construir adapters (solo proyecto) — ver [pendientes](../00-context/pending.md), D15.
 
 | Colección | Contenido (documento) | Puente | Retención | Requerimiento |
 |-----------|------------------------|--------|-----------|---------------|
-| **job_execution_result** | Resultado/detalle de **una ejecución (una unidad de trabajo, p.ej. una URL)**, forma libre según `execution_type` (filas afectadas de un `db_query`, stdout de un `script`, resultado crudo de un `scrape`…) | `_id` = `job_execution.transaction_id` (UUID binario) | **TTL 90 días** | SCR-14 · SCR-20 |
+| **job_execution_result** | Resultado/detalle de **una ejecución (una unidad de trabajo, p.ej. una URL)**, forma libre según `execution_type` (filas afectadas de un `db_query`, stdout de un `script`, resultado completo de un `scrape` según DEC-19…); campo `createdAt` (Date) para el TTL | `_id` = `job_execution.transaction_id` (UUID binario) | **TTL 90 días** | SCR-14 · SCR-20 |
 
 ---
 
@@ -543,7 +537,7 @@ erDiagram
 >
 > **`provider`** (en `notification`/`notification_outbox`): qué proveedor entregó o intentó el envío — texto libre, **sin catálogo normalizado todavía** (pendiente en los [pendientes](../00-context/pending.md)). Las credenciales de cada proveedor **nunca** van en esta base — variables de entorno, igual que el SMTP de hoy. `last_error` queda acotado a `varchar(500)`: no ahorra espacio frente a `text` (Postgres los guarda igual), pero evita que un *stack trace* completo quede guardado por accidente.
 >
-> **Consecuencia de que `notification` viva en `notify`:** el motor de decisión de `core` no puede insertar el aviso en la misma transacción donde actualiza `best_price_*`. `core` le pasa a `notify` los datos de la decisión (`transaction_id`, `app_user_id`, `channel`, `destination`, `template`, `payload`) y es `notify` quien crea su propia fila — falta definir el contrato exacto de esa llamada y cómo se confirma que el aviso quedó encolado, ver [pendientes](../00-context/pending.md), D6 y D12.
+> **Consecuencia de que `notification` viva en `notify`:** el motor de decisión de `core` no puede insertar el aviso en la misma transacción donde registra su decisión. `core` le pasa a `notify` los datos de la decisión (`transaction_id`, `app_user_id`, `channel`, `destination`, `template`, `payload`) y es `notify` quien crea su propia fila — falta definir el contrato exacto de esa llamada y cómo se confirma que el aviso quedó encolado, ver [pendientes](../00-context/pending.md), D6 y D12.
 
 ```mermaid
 erDiagram
@@ -624,8 +618,9 @@ erDiagram
 | `refresh_token` / `password_reset` | PostgreSQL | purga diaria por `expires_at` (nunca por revocación) | al expirar |
 | `audit_log` | PostgreSQL | purga diaria con `purge_audit_log()` (índice BRIN por `occurred_at`) | 12 meses |
 | `anonymization_event` | PostgreSQL | sin purga (una fila por usuario anonimizado, sin datos personales) | indefinida |
-| `price_snapshot` | PostgreSQL | partición anual (`DROP`) o *rollup* diario | sin purga inicial (es compacto); decidir con datos reales |
-| `site_stats_daily`, `exchange_rate` | PG / MongoDB | — | sin purga (volumen ínfimo) |
+| `alert_snapshot` | PostgreSQL | partición anual (`DROP`) | sin purga inicial; decidir con datos reales. Purgar una partición exige antes purgar o desligar las filas de `alert_analysis` y `price_anomaly` que la referencian (FK) |
+| `alert_analysis` | PostgreSQL | — | sin purga inicial (~1,1 GB/año con el supuesto); decidir junto con `alert_snapshot` |
+| `exchange_rate` | MongoDB | — | sin purga (volumen ínfimo) |
 
 ## Estimación de almacenamiento (supuestos, a validar)
 
@@ -633,14 +628,14 @@ erDiagram
 
 | Concepto | Antes | Ahora |
 |----------|-------|-------|
-| Fila de `price_snapshot` (heap + índices) | ~450 B (id, `transaction_id` texto, título, JSONB, hash, 3 índices) | **~110 B** (PK natural; añade precio de lista y vigencia; sin título/metadata/hash, que van en `alert_url.last_*`) |
-| Filas por año | 22 M (una por chequeo) | **2–7 M** si el precio cambia en el 10–30 % de los chequeos *(supuesto)* |
-| `price_snapshot` por año | **~10 GB** | **~0,2–0,7 GB** |
+| Fila de precios (heap + índices) | `price_snapshot` original: ~450 B (id, `transaction_id` texto, título, JSONB, hash, 3 índices) | `alert_snapshot`: **~173 B medidos** (92 B de heap + PK + índice parcial de `ok`), en `postgres:16` con 200.000 filas sintéticas (90 % `ok`), 2026-11-22 |
+| Filas por año | 22 M (una por chequeo) | **22 M** (una por chequeo, DEC-29) |
+| Tabla de precios por año | **~10 GB** | **~3,8 GB** (22 M × 173 B); con datos sintéticos, a validar con datos reales |
 | `job_execution_result` (90 d) | — | *por estimar* (forma libre según `execution_type`; sin supuestos todavía) |
 
 ## Decisiones de diseño (registradas)
 
-> Retención y semántica de "mejor precio" **aprobadas**. **"Mejor precio"** = **mínimo vigente** entre los últimos precios de los sitios activos (mejor precio móvil, PRO-6); el mínimo **histórico** se recalcula desde los snapshots.
+> Retención y semántica de "mejor precio" **aprobadas**. **"Mejor precio"** = **mínimo vigente** entre los últimos precios de los sitios activos (mejor precio móvil, PRO-6); el mínimo **histórico** se recalcula desde `alert_snapshot`.
 
 | Tema | Decisión |
 |------|----------|
@@ -653,10 +648,12 @@ erDiagram
 | **Estados** | **Código directo con CHECK/enum** (sin FK); `execution_type` es la excepción deliberada: catálogo con FK real porque está pensado para crecer |
 | **Persona vs Usuario** | `person` (PII) separado de `user` (cuenta), relación 1:1 |
 | **PK de person/user** | **UUID** generado |
-| **Mejor precio** | Materializado **global** en `alert` **y por sitio** en `alert_url`, con FK compuesta y actualizado en la misma transacción que el snapshot |
-| **Último precio por sitio** | Materializado en `alert_url` (`last_*`) para VIS-1 sin escanear snapshots |
-| **Snapshots** | **Por cambio**, PK natural `(alert_url_id, captured_at)`, partición anual, sin título/metadata/hash; idempotencia por bloqueo de fila + comparación con el último valor |
-| **Detalle de scraping** | Sin hogar todavía: `schedule` es genérico y no lo guarda (progreso por sitio, HTML crudo para adapters, precio extraído); candidato natural es la Mongo de `core` — pendiente, ver [pendientes](../00-context/pending.md), D15 |
+| **Mejor precio** | **No se guarda** (DEC-29): vista `v_alert_best_price` sobre `alert_snapshot`. Medido: ~5 ms para una alerta con 1.000 URLs y 200.000 chequeos (sintético) |
+| **Último estado por sitio** | **No se guarda** (DEC-29): vista `v_alert_url_last_check` (último chequeo y último precio `ok`) |
+| **Registro del análisis** | `alert_analysis` (DEC-30): una fila por alerta en cada análisis, append-only, con el resultado (`first`, `dropped`, `not_lower`, `no_data`) y una FK al chequeo ganador, sin copiar el precio. El «mejor precio anterior» es la última fila con ganador; no se recalcula porque `alert_url.is_active` no se historiza. Medido: ~153 B por fila (~1,1 GB/año con 10.000 alertas × 2 análisis/día, supuesto) |
+| **Seguimiento** | `alert_snapshot`: **una fila por chequeo**, PK natural `(alert_url_id, checked_at)`, partición anual; idempotencia por la PK (el reenvío del callback trae el mismo `checked_at`) |
+| **Estadísticas por sitio** | **No se guardan** (DEC-29): vista `v_site_stats_daily`; reemplaza a la tabla `site_stats_daily` |
+| **Detalle de scraping** | El resultado completo de cada URL vive en `job_execution_result` (DEC-19) y lo consultable en `alert_snapshot` (DEC-29). Sigue sin hogar el HTML crudo para adapters (solo proyecto) — ver [pendientes](../00-context/pending.md), D15 |
 | **Notificaciones** | Cuatro tablas en `notify`, genéricas y multicanal: `channel` (catálogo abierto), `template` (versionado), `notification` (configurada **y** resuelta — `status`, `sent_at`, `provider`, `attempts`, `last_error`) y `notification_outbox` (cola de reintento **activo**, se borra al resolverse). Sin ningún concepto de `core`: solo `transaction_id` (correlación opaca) y `payload` (opaco); amarrada a `app_user_id` (obligatorio) + `system`, no a `subscription_id`; `UNIQUE (transaction_id, app_user_id, channel_id)` |
 | **Puentes NoSQL** | Por **id compartido** (`_id` = id relacional); sin columnas `*_doc_id` |
 | **Nombres/idioma** | Tablas y campos en **inglés**; comentarios en **español** |
@@ -668,7 +665,7 @@ erDiagram
 
 ## Restricciones de integridad (CHECK / UNIQUE)
 
-- `price_snapshot.price_cop > 0` · CHECK en cada columna `status` (sin tabla catálogo) y en `job_script.language`/`job.callback_type`.
+- `alert_snapshot.price_cop > 0` y obligatorio si y solo si `status = 'ok'` · CHECK en cada columna `status` (sin tabla catálogo) y en `job_script.language`/`job.callback_type`.
 - Emails como `text` en minúsculas con `CHECK (email = lower(email))` (único en `auth`); sin `citext` ni extensiones, para que cada esquema siga independiente · `person_id` UNIQUE en `app_user` · `role (system_code, code)` y `permission (system_code, code)` UNIQUE · `user_system_role (user_id, system_code)` PK (un solo rol por `system`) · `password_reset.attempts` ≤ 5 · `person.gender` IN (`H`, `M`) · `person`: completa **o** anonimizada (`CHECK`), nombres saneados, `birth_date` entre 1900 y hace 18 años, `phone` E.164 · `app_user.email` con forma válida · `code` de `system` en minúscula y de `role`/`permission` en MAYÚSCULAS · `refresh_token.token_hash` y `password_reset.code_hash` de 32 bytes · `app_user`: una cuenta `@anonymized.invalid` no puede estar activa · `audit_log`: `action`, `entity` y `entity_id` de 1 a 100 caracteres · `refresh_token`: `replaced_by` exige `revoked_at` (un token rotado siempre está revocado) · `anonymization_event`: un solo evento por usuario.
 - `subscription (alert_id, email)` UNIQUE · `notification (transaction_id, app_user_id, channel_id, destination)` UNIQUE (DEC-11) · `template (code, version)` UNIQUE · `site_adapter (domain)` UNIQUE · `job_execution (transaction_id)` UNIQUE.
 - Importes en `NUMERIC(14,2)`; fechas en `timestamptz` (UTC).
@@ -677,9 +674,10 @@ erDiagram
 
 > Solo los que una consulta real justifica (`EXPLAIN`). PostgreSQL **no** indexa las FK automáticamente.
 
-- `price_snapshot`: **solo la PK** `(alert_url_id, captured_at)`. Sin índices por `run_id` ni `transaction_id` (no se consulta por ahí; se navega job_execution → MongoDB).
+- `alert_snapshot`: la PK `(alert_url_id, checked_at)` (histórico y último chequeo) y un índice parcial `(alert_url_id, checked_at DESC) WHERE status = 'ok'` (último precio sin recorrer una racha de fallos). Sin índice por `transaction_id` (no se consulta por ahí; se navega de la ejecución al resultado en MongoDB).
 - `job_execution (job_id, started_at)` — historial de corridas por job · `job_execution (status) WHERE status IN ('queued','running')` (parcial) — detectar corridas atascadas · `job_execution (system)`.
-- `price_anomaly`: solo la PK `(alert_url_id, captured_at, strategy, strategy_version)`; el análisis busca los snapshots sin veredicto de la estrategia activa con un anti-join sobre ella.
+- `alert_analysis`: la PK `(alert_id, analyzed_at)` da el último análisis de una alerta con un *index scan backward* (verificado con `EXPLAIN`) y `UNIQUE (transaction_id)`.
+- `price_anomaly`: solo la PK `(alert_url_id, checked_at, strategy, strategy_version)`; el análisis busca los chequeos `ok` sin veredicto de la estrategia activa con un anti-join sobre ella.
 - `alert_url (alert_id)` y `alert_url (domain)` — lookup de adapter · `alert_url (alert_id, url)` único (DEC-20).
 - `job (system, external_key)` único parcial (DEC-15) · `job (next_run_at) WHERE is_active` (parcial) — el scheduler toma lo vencido con `FOR UPDATE SKIP LOCKED` (sin doble encolado con varias instancias) · `job (system)`.
 - `job_callback_outbox (next_retry_at)` — mismo patrón que `notification_outbox`; sin `WHERE`, la tabla ya solo contiene lo que está activamente en reintento.

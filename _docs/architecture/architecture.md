@@ -87,7 +87,7 @@ sequenceDiagram
         Note over SC,PG: CU-05 · Procesar y almacenar
         SC->>CO: callback con el resultado de esa URL (si falla, su outbox reintenta)
         CO->>CO: sanea, normaliza y valida
-        CO->>PG: guarda el snapshot solo si cambia
+        CO->>PG: guarda el chequeo (alert_snapshot)
     end
 
     rect rgba(70, 130, 220, 0.14)
@@ -251,7 +251,7 @@ Cloudflare, Worker Gateway, `auth`, JWT y despliegue en la nube pertenecen al pr
 - **REST con JSON** entre todas las piezas, y un contrato Swagger (OpenAPI) por pieza que expone endpoints.
 - **Cada pieza es dueña de sus datos:** su propia base, sin claves foráneas hacia otra pieza; se enlazan solo por identificadores.
 - **`schedule` envía el trabajo al scraper y este responde por un callback configurable** ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)): el scraper responde «recibido», trabaja en segundo plano y al terminar ejecuta el callback. En el ejercicio el callback apunta a `schedule`, que reenvía a `core`; así el scraper no llama a `core`. Solo es alcanzable desde la red interna. `schedule` envía **una URL a la vez** y cada resultado (`ok`, `no_price` o `error`) llega a `core` de inmediato.
-- **Scraping y análisis son procesos separados, a horas distintas** (DEC-25): el scraping guarda snapshots; el análisis (desde la interfaz o por un job agendado) calcula el mejor precio y decide los avisos. Por defecto 2 capturas y 2 análisis al día, parametrizable.
+- **Scraping y análisis son procesos separados, a horas distintas** (DEC-25): el scraping guarda chequeos; el análisis (desde la interfaz o por un job agendado) calcula el mejor precio y decide los avisos. Por defecto 2 capturas y 2 análisis al día, parametrizable.
 - **Cada pieza reintenta lo suyo:** el scraper **no reintenta** (una pasada por URL). `schedule` administra los reintentos del scraper: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min) y reintenta el envío del trabajo (backoff exponencial); lo agotado queda `failed` y se avisa en el **barrido diario de errores**, que pide un solo correo a `notify`. `notify` reintenta el envío del email con su cola. `core` reintenta la llamada a `notify` con el mismo identificador de transacción.
 - **Idempotencia por llaves únicas:** repetir una corrida, un callback o un aviso no duplica datos.
 - **Estrategias reemplazables:** la forma de crear una alerta, la extracción del precio, la detección de caídas anómalas ([ADR-0005](adr/0005-anomaly-detection-as-strategy.md)) y el canal de notificación van detrás de interfaces, para cambiarlos sin tocar el resto.
@@ -278,18 +278,18 @@ Cloudflare, Worker Gateway, `auth`, JWT y despliegue en la nube pertenecen al pr
 | QS-03 | Seguridad | Desde el contenedor del scraper se intenta llegar a `core`, `notify`, PostgreSQL y MongoDB | **0** rutas de red; solo alcanza a `schedule` y a internet | Prueba de conectividad sobre el docker-compose (vista de despliegue) | 💡 |
 | QS-04 | Seguridad | Un trabajo trae un callback cuyo destino no está en la lista blanca | **100 %** rechazados con 400, sin seguir redirecciones | Prueba de integración del scraper y de `schedule` (ADR-0004) | ✅ |
 | QS-05 | Seguridad | Un sitio devuelve un título con HTML o `<script>` | **0** cargas ejecutadas en la UI; el dato se guarda saneado | Fixtures con HTML hostil y prueba E2E (R6) | ✅ |
-| QS-06 | Confiabilidad | El mismo resultado, callback o llamada de aviso se repite 5 veces | **0** snapshots duplicados y **0** avisos duplicados | Prueba de integración repetida con la misma llave (R7, EV-22) | ✅ |
+| QS-06 | Confiabilidad | El mismo resultado, callback o llamada de aviso se repite 5 veces | **0** chequeos duplicados y **0** avisos duplicados | Prueba de integración repetida con la misma llave (R7, EV-22) | ✅ |
 | QS-07 | Confiabilidad | En una alerta de 5 URLs, una falla | Las otras **4** se guardan (100 %); la fallida queda `no_price` o `error` | E2E con un fixture que falla (R1) | ✅ |
 | QS-08 | Confiabilidad | El scraper está caído al enviar una URL | **3** reintentos con espera de 1, 2 y 4 min; ejecución `failed` en **≤ 8 min**; aparece en el barrido de las 23:00; **0** ejecuciones perdidas en silencio | Prueba con el scraper detenido y el reloj inyectado (EV-26, ADR-0004) | ✅ cifras del ADR |
-| QS-09 | Confiabilidad | Un sitio falla dos veces con `error` y responde a la tercera | Resultado `ok` al 3.er intento y **1** snapshot | Fixture que falla N veces y luego responde (SCR-8) | ✅ |
-| QS-10 | Confiabilidad | `notify` no responde cuando `core` pide el aviso | El snapshot y el mejor precio **se mantienen** (0 reversiones); `core` reintenta 3 veces con el mismo `transaction_id` | Prueba con `notify` detenido (DEC-12, CU-10) | ✅ |
+| QS-09 | Confiabilidad | Un sitio falla dos veces con `error` y responde a la tercera | Resultado `ok` al 3.er intento y **1** chequeo | Fixture que falla N veces y luego responde (SCR-8) | ✅ |
+| QS-10 | Confiabilidad | `notify` no responde cuando `core` pide el aviso | El chequeo y el mejor precio **se mantienen** (0 reversiones); `core` reintenta 3 veces con el mismo `transaction_id` | Prueba con `notify` detenido (DEC-12, CU-10) | ✅ |
 | QS-11 | Confiabilidad | El análisis ve que el mejor precio bajó | Exactamente **1** correo por suscripción activa; **0** si es la primera vez o si la suscripción está dada de baja | Prueba E2E con el SMTP de prueba (DEC-6, CU-10) | ✅ |
 | QS-12 | Confiabilidad | `schedule` se reinicia a mitad de una corrida | Toda ejecución `running` vencida vuelve a la cola o pasa a `error` en **≤ 2 min** tras el plazo del callback; **0** ejecuciones huérfanas | Prueba que mata el contenedor y revisa `job_execution` (EV-19) | 💡 |
 | QS-13 | Rendimiento | Se crea una alerta con 10 URLs | Respuesta de `core` en **≤ 1 s** (p95); la captura va en segundo plano | Prueba de carga ligera en local | 💡 |
 | QS-14 | Rendimiento | Se abre el dashboard de una alerta con 10 URLs y 180 días de histórico | Respuesta de `core` en **≤ 500 ms** (p95) | Datos sembrados y medición en local | 💡 |
-| QS-15 | Rendimiento | `core` recibe el resultado de una URL | Guardado del snapshot en **≤ 1 s** (p95), sin bloquear a las demás alertas | Medición con carga ligera | 💡 |
+| QS-15 | Rendimiento | `core` recibe el resultado de una URL | Guardado del chequeo en **≤ 1 s** (p95), sin bloquear a las demás alertas | Medición con carga ligera | 💡 |
 | QS-16 | Rendimiento | Una pasada de 10 URLs | **≤ 15 min** en el peor caso (10 × 90 s); con 3 reintentos, **≤ 1 h** | Medición con los fixtures de las 4 estrategias (ADR-0004); el callback trae `started_at` y `duration_ms` por URL | ✅ cifras del ADR |
-| QS-17 | Trazabilidad | Dado un `transaction_id`, se reconstruye lo ocurrido con una URL | **100 %** de las líneas de log de `core`, `schedule` y `notify` llevan ese `transaction_id`; las del `scraper` llevan su `scraper_id`, que `schedule` enlaza con el `transaction_id` (`job_execution.SCRAPER_ID`). Se ve envío, resultado y snapshot | Prueba E2E que recoge los logs (INF-5) | ✅ |
+| QS-17 | Trazabilidad | Dado un `transaction_id`, se reconstruye lo ocurrido con una URL | **100 %** de las líneas de log de `core`, `schedule` y `notify` llevan ese `transaction_id`; las del `scraper` llevan su `scraper_id`, que `schedule` enlaza con el `transaction_id` (`job_execution.SCRAPER_ID`). Se ve envío, resultado y chequeo | Prueba E2E que recoge los logs (INF-5) | ✅ |
 | QS-18 | Mantenibilidad | Se cambia un reintento, un plazo, una hora o un destino de callback | **0** cambios de código: solo variables de entorno | Revisión del código y prueba con otros valores (INF-3, ADR-0004) | ✅ |
 
 ### Cómo se logra
@@ -299,4 +299,4 @@ Cloudflare, Worker Gateway, `auth`, JWT y despliegue en la nube pertenecen al pr
 | Seguridad | Las URLs se validan contra direcciones peligrosas al crear la alerta y en cada descarga; todo texto se sanea; lo scrapeado se trata como dato; el correo se muestra enmascarado |
 | Confiabilidad | Reintentos por pieza; una URL que falla no frena a las demás; un fallo al avisar no revierte el análisis |
 | Mantenibilidad | Piezas desacopladas, servicios detrás de interfaces, un repositorio por entidad y migraciones por pieza; el mismo identificador de transacción acompaña una corrida en todas las piezas y en los logs, para diagnosticar fallos |
-| Rendimiento | Solo se guarda un snapshot cuando el precio cambia; la captura ocurre en segundo plano, no dentro de una petición; bloqueos de fila acotados y sin consultas repetidas |
+| Rendimiento | Un chequeo por resultado, append-only y con lo derivable en vistas (DEC-29); la captura ocurre en segundo plano, no dentro de una petición; bloqueos de fila acotados y sin consultas repetidas |

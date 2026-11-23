@@ -31,7 +31,7 @@ La funcionalidad priorizada es **el recorrido completo de una alerta**: desde qu
 
 **1 · Crear la alerta (CU-02, CU-03).** El usuario elige el modo de creación (hoy solo «URL directa»; «Palabra clave» con LLM queda preparado pero deshabilitado), pega de 1 a 10 URLs, escribe el correo al que se le avisará y confirma en un modal que advierte que la acción es definitiva. La alerta es inmutable. Al guardarse, el sistema crea por debajo su agendamiento: **2 veces al día**, dentro de las ventanas 04:00–06:00 y 18:00–20:00. La primera corrida es inmediata, cuenta dentro de esas 2 y puede quedar fuera de las ventanas. El usuario no vuelve a intervenir.
 
-**2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL **solo cuando cambia el precio**. No calcula el mejor precio ni avisa.
+**2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda **un chequeo por resultado** en PostgreSQL (`alert_snapshot`), sea `ok`, `no_price` o `error` (DEC-29). No calcula el mejor precio ni avisa.
 
 **3 · Analizar el resultado (CU-06, CU-10, CU-11).** El **análisis** es otro proceso, a otra hora (por defecto 2 al día, parametrizable), lanzado desde la interfaz o por un job agendado. Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. La primera vez no hay contra qué comparar y no avisa. Cuando el mejor precio baja, `notify` envía un email al correo registrado, con un enlace para darse de baja de esa alerta.
 
@@ -200,7 +200,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 
 | ID | Regla | Requerimientos |
 |---|---|---|
-| R7 | Solo se guarda un snapshot cuando **cambia el precio** respecto del último; el stock se guarda como llegó (o nulo) pero no genera snapshots. El historial de snapshots es de solo añadir, y repetir una corrida no duplica datos | *Historial de precios*, *Reintentos idempotentes* |
+| R7 | Cada chequeo de una URL se guarda como **una fila de seguimiento**, sea cual sea el resultado (`ok`, `no_price` o `error`); el stock se guarda como llegó (o nulo). El seguimiento es de solo añadir, es la única fuente del histórico y repetir una corrida o un callback no duplica datos (DEC-29) | *Historial de precios*, *Reintentos idempotentes* |
 | R8 | Todo chequeo exitoso actualiza la **fecha del último chequeo**, cambie o no el precio. Así el histórico se reconstruye: el precio vale hasta el siguiente cambio | *Historial de precios*, *Histórico de precios* |
 
 **Análisis** (CU-06)
@@ -215,7 +215,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 
 | ID | Regla | Requerimientos |
 |---|---|---|
-| R12 | Se avisa **solo cuando el mejor precio baja** respecto del anterior, y solo a suscripciones **activas**: la primera vez (sin mejor precio anterior) no avisa, y un precio igual o más alto tampoco. El que decide es el análisis, no el guardado del snapshot. Una caída anómala se avisa con la advertencia «valida manualmente», y cada email trae el enlace para darse de baja. Un aviso no se duplica aunque se repita el pedido, y si falla, el análisis y los snapshots no se revierten | *Aviso al bajar el mejor precio*, *Advertencia de caída anómala*, *Suscripción al correo*, *Baja por enlace* |
+| R12 | Se avisa **solo cuando el mejor precio baja** respecto del anterior, y solo a suscripciones **activas**: la primera vez (sin mejor precio anterior) no avisa, y un precio igual o más alto tampoco. El que decide es el análisis, no el guardado del chequeo. Una caída anómala se avisa con la advertencia «valida manualmente», y cada email trae el enlace para darse de baja. Un aviso no se duplica aunque se repita el pedido, y si falla, el análisis y los chequeos no se revierten | *Aviso al bajar el mejor precio*, *Advertencia de caída anómala*, *Suscripción al correo*, *Baja por enlace* |
 
 **Presentación y generales** (CU-07, CU-08)
 
@@ -231,12 +231,12 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 
 | Qué | Elección | Por qué |
 |---|---|---|
-| Base relacional | **PostgreSQL 16** | Los datos son relacionales (alerta → URLs → snapshots de precio) y necesitan transacciones y bloqueos de fila |
+| Base relacional | **PostgreSQL 16** | Los datos son relacionales (alerta → URLs → seguimiento de precios) y necesitan transacciones y bloqueos de fila |
 | Base documental | **MongoDB**, solo en `schedule` | El resultado de cada corrida es de forma libre y caduca a los 90 días |
 | Acceso | **SQLAlchemy 2** (sesión asíncrona) | Parametriza todas las consultas y evita escribir SQL a mano |
 | Migraciones | **Alembic** (*Migraciones de base de datos*) | Esquema versionado, con su propia historia de revisiones por pieza |
 
-`core`, `schedule` y `notify` usan PostgreSQL, cada una solo con sus propias tablas y sin claves foráneas hacia las de otra pieza: se referencian únicamente por identificadores (por ejemplo, `run_id` en el snapshot). `schedule` usa además MongoDB. El `scraper` no tiene base de datos.
+`core`, `schedule` y `notify` usan PostgreSQL, cada una solo con sus propias tablas y sin claves foráneas hacia las de otra pieza: se referencian únicamente por identificadores (por ejemplo, `transaction_id` en el seguimiento). `schedule` usa además MongoDB. El `scraper` no tiene base de datos.
 
 #### Conexiones
 
@@ -255,7 +255,7 @@ Dentro de esas transacciones, el aislamiento es el de PostgreSQL por defecto (`R
 |---|---|---|
 | Procesar un callback de precios (CU-05) y analizar el mejor precio (CU-06) | `SELECT … FOR UPDATE` sobre la fila de `alert` y luego sobre sus `alert_url`, siempre en ese orden y por id | Una alerta se procesa de a una corrida a la vez: dos corridas o reintentos simultáneos no se pisan. El orden fijo evita bloqueos mutuos (deadlocks) |
 | Tomar trabajo pendiente de una cola: jobs vencidos en `schedule`, envíos en `notification_outbox`, entregas en `job_callback_outbox` | `SELECT … FOR UPDATE SKIP LOCKED` | Varios trabajadores toman tareas sin repetirlas ni esperarse |
-| Insertar un snapshot, una notificación, una corrida o un resultado | Ninguno: restricciones únicas e `INSERT … ON CONFLICT DO NOTHING` | Idempotencia natural. Claves: `(alert_url_id, captured_at)` en `price_snapshot`; `(transaction_id, app_user_id, channel)` en `notification`; `transaction_id` en `job_execution`; `_id` = `transaction_id` en MongoDB |
+| Insertar un chequeo, una notificación, una corrida o un resultado | Ninguno: restricciones únicas e `INSERT … ON CONFLICT DO NOTHING` | Idempotencia natural. Claves: `(alert_url_id, checked_at)` en `alert_snapshot`; `(transaction_id, app_user_id, channel)` en `notification`; `transaction_id` en `job_execution`; `_id` = `transaction_id` en MongoDB |
 | Dar de baja una suscripción | `UPDATE … WHERE status = 'active'` (bloqueo de fila implícito) | Repetir la baja no cambia nada |
 
 No se usan bloqueos de tabla, `SERIALIZABLE` ni bloqueo optimista: las filas con escritura concurrente las serializa el bloqueo de `alert`, y todo lo demás son inserciones o datos inmutables. Cada bloqueo espera como máximo 5 segundos; si vence, la petición responde un error temporal y `schedule` reintenta el callback desde su cola de reintentos.
@@ -269,7 +269,7 @@ Esas transacciones las ejecutan los servicios de la sección 5, y para tocar los
 | `core` | `Alert` | `alert` | `AlertRepository` | Alertas, Ingesta de precios, Análisis de precio | Crear; leer; leer con bloqueo; actualizar el mejor precio |
 | `core` | `AlertUrl` | `alert_url` | `AlertUrlRepository` | Alertas, Ingesta de precios | Crear junto con la alerta; leer con bloqueo; actualizar último precio, stock y chequeo |
 | `core` | `Subscription` | `subscription` | `SubscriptionRepository` | Alertas, Suscripciones, Cliente de notificación | Crear; leer las activas; marcar la baja |
-| `core` | `PriceSnapshot` | `price_snapshot` | `PriceSnapshotRepository` | Ingesta de precios, Consulta de precios | Insertar si no existe; leer el histórico por URL |
+| `core` | `AlertSnapshot` | `alert_snapshot` | `AlertSnapshotRepository` | Ingesta de precios, Consulta de precios | Insertar si no existe; leer el histórico por alerta; último estado y mejor precio por vistas |
 | `schedule` | `Job` | `job` | `JobRepository` | Gestión de jobs, Agendamiento | Crear; consultar; tomar los vencidos; actualizar la próxima corrida |
 | `schedule` | `JobExecution` | `job_execution` | `JobExecutionRepository` | Ejecución de corridas, Entrega de trabajo | Crear la corrida; actualizar su estado |
 | `schedule` | `JobCallbackOutbox` | `job_callback_outbox` | `JobCallbackOutboxRepository` | Entrega del resultado | Encolar; tomar pendientes; marcar enviado |
@@ -292,9 +292,11 @@ Lo que usan CU-02 (crear la alerta), CU-05 (guardar el precio), CU-06 (mejor pre
 ```mermaid
 erDiagram
     ALERT ||--o{ ALERT_URL : monitorea
-    ALERT_URL ||--o{ PRICE_SNAPSHOT : "snapshots de precio"
-    PRICE_SNAPSHOT ||--o{ PRICE_ANOMALY : "veredicto de anomalía"
+    ALERT_URL ||--o{ ALERT_SNAPSHOT : "seguimiento"
+    ALERT_SNAPSHOT ||--o{ PRICE_ANOMALY : "veredicto de anomalía"
     ALERT ||--o{ SUBSCRIPTION : avisa
+    ALERT ||--o{ ALERT_ANALYSIS : "análisis"
+    ALERT_SNAPSHOT ||--o{ ALERT_ANALYSIS : "chequeo ganador"
 
     ALERT {
         int id PK "Identificador"
@@ -305,9 +307,6 @@ erDiagram
         uuid created_by "Usuario fijo de la versión"
         datetime created_at "Creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
-        decimal best_price_cop "Mejor precio vigente de la alerta (CU-06)"
-        datetime best_price_at "Cuándo se registró ese mejor precio"
-        int best_price_alert_url_id FK "URL con el mejor precio"
         int schedule_job_id "Job en schedule; null = sin schedule"
     }
     ALERT_URL {
@@ -316,12 +315,7 @@ erDiagram
         string url "URL del producto, validada contra SSRF"
         string domain "Dominio normalizado"
         bool is_active "URL activa dentro de la alerta"
-        decimal last_price_cop "Último precio vigente en COP"
-        bool last_in_stock "Última disponibilidad informada (null si no se informa)"
-        datetime last_checked_at "Último chequeo exitoso, cambie o no el precio"
-        string last_title "Último título capturado"
-        decimal last_list_price_cop "Precio antes de la promoción"
-        date last_price_valid_until "Fin de la promoción"
+        string last_title "Último título capturado (descripción, no se historiza)"
         string last_brand "Última marca"
         string last_sku "Referencia del vendedor"
         string last_gtin "Código de barras"
@@ -331,22 +325,32 @@ erDiagram
         datetime created_at "Creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
     }
-    PRICE_SNAPSHOT {
-        int alert_url_id PK, FK "URL capturada"
-        datetime captured_at PK "Momento de la captura (UTC)"
-        bigint run_id "Corrida que lo generó: job_execution.id de schedule"
-        decimal price_cop "Precio en COP, mayor que 0"
+    ALERT_SNAPSHOT {
+        int alert_url_id PK, FK "URL chequeada"
+        datetime checked_at PK "Momento del resultado (UTC)"
+        uuid transaction_id "Ejecución que lo generó: transaction_id de schedule"
+        string status "ok | no_price | error"
+        string strategy "Estrategia ganadora del scraper; solo si ok"
+        decimal price_cop "Precio en COP, mayor que 0; solo si ok"
         decimal list_price_cop "Precio antes de la promoción"
         date price_valid_until "Fin de la promoción"
         bool in_stock "Disponibilidad informada (null si no se informa)"
     }
     PRICE_ANOMALY {
-        int alert_url_id PK, FK "Snapshot evaluado"
-        datetime captured_at PK "Momento de la captura"
+        int alert_url_id PK, FK "Chequeo ok evaluado"
+        datetime checked_at PK "Momento del chequeo"
         string strategy PK "Estrategia que lo evaluó"
         int strategy_version PK "Versión de la estrategia"
         bool is_anomalous "Caída anómala"
         string reason "Motivo del veredicto"
+    }
+    ALERT_ANALYSIS {
+        int alert_id PK, FK "Alerta analizada"
+        datetime analyzed_at PK "Momento del análisis (UTC)"
+        uuid transaction_id "Uno por alerta analizada; llave hacia notify"
+        int best_alert_url_id FK "URL ganadora; null si no_data"
+        datetime best_checked_at FK "Chequeo ganador en alert_snapshot"
+        string outcome "first | dropped | not_lower | no_data"
     }
     SUBSCRIPTION {
         int id PK "Identificador"
@@ -480,7 +484,7 @@ erDiagram
 
 #### No relacional · MongoDB (`schedule`)
 
-Una sola colección: el resultado que el scraper entrega en cada corrida (CU-04), de forma libre y con caducidad de 90 días. Su forma es una propuesta.
+Una sola colección: el resultado **completo** que el scraper entrega en cada ejecución (CU-04), uno por URL, con caducidad de 90 días. Su forma la fija DEC-19. Lo que se consulta (estado, precio, stock) se guarda además en `alert_snapshot` de `core`; el resto (código de error, duración, datos crudos) solo vive aquí.
 
 ```mermaid
 erDiagram
@@ -492,7 +496,7 @@ erDiagram
     }
     JOB_EXECUTION_RESULT {
         uuid _id PK "Es el transaction_id de la corrida"
-        datetime created_at "Base de la caducidad de 90 días"
+        datetime createdAt "Base de la caducidad de 90 días (índice TTL)"
         object result "De esa URL: alert_url_id, scraper_id, status ok, no_price o error, strategy, error_code, started_at, duration_ms y data del scraper (price crudo, list_price, currency, price_valid_until, in_stock, title, brand, sku, gtin, mpn, images)"
     }
 ```
@@ -503,7 +507,7 @@ Las piezas no comparten claves foráneas: se enlazan solo por identificadores.
 
 | Desde | Hacia | Identificador |
 |---|---|---|
-| `price_snapshot.run_id` | `job_execution.id` | La corrida que generó el registro |
+| `alert_snapshot.transaction_id` | `job_execution.transaction_id` | La ejecución que generó el chequeo |
 | `job.payload` | `alert.id` | El job identifica a su alerta |
 | `notification.transaction_id` | `job_execution.transaction_id` | El aviso nace de esa corrida |
 | `job_execution_result._id` | `job_execution.transaction_id` | El resultado de esa corrida |

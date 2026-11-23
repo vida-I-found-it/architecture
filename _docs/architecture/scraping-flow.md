@@ -22,7 +22,7 @@
 |-------|-------|
 | `schedule` | Dispara el job a su hora, pide a `core` el detalle (la lista de URLs), crea una ejecución por URL y las **envía al scraper una tras otra**, esperando el callback de cada una. Recibe `ok`, `no_price` o `error`: entrega `ok` y `no_price` a `core` de inmediato y **reinyecta** el `error` (hasta 3 veces, 10–15 min). Administra también los reintentos del envío (backoff exponencial) y corre el **barrido diario de errores**, que pide a `notify` un correo al administrador ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)) |
 | `scraper` | Sin estado y sin base de datos. Recibe **una URL** (responde «recibido» y sigue en segundo plano), descarga, extrae el precio **en una sola pasada (sin reintentos ni esperas propios)** y **ejecuta el callback** con `ok`, `no_price` o `error`. El destino del callback es configuración (lista blanca); en el ejercicio es `schedule`, así que no llama a `core` (SCR-20) |
-| `core` | Da el detalle del job (las URLs). Al recibir un resultado lo sanea, normaliza y valida y **guarda el snapshot** (CU-05). Aparte, el **análisis** (CU-06 y CU-10) calcula el mejor precio y decide los avisos |
+| `core` | Da el detalle del job (las URLs). Al recibir un resultado lo sanea, normaliza y valida y **guarda el chequeo** en `alert_snapshot`, sea cual sea el resultado (CU-05). Aparte, el **análisis** (CU-06 y CU-10) calcula el mejor precio y decide los avisos |
 | `notify` | Crea la notificación, arma el email y reintenta el envío si falla. Envía los avisos de precio que pide `core` y el correo del barrido diario que pide `schedule` |
 
 ## Diagrama de secuencia
@@ -53,7 +53,7 @@ sequenceDiagram
         Note over SR,SC: el destino del callback es configuración, y en el ejercicio apunta a schedule
         alt ok o no_price
             SC->>CO: callback con ese resultado (si falla, su outbox reintenta)
-            CO->>CO: sanea, normaliza, valida y guarda el snapshot si cambió
+            CO->>CO: sanea, normaliza, valida y guarda el chequeo (alert_snapshot)
         else error
             SC->>SC: reinyecta la URL tras 10-15 min (hasta 3 veces)
         end
@@ -202,14 +202,14 @@ Cada URL termina en uno de tres estados ([ADR-0004](adr/0004-schedule-dispatches
 | `error` | Sin respuesta fiable. `error_code`: `timeout`, `network`, `http_5xx`, `http_429`, `internal` (excepción del scraper) | **Sí**: lo reinyecta `schedule`, hasta 3 veces (parametrizable, SCR-8) con espera de 10–15 min |
 
 - **El scraper no reintenta.** Hace una pasada por URL y devuelve el estado con lo que logró. Los reintentos los administra `schedule` y reenvía **únicamente esa URL**.
-- Al agotar los reintentos de un `error`, la ejecución queda `failed`, se entrega `error` a `core` (queda el log con el `transaction_id`, sin snapshot) y entra en el barrido diario de errores.
-- `no_price` también llega a `core` y queda registrado, sin snapshot: la UI lo muestra como «sin precio» (DEC-17).
+- Al agotar los reintentos de un `error`, la ejecución queda `failed`, se entrega `error` a `core` (queda un chequeo `error` sin precio, con su `transaction_id`) y entra en el barrido diario de errores.
+- `no_price` también llega a `core` y queda como chequeo sin precio: la UI lo muestra como «sin precio» (DEC-17).
 - Una URL que falla **no frena a las demás** de la alerta: cada una es una ejecución independiente.
 - **(solo proyecto)** Al agotarse, además se guarda la captura cruda (`raw_capture`) y se avisa al admin para que construya un adapter (SCR-13). **(solo proyecto)** Respeta `robots.txt` y un límite de tasa por dominio (SCR-5, SCR-6).
 
 ### Extensiones del proyecto
 
-> **`A1`/`LEARN` (candidato a pendiente, sin ID todavía):** hoy el **único** aprendizaje persistido es el adapter manual (`A0`/`BUILD`) — SCR-12 es explícito en que es "sin IA en Fase 1". Un dominio que solo logra extraer vía `C3`/`C4` nunca "aprende" nada: cada corrida repite `C1`→`C2` desde cero antes de llegar otra vez al paso que de verdad funciona. `A1`/`LEARN` cierra ese hueco con algo mucho más barato que un adapter completo: solo recuerda **cuál paso genérico ganó** la última vez (el dato ya existe, agregado, en `site_stats_daily.by_strategy` — [modelo de datos](../data/data-model.md)) para saltar directo a él, con reintento sobre la cascada completa (`JUMP -->|falla|`) si el sitio cambió y la estrategia recordada deja de servir. **No tiene prioridad ni Fase asignada aún** — falta decidirlo y, si se aprueba, darle un ID (candidato: `SCR-21`) y un lugar donde persistirlo (reusar `site_stats_daily` vs. un campo nuevo).
+> **`A1`/`LEARN` (candidato a pendiente, sin ID todavía):** hoy el **único** aprendizaje persistido es el adapter manual (`A0`/`BUILD`) — SCR-12 es explícito en que es "sin IA en Fase 1". Un dominio que solo logra extraer vía `C3`/`C4` nunca "aprende" nada: cada corrida repite `C1`→`C2` desde cero antes de llegar otra vez al paso que de verdad funciona. `A1`/`LEARN` cierra ese hueco con algo mucho más barato que un adapter completo: solo recuerda **cuál paso genérico ganó** la última vez (el dato ya existe, agregado, en `v_site_stats_daily.by_strategy` — [modelo de datos](../data/data-model.md)) para saltar directo a él, con reintento sobre la cascada completa (`JUMP -->|falla|`) si el sitio cambió y la estrategia recordada deja de servir. **No tiene prioridad ni Fase asignada aún** — falta decidirlo y, si se aprueba, darle un ID (candidato: `SCR-21`) y un lugar donde persistirlo (reusar la vista `v_v_site_stats_daily` (sobre `alert_snapshot`) vs. un campo nuevo).
 >
 > **`C5` es Fase 2**, y concreta lo que antes era una nota genérica ("extractor con IA, #5"): en vez de que una IA lea el **HTML** (texto), lee una **captura de pantalla** de la página ya renderizada por Playwright en `C3`/`C4` — mismo principio detrás de PixelRAG (retrieval-augmented generation sobre *screenshots*, en vez de texto parseado), aplicado aquí a una sola página ya conocida, sin el componente de *retrieval* sobre un corpus (eso es lo que PixelRAG resuelve y este caso no necesita). Ventaja sobre leer HTML: no lo engaña la ofuscación de clases/CSS que sí dificulta el parseo de texto. Costo a tener presente: una llamada **de pago** a un modelo de visión por cada sitio que agote `C1`-`C4`. El constructor de adapters sigue con su propia asistencia de IA aparte (evaluar API de Claude), sin cambios.
 
@@ -226,7 +226,7 @@ Todos son pasos de `core`, no del scraper:
 | 1 · Sanear | Limpia título y metadatos (trim, sin caracteres de control, Unicode NFC) | R6 |
 | 2 · Normalizar | Precio numérico, moneda, stock y título | PRO-1 |
 | 3 · Validar | Descarta precio ≤ 0, páginas de error y moneda distinta de COP **(ejercicio)** | R5 |
-| 4 · Guardar | Inserta el snapshot **solo si** cambió el precio; actualiza el último chequeo | R7 |
+| 4 · Guardar | Inserta **un chequeo** en `alert_snapshot` por resultado (`ok`, `no_price` o `error`); con `ok`, sobrescribe la descripción del producto en `alert_url` | R7 · DEC-29 |
 
 Aquí **no se calcula el mejor precio ni se avisa**.
 
@@ -236,8 +236,8 @@ Es otro proceso de `core`, a otra hora, que se lanza **desde la interfaz de usua
 
 | Paso | Qué hace | Regla |
 |------|----------|-------|
-| 5 · Marcar | El análisis evalúa cada snapshot nuevo con la estrategia de anomalía activa y guarda el veredicto en `price_anomaly`; la caída sospechosa no se descarta | R9 · ADR-0005 |
-| 6 · Decidir | Recalcula el mejor precio con los últimos snapshots (sección siguiente) | PRO-6 |
+| 5 · Marcar | El análisis evalúa cada chequeo `ok` nuevo con la estrategia de anomalía activa y guarda el veredicto en `price_anomaly`; la caída sospechosa no se descarta | R9 · ADR-0005 |
+| 6 · Decidir | Calcula el mejor precio con el último chequeo `ok` de cada URL activa, lo compara con el del último análisis y guarda una fila en `alert_analysis` (sección siguiente) | PRO-6 · DEC-30 |
 | 7 · Avisar | Si el mejor precio bajó y no es la primera vez, pide el aviso a `notify` | NOT-3 |
 
 > **Antes de los pasos:** al iniciar, el análisis reintenta crear en `schedule` el job de las alertas con `schedule_job_id` nulo, con la llave `alert-<id>` (DEC-15).
@@ -249,13 +249,15 @@ Es otro proceso de `core`, a otra hora, que se lanza **desde la interfaz de usua
 ```mermaid
 graph TD
     A[Análisis de la alerta] --> MIN[Mínimo entre los últimos precios vigentes<br/>de las URLs activas · en COP]
-    MIN --> P{¿hay mejor precio<br/>anterior?}
-    P -->|no, primera vez| G[Guarda el mejor precio<br/>sin avisar]
+    MIN --> D{¿alguna URL activa<br/>con precio ok?}
+    D -->|no| ND[Guarda no_data<br/>sin avisar]
+    D -->|sí| P{¿hay mejor precio anterior?<br/>último alert_analysis con ganador}
+    P -->|no, primera vez| G[Guarda first<br/>sin avisar]
     P -->|sí| C{¿bajó?}
-    C -->|no| X[No avisar]
-    C -->|sí| U[Actualiza el mejor precio<br/>en una transacción]
+    C -->|no| X[Guarda not_lower<br/>sin avisar]
+    C -->|sí| U[Guarda dropped<br/>en una transacción]
     U --> OK[Confirma la transacción]
-    OK --> N[Pide el aviso a notify]
+    OK --> N[Pide el aviso a notify<br/>con el transaction_id del análisis]
 ```
 
 > **Regla (DEC-6, DEC-16, DEC-22):** el mejor precio de una alerta es el **mínimo vigente** entre los últimos precios de sus URLs activas; **el stock no se tiene en cuenta por ahora** (DEC-22). Se avisa cuando baja respecto del anterior. La primera vez no hay contra qué comparar y **no avisa**; el análisis es quien decide cuándo se avisa. Si el precio sube y vuelve a bajar, avisa otra vez. El aviso se pide **después** de confirmar la transacción y usa un `transaction_id` por alerta analizada. La estrategia va detrás de una interfaz (patrón Strategy), reemplazable. El dashboard muestra el último precio por sitio al día, pero el mejor precio puede estar atrasado hasta el siguiente análisis.
@@ -290,7 +292,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | EV-07 | Las 4 estrategias fallan con la página respondiendo bien | El scraper devuelve `no_price · not_found`: es definitivo y **no se reintenta**. Proyecto: además se guarda la captura cruda y se avisa al admin para que construya un adapter (SCR-13) | ✅ SCR-8 · SCR-13 solo proyecto |
 | EV-08 | El sitio cambió su estructura y una estrategia que antes funcionaba deja de servir | La cascada sigue con las siguientes. Proyecto: si falla la estrategia recordada (A1), se corre la cascada completa | ✅ cascada · A1 candidata (D35) |
 | EV-09 | Una URL falla y las demás de la alerta no | Las demás siguen; la fallida queda `no_price` | ✅ CU-04 |
-| EV-10 | **Todas** las URLs de la alerta quedan sin precio en una corrida | No se guarda snapshot ni se avisa. El dashboard muestra «sin datos recientes» pasadas 24 h desde el último chequeo exitoso | DEC-17 ✅ |
+| EV-10 | **Todas** las URLs de la alerta quedan sin precio en una corrida | Se guardan chequeos sin precio y no se avisa. El dashboard muestra «sin datos recientes» pasadas 24 h desde el último chequeo `ok` | DEC-17 ✅ |
 | EV-11 | El precio llega pero el HTML es una página de error | Se descarta, no se guarda | ✅ R5 |
 
 ### Calidad del dato
@@ -307,12 +309,12 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 
 | ID | Evento | Qué pasa | Estado |
 |----|--------|----------|--------|
-| EV-17 | **El scraper está en pie, pero un sitio lo rompe** por un error técnico (por ejemplo, se cuelga o lanza una excepción al procesarlo). No es lo mismo que EV-05: aquí falla el propio scraper, no solo la respuesta del sitio | No llega el callback dentro del plazo (por URL) o llega `error`. Se trata como `error` de esa URL: `schedule` la reinyecta hasta 3 veces. Agotados, la ejecución queda `failed` y entra en el **barrido diario de errores**, que pide **un solo correo** al administrador (`schedule` llama a `notify`). La idempotencia del snapshot evita duplicar datos (R7) | ✅ decisión del equipo · ADR-0004 |
+| EV-17 | **El scraper está en pie, pero un sitio lo rompe** por un error técnico (por ejemplo, se cuelga o lanza una excepción al procesarlo). No es lo mismo que EV-05: aquí falla el propio scraper, no solo la respuesta del sitio | No llega el callback dentro del plazo (por URL) o llega `error`. Se trata como `error` de esa URL: `schedule` la reinyecta hasta 3 veces. Agotados, la ejecución queda `failed` y entra en el **barrido diario de errores**, que pide **un solo correo** al administrador (`schedule` llama a `notify`). La idempotencia del chequeo evita duplicar datos (R7) | ✅ decisión del equipo · ADR-0004 |
 | EV-18 | El scraper termina pero **no logra ejecutar el callback** (el destino no responde) | El scraper no tiene estado: si no puede entregar, el resultado se pierde. Desde `schedule` se ve como un callback que no llega (EV-17). Si el scraper reintenta el callback antes de rendirse **no está definido** | ❓ |
 | EV-19 | `schedule` cae y no dispara jobs a su hora | No se pierde nada: las alertas viven en `core`. La infraestructura lo reinicia y, al volver, `schedule` **toma el trabajo que no hizo**. El tope de 2 corridas al día (R2) sigue vigente | ✅ decisión del equipo |
 | EV-20 | `core` no responde cuando `schedule` pide el detalle del job | El job no se pierde: queda pendiente y se retoma cuando `core` vuelve. Cómo se espera (reintentos o reinicio de la infraestructura) y si se avisa al administrador no está decidido | 💡 pendiente de confirmar |
 | EV-21 | `core` no responde al callback con los precios | El outbox de `schedule` reintenta la entrega; el estado del callback es independiente del estado del trabajo | ✅ `job_callback_outbox` |
-| EV-22 | La corrida o el callback llegan dos veces | No se duplica nada: el snapshot se inserta solo si cambió el precio | ✅ R7, SCR-7 |
+| EV-22 | La corrida o el callback llegan dos veces | No se duplica nada: el reenvío trae el mismo `checked_at` y choca con la PK de `alert_snapshot` | ✅ R7, SCR-7 |
 | EV-23 | Falla crear el job en `schedule` después de guardar la alerta | La alerta queda creada con `schedule_job_id` nulo («sin schedule»); `core` reintenta al inicio de cada análisis con la misma llave, sin duplicar | ✅ criterio CU-03 · DEC-15 ✅ |
 | EV-26 | **Los pods del scraper no están disponibles** (problema de infraestructura): no hay ningún scraper corriendo y no responde absolutamente nada | `schedule` recibe un 404, un 500 o un *timeout* al enviar la URL. Reintenta con backoff exponencial hasta *n* veces; agotados, la ejecución queda `failed`. Mientras tanto el **trabajo queda bloqueado**: las URLs pendientes siguen en cola y se retoman cuando el scraper vuelve. El barrido diario lo avisa al administrador. Qué pasa con las corridas acumuladas al volver, dado el tope de 2 al día, no está definido | ✅ decisión del equipo · ADR-0004 · ❓ corridas acumuladas |
 | EV-27 | **`schedule` no puede llegar hasta el scraper**: por red, por una caída o porque simplemente no está accesible | Desde `schedule` no se distingue de EV-26: el envío falla y se aplica el mismo tratamiento (backoff exponencial, ejecución `failed`, aviso en el barrido diario y trabajo bloqueado) | ✅ ADR-0004 |
@@ -327,14 +329,14 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 |----|--------|----------|--------|
 | EV-24 | Se llega al tope de 2 corridas al día | No se dispara otra, aunque sea una recuperación. La corrida inicial al crear la alerta cuenta dentro del tope | ✅ R2, SCH-6 |
 | EV-25 | Una corrida cae fuera de las franjas horarias | No corre hasta la siguiente franja (por defecto 04:00–06:00 y 18:00–20:00) | ✅ SCH-7 |
-| EV-28 | El análisis corre cuando aún hay URLs pendientes de reintento | Usa los últimos snapshots disponibles; lo que se resuelva después entra en el siguiente análisis | ✅ por diseño (scraping y análisis son procesos separados) |
+| EV-28 | El análisis corre cuando aún hay URLs pendientes de reintento | Usa los últimos chequeos disponibles; lo que se resuelva después entra en el siguiente análisis | ✅ por diseño (scraping y análisis son procesos separados) |
 | EV-29 | El barrido diario no encuentra errores | No envía correo (evita ruido) | ✅ ADR-0004 |
-| EV-30 | El análisis falla o no se lanza a su hora | No se pierde nada: los snapshots siguen guardados y el siguiente análisis los toma. Si el job de análisis queda `failed`, entra en el barrido diario | 💡 pendiente de confirmar |
+| EV-30 | El análisis falla o no se lanza a su hora | No se pierde nada: los chequeos siguen guardados y el siguiente análisis los toma. Si el job de análisis queda `failed`, entra en el barrido diario | 💡 pendiente de confirmar |
 
 ## Idempotencia y trazabilidad
 
-- El snapshot se inserta **solo si cambia** el precio respecto al último (R7). Se bloquea la fila de `alert_url` mientras se compara, así que repetir una corrida o un callback no duplica datos (SCR-7). Ver [modelo de datos](../data/data-model.md).
-- Los snapshots son **solo de añadir**: el historial nunca se sobrescribe.
+- Cada resultado se guarda como **un chequeo** en `alert_snapshot` (R7, DEC-29). Su PK `(alert_url_id, checked_at)` usa la hora del resultado, la misma en cada reenvío, así que repetir un callback no duplica datos (SCR-7). Ver [modelo de datos](../data/data-model.md).
+- Los chequeos son **solo de añadir**: el historial nunca se sobrescribe.
 - Un reintento reenvía solo la URL con `error` (lo decide `schedule`); las ya resueltas no se reprocesan. Cada resultado se identifica por `transaction_id` (uno por URL) e intento, y `schedule` procesa a lo más uno por intento.
 - Todo se correlaciona por `transaction_id`, que viaja entre `core`, `schedule` y `notify` y está en sus logs. **El scraper no lo conoce:** sus logs JSON llevan `scraper_id`, y `schedule` guarda el enlace `SCRAPER_ID` ↔ `transaction_id`. OpenTelemetry y Sentry están **pendientes** también en el scraper (hoy solo logs JSON); en el ejercicio basta con los logs.
 
@@ -344,7 +346,7 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 |-------|-----------|---------|
 | `scraper` | Nada | Nada |
 | `schedule` | `job_execution` (una por URL: estado, intento y callback) y `job_callback_outbox` | `job_execution_result`: un documento por ejecución (una URL) con `scraper_id`, estado (`ok`/`no_price`/`error`), estrategia ganadora, `error_code`, `started_at`, `duration_ms` y los `data` del scraper: precio crudo, precio de lista, vigencia, moneda, stock, título, marca, SKU, GTIN, MPN e imágenes (DEC-19). TTL de 90 días |
-| `core` | `price_snapshot` (por cambio, con precio de lista y vigencia), último precio, último chequeo y **todos los últimos datos del scraper** (título, marca, SKU, GTIN, MPN, imágenes…) en `alert_url`, y mejor precio en `alert` | **(solo proyecto)** `exchange_rate` |
+| `core` | `alert_snapshot`: un chequeo por resultado (estado, precio, precio de lista, vigencia, stock), única fuente del histórico; la descripción del producto (título, marca, SKU, GTIN, MPN, imágenes…) en `alert_url`. Último estado, mejor precio y estadísticas son vistas, no se guardan (DEC-29) | **(solo proyecto)** `exchange_rate` |
 | `notify` | `notification` y `notification_outbox` | **(solo proyecto)** `notification_log` (su utilidad está en revisión, D18) |
 
 ## Pendientes y límites conocidos

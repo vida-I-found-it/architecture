@@ -54,8 +54,8 @@
 
 | Store | Tecnología | Uso |
 |-------|-----------|-----|
-| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), dos roles por esquema (migraciones y servicio) sin permisos sobre el de los demás — ver [docs/deliverables/db](../data/scripts/README.md). Guarda RBAC, usuarios, alertas, urls, `price_snapshot` (por cambio, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Correos como `text` en minúsculas con `CHECK` (sin `citext` ni extensiones compartidas entre esquemas). |
-| Documental | **MongoDB** (compresión **zstd**, índices **TTL**) | Solo consulta, voluminoso/efímero: `job_state`, `run_summary`, `raw_capture`, `notification_log`, `exchange_rate`. Retenciones en [modelo de datos](../data/data-model.md#retención-resumen). |
+| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), dos roles por esquema (migraciones y servicio) sin permisos sobre el de los demás — ver [docs/deliverables/db](../data/scripts/README.md). Guarda RBAC, usuarios, alertas, urls, `alert_snapshot` (un chequeo por resultado, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Correos como `text` en minúsculas con `CHECK` (sin `citext` ni extensiones compartidas entre esquemas). |
+| Documental | **MongoDB** (compresión **zstd**, índices **TTL**) | Solo consulta, voluminoso/efímero: `job_execution_result` (`schedule`), `notification_log` (`notify`, solo proyecto) y `exchange_rate` (`core`, solo proyecto). Retenciones en [modelo de datos](../data/data-model.md#retención-resumen). |
 | Cola / caché | **Redis** | Backend de la cola de trabajos. |
 
 ### Frontend (PWA)

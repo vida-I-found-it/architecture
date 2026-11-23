@@ -227,7 +227,7 @@ graph TB
 | Servicio | Store | Qué guarda |
 |----------|-------|-----------|
 | `auth` | PostgreSQL, esquema `auth` | RBAC, `person`/`app_user`, `refresh_token`, `password_reset`, `audit_log`, `system`. |
-| `core` | PostgreSQL, esquema `core` | Alertas, urls (con último precio), etiquetas, `price_snapshot` **por cambio** (particionado), suscripciones, adapters, estadísticas diarias por sitio. |
+| `core` | PostgreSQL, esquema `core` | Alertas, urls, etiquetas, `alert_snapshot` **un chequeo por resultado** (particionado; último estado, mejor precio y estadísticas por sitio son vistas, DEC-29), suscripciones, adapters. |
 | `core` | MongoDB (base propia) | Solo `exchange_rate`. |
 | `schedule` | PostgreSQL, esquema `schedule` | `execution_type` (catálogo), `job` (tarea configurada), `job_script` (código serverless), `job_execution` (corridas, con `callback_status`) y `job_callback_outbox` (reintento activo del callback). |
 | `schedule` | MongoDB (base propia) | Solo `job_execution_result` — resultado de una corrida, forma libre según `execution_type`, **con TTL 90 días y compresión zstd**. El detalle específico de scraping (`job_state`, `raw_capture`, …) ya no vive aquí (2026-10-01); su nuevo hogar está pendiente (D15). |
@@ -352,7 +352,7 @@ graph TB
 - **El scraper solo es alcanzable por `schedule`** y su callback tiene un destino de lista blanca ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)). En la VM de Oracle el puerto del scraper se restringe por firewall al origen de `schedule` y no se publica a internet; el mecanismo exacto de red está por definir. `schedule` es quien reenvía el precio a `core`.
 - **`schedule` no tiene ninguna ruta pública** (SCH-11): sus rutas bajo `/schedule/internal/*` solo aceptan JWT de servicio (`aud=system`), nunca un token de usuario. El admin lo gestiona desde el frontend, pero la llamada real es `core` la que habla con `schedule`.
 - **La validación de JWT vive en cada servicio** (no en el Gateway): `auth` publica su JWKS y `core`/`schedule`/`notify` lo cachean y validan localmente. El Gateway solo enruta y aplica límite de tasa.
-- **Una sola base PostgreSQL, aislada por esquema y rol** — no por FK: `core` referencia usuarios de `auth` solo por `uuid` y guarda el `run_id` de `schedule.job_execution` solo por valor; `schedule` y `notify` son genéricos y ya no referencian nada de `core` — solo `auth` (`system` por código, usuarios por `uuid`) y un `transaction_id` de correlación opaco. Detalle en [docs/deliverables/db](../data/scripts/README.md).
+- **Una sola base PostgreSQL, aislada por esquema y rol** — no por FK: `core` referencia usuarios de `auth` solo por `uuid` y guarda el `transaction_id` de `schedule.job_execution` solo por valor; `schedule` y `notify` son genéricos y ya no referencian nada de `core` — solo `auth` (`system` por código, usuarios por `uuid`) y un `transaction_id` de correlación opaco. Detalle en [docs/deliverables/db](../data/scripts/README.md).
 - **El callback de `schedule` a `core` es configuración, no un conocimiento fijo** (SCH-14): la URL a la que llamar viaja como parte del job creado por `core`, así que `schedule` puede reutilizarse por otro sistema sin tocarle el código.
 
 ### Vista mínima
@@ -442,7 +442,7 @@ graph TB
 | `schedule` | `core` | Pide el detalle del job (URL, adapter) antes de enviar el trabajo al scraper | `/api/internal/job-detail` | REST/HTTPS+JSON | JWT de servicio |
 | `schedule` | `scraper` | Envía **una URL** con su callback, de forma asíncrona y una tras otra; el scraper responde «recibido» (ADR-0004) | `/scraper/internal/jobs` | REST/HTTPS+JSON | JWT de servicio |
 | `scraper` | `schedule` | Callback: entrega el resultado de la URL (`ok`, `no_price` o `error`, SCR-20). Destino configurable, de lista blanca | `/schedule/internal/results` | REST/HTTPS+JSON | JWT de servicio |
-| `schedule` | `core` | Callback: entrega el resultado de cada URL de inmediato, en la URL de `api_call` configurada al crear el job (SCH-14). Solo guarda el snapshot; no avisa | `/api/internal/prices` | REST/HTTPS+JSON | JWT de servicio |
+| `schedule` | `core` | Callback: entrega el resultado de cada URL de inmediato, en la URL de `api_call` configurada al crear el job (SCH-14). Solo guarda el chequeo; no avisa | `/api/internal/prices` | REST/HTTPS+JSON | JWT de servicio |
 | `core` | `notify` | Entrega los datos de la decisión (mejor precio: `transaction_id`, `app_user_id`, canal, `destination`, plantilla y `payload`) para que `notify` cree su propia `notification` y la envíe (`notification` vive en `notify`, no en `core`, desde 2026-09-30) | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
 | `schedule` | `notify` | Pide, una vez al día, un solo correo al administrador con los errores del día (barrido diario, ADR-0004, EJ-6): `transaction_id`, canal, `destination` (dirección del administrador, por entorno), plantilla y `payload` | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |
 | `auth` | `notify` | Pide el envío del código de reset | `/notify/*` | REST/HTTPS+JSON | JWT de servicio |

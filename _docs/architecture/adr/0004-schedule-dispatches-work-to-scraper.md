@@ -5,6 +5,8 @@
 - **Reemplaza (en parte):** el modelo de *pull* del [ADR-0001](0001-repo-and-service-structure.md) («el scraper es un cliente, no un servidor») y la forma de entrega de SCR-20
 - **Requerimientos / casos de uso afectados:** SCR-1, SCR-8, SCR-20, CU-03, CU-04, CU-05, CU-06, CU-10 · eventos EV-17, EV-18, EV-26 y EV-27 del [flujo de scraping](../scraping-flow.md)
 
+> **Enmienda (2026-11-22, DEC-29):** `price_snapshot` (por cambio) se reemplazó por `alert_snapshot`, una fila por chequeo con su estado; el último precio, el mejor precio y las estadísticas por sitio ya no se materializan, son vistas. Donde este ADR dice «snapshot», léase «chequeo `ok`». Ver [modelo de datos](../../data/data-model.md).
+
 ## Contexto
 
 Hasta ahora el scraper hacía *pull*: preguntaba a `schedule` si había trabajo y le entregaba el resultado en la misma llamada. Eso lo dejaba sin puertos entrantes, pero tenía un costo: nadie sabía si estaba vivo y, si caía, no había una forma natural de detectarlo ni de reintentar el trabajo. Las tareas de scraping son asíncronas y el objetivo final del flujo es el scraper, así que conviene que quien las dispara (`schedule`) sea quien lo invoque.

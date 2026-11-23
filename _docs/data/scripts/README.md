@@ -18,7 +18,7 @@
 | Carpeta | Esquema/base | Motor | Contenido |
 |---|---|---|---|
 | [`auth/`](auth/schema.sql) ⚠️ **desfasado · pendiente por revisar** | esquema `auth` (rol `auth_service`) | PostgreSQL | `person`, `app_user`, `role`/`permission`, `refresh_token`, `password_reset`, `audit_log`, `system` |
-| [`core/`](core/schema.sql) | esquema `core` (rol `core_service`) | PostgreSQL | `alert`, `alert_url`, `tag`, `site_adapter`, `site_stats_daily`, `price_snapshot` (particionado), `subscription` |
+| [`core/`](core/schema.sql) | esquema `core` (rol `core_service`) | PostgreSQL | `alert`, `alert_url`, `tag`, `site_adapter`, `alert_snapshot` (particionado), `price_anomaly`, vistas derivadas, `subscription` |
 | [`schedule/`](schedule/schema.sql) | esquema `schedule` (rol `schedule_service`) | PostgreSQL | `execution_type`, `job`, `job_script`, `job_execution`, `job_callback_sent`, `job_callback_outbox` — motor de jobs genérico, sin ningún concepto de `core` (2026-10-01) |
 | [`notify/`](notify/schema.sql) | esquema `notify` (rol `notify_service`) | PostgreSQL | `notification` (configurada), `notification_sent` (enviada), `notification_outbox` (cola de reintento) |
 | [`core/mongo-setup.js`](core/mongo-setup.js) | base Mongo de `core` | MongoDB | `exchange_rate` |
@@ -32,7 +32,7 @@
 | Campo | Vive en | Referencia (sin FK) a |
 |---|---|---|
 | `core.alert.created_by`, `core.site_adapter.created_by`, `core.subscription.created_by` | `core` | `auth.app_user.id` |
-| `core.price_snapshot.run_id` | `core` | `schedule.job_execution.id` |
+| `core.alert_snapshot.transaction_id` | `core` | `schedule.job_execution.transaction_id` |
 | `notify.notification.alert_id`, `notify.notification.trigger_alert_url_id` | `notify` | `core.alert.id` / `core.alert_url.id` |
 | `notify.notification.run_id` | `notify` | `schedule.job_execution.id` |
 | `notify.notification.app_user_id` | `notify` | `auth.app_user.id` (obligatorio: toda funcionalidad exige cuenta, 2026-09-30) |
@@ -86,4 +86,4 @@ Cada repo (cuando exista) copia el script de su propia carpeta como primera migr
 - Proveedor gratuito concreto y credenciales reales — [pendientes](../../00-context/pending.md), B1.
 - Mecanismo exacto de la llamada `core` → `notify` (qué datos de la decisión viajan, y cómo `notify` confirma que el aviso quedó encolado) — pendientes, D6.
 - Entrega confiable `core` → `notify` tras mover el outbox fuera de la transacción de `core` — pendientes, D12.
-- Job que crea la partición anual siguiente de `price_snapshot` (`core/schema.sql` solo trae la partición del año en curso).
+- Job que crea la partición anual siguiente de `alert_snapshot` (`core/schema.sql` solo trae la partición del año en curso).

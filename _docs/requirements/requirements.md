@@ -96,7 +96,7 @@ sequenceDiagram
         Note over SC,PG: CU-05 · Procesar y almacenar
         SC->>CO: callback con el resultado de esa URL (si falla, su outbox reintenta)
         CO->>CO: sanea, normaliza y valida
-        CO->>PG: guarda el snapshot solo si cambia
+        CO->>PG: guarda el chequeo (alert_snapshot)
     end
 
     rect rgba(70, 130, 220, 0.14)
@@ -253,8 +253,8 @@ graph LR
 
 **Criterios de aceptación** 🆕
 - Con un fixture por estrategia gana la esperada (`strategy` = `structured_data`, `microdata_regex`, `browser` o `xhr`): JSON-LD u Open Graph → la 1; microdata, RDFa o regex sin JSON-LD → la 2; precio que solo aparece al ejecutar JavaScript → la 3; precio que llega por una API interna → la 4.
-- Con un fixture donde las cuatro fallan y la página responde bien: el scraper devuelve `no_price` sin esperar ni reintentar, «sin precio hoy» y ningún snapshot.
-- Con un fixture que no responde (*timeout* o 5xx): el scraper devuelve `error`; `schedule` reinyecta esa URL hasta 3 veces, y agotadas queda `failed` sin snapshot.
+- Con un fixture donde las cuatro fallan y la página responde bien: el scraper devuelve `no_price` sin esperar ni reintentar, «sin precio hoy» y un chequeo `no_price` sin precio.
+- Con un fixture que no responde (*timeout* o 5xx): el scraper devuelve `error`; `schedule` reinyecta esa URL hasta 3 veces, y agotadas queda `failed`; `core` guarda un chequeo `error` sin precio.
 - Las URLs de una alerta se envían una tras otra, nunca en paralelo.
 - La cascada se detiene en la primera que acierta (Playwright no se lanza si alcanzó la 1).
 - El resultado trae la estrategia ganadora y, si no hubo precio, su `error_code`.
@@ -268,52 +268,55 @@ graph LR
 
 ### CU-05 · Procesar y almacenar
 
-**Descripción.** `schedule` entrega a `core`, por el callback y **de inmediato**, el resultado de cada URL (`ok` o `no_price`, y `error` si se agotaron los reintentos). `core` los sanea, normaliza, descarta lo inválido y guarda un snapshot en PostgreSQL solo cuando el precio cambia. Aquí **no se calcula el mejor precio ni se avisa**: eso es el análisis (CU-06), otro proceso a otra hora.
+**Descripción.** `schedule` entrega a `core`, por el callback y **de inmediato**, el resultado de cada URL (`ok` o `no_price`, y `error` si se agotaron los reintentos). `core` los sanea, normaliza, descarta lo inválido y guarda **un chequeo por resultado** en `alert_snapshot` (PostgreSQL), sea `ok`, `no_price` o `error` (DEC-29). Aquí **no se calcula el mejor precio ni se avisa**: eso es el análisis (CU-06), otro proceso a otra hora.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
 | PRO-1 | 🖥️ Normalizador de precio | Convierte lo extraído en datos limpios: precio numérico, moneda, stock y título. | ✅ | Funcionalidad | 🔌 `POST /api/internal/prices` | Con sitios en COP no se necesita conversión |
-| PRO-2 | 🖥️ Historial de precios | Guarda cada snapshot de precio en PostgreSQL, solo de añadir. | ✅ | Funcionalidad | 🔌 `POST /api/internal/prices` | |
+| PRO-2 | 🖥️ Historial de precios | Guarda cada chequeo de precio en PostgreSQL (`alert_snapshot`), solo de añadir. | ✅ | Funcionalidad | 🔌 `POST /api/internal/prices` | |
 | PRO-5 | 🖥️ Validador de precio (descarte) | Descarta precios inválidos (cero, negativos, páginas de error). | ✅ | Regla [R5](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Descarta lo realmente inválido: precio ≤ 0, HTML de error o moneda distinta de COP |
-| SCR-7 | 🖥️ Reintentos idempotentes | Evita duplicar el historial si se repite una corrida. | ✅ | Regla [R7](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Entra aunque sea P1: el snapshot se inserta solo si cambia el precio |
+| SCR-7 | 🖥️ Reintentos idempotentes | Evita duplicar el historial si se repite una corrida. | ✅ | Regla [R7](../00-context/deliverable01.md#6--regla-de-negocio-principal) | 🔌 `POST /api/internal/prices` | Entra aunque sea P1: el reenvío trae el mismo `checked_at` y choca con la PK |
 | RNF-6 | 🎨🖥️ Saneamiento de datos | Sanea el título y los metadatos antes de guardarlos. | ✅ | Regla [R6](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | Aplica a **todo** el texto que devuelve el scraper (título, marca, SKU, GTIN, MPN) y a las URLs de las imágenes, que vienen del sitio y no son de confianza |
 
 **Criterios de aceptación** 🆕
-- Repetir la misma corrida con el mismo precio **no** duplica el snapshot.
+- Reenviar el mismo resultado **no** duplica el chequeo (misma PK `(alert_url_id, checked_at)`).
 - Un precio ≤ 0 o una página de error no se guarda.
 - Una moneda distinta de COP se descarta y no se guarda.
 - El precio guardado es numérico, en COP, con el título saneado.
-- **`core` guarda todo lo que devuelve el scraper** (D38): el precio de lista y su vigencia van en el snapshot; esos mismos datos, la marca, el SKU, el GTIN, el MPN y las imágenes quedan como último valor en la URL (`alert_url.last_*`), sin historizar. Lo que el sitio no publica queda nulo.
+- **`core` guarda todo lo que devuelve el scraper** (D38): el precio, el precio de lista, su vigencia y el stock van en el chequeo (`alert_snapshot`); la descripción del producto (título, marca, SKU, GTIN, MPN, imágenes y metadatos) queda como último valor en la URL (`alert_url.last_*`), sin historizar. Ningún dato se guarda en los dos sitios (DEC-29). Lo que el sitio no publica queda nulo.
 - Un precio de lista que no sea mayor que el precio se guarda como nulo (no hay promoción).
 - El `transactionId` (uno por URL) es el mismo en los logs de todos los servicios.
 - El resultado de una URL se guarda al llegar, sin esperar a las demás de la alerta.
-- Un resultado `no_price` o `error` no crea snapshot y queda registrado con su `transactionId`.
-- Guardar un snapshot no recalcula el mejor precio ni llama a `notify`.
+- Un resultado `no_price` o `error` se guarda como chequeo sin precio, con su `transactionId` y su estado.
+- Guardar un chequeo no recalcula el mejor precio ni llama a `notify`.
 
 ---
 
 ### CU-06 · Analizar el mejor precio
 
-**Descripción.** Es el **análisis**, un proceso de `core` separado del scraping que corre a otra hora (por defecto 2 veces al día, cada una un tiempo después de una captura; parametrizable, puede ser 1 y 1). Se lanza desde la interfaz de usuario o por un job agendado en `schedule`. Con los snapshots guardados, calcula el mejor precio vigente de la alerta entre todas sus URLs, marca las caídas anómalas y decide si hay que avisar. La primera vez no hay contra qué comparar, así que no avisa.
+**Descripción.** Es el **análisis**, un proceso de `core` separado del scraping que corre a otra hora (por defecto 2 veces al día, cada una un tiempo después de una captura; parametrizable, puede ser 1 y 1). Se lanza desde la interfaz de usuario o por un job agendado en `schedule`. Con los chequeos guardados, calcula el mejor precio vigente de la alerta entre todas sus URLs, marca las caídas anómalas y decide si hay que avisar. La primera vez no hay contra qué comparar, así que no avisa.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
 | PRO-6 | 🖥️ Motor de mejor precio | Calcula el mejor precio vigente entre todas las URLs de la alerta. | ✅ | Funcionalidad | 🔌 `POST /api/internal/analysis` · `POST /api/analysis` (🆕, ver EJ-5) | Calcula y guarda el mejor precio vigente entre **todas las URLs** de la alerta. Cuando el mejor precio **baja** respecto del anterior, **pide el aviso a `notify`** (CU-10) |
 | **EJ-5** 🆕 | 🖥️🎨 **Lanzar el análisis** | Permite correr el análisis a mano o agendado. | 🆕 | Funcionalidad | 🔌 `POST /api/analysis` (interfaz → `core`) · `POST /api/internal/analysis` (`schedule` → `core`) | Mismo proceso con dos entradas: un botón de la interfaz y un job agendado en `schedule` (SCH-13 `api_call`). Las horas del análisis son parámetros de configuración |
-| PRO-5 | 🖥️ Validador de precio (marca) | Marca como anómala una caída sospechosa de precio. | ✅ | Regla [R9](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (proceso interno de `core`) | Una caída anómala **se marca** (veredicto aparte, `price_anomaly`); no se descarta ni se modifica el snapshot |
+| PRO-5 | 🖥️ Validador de precio (marca) | Marca como anómala una caída sospechosa de precio. | ✅ | Regla [R9](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (proceso interno de `core`) | Una caída anómala **se marca** (veredicto aparte, `price_anomaly`); no se descarta ni se modifica el chequeo |
 
 **Criterios de aceptación** 🆕
-- El mejor precio de la alerta es el mínimo entre los últimos precios vigentes de sus URLs activas, **sin considerar el stock** (DEC-22), y lo calcula el análisis (no el guardado del snapshot).
-- Si no había un mejor precio anterior, el análisis solo lo guarda y **no avisa**.
+- El mejor precio de la alerta es el mínimo entre los últimos precios vigentes de sus URLs activas, **sin considerar el stock** (DEC-22), y lo calcula el análisis (no el guardado del chequeo) desde `alert_snapshot`; no se guarda materializado (DEC-29).
+- Cada análisis guarda **una fila por alerta** en `alert_analysis` con su resultado (`first`, `dropped`, `not_lower` o `no_data`) y el chequeo ganador, sin copiar el precio (DEC-30).
+- El mejor precio anterior es el del último análisis con chequeo ganador. Si no hay, el resultado es `first` y **no avisa**.
+- Si ninguna URL activa tiene precio `ok`, el resultado es `no_data`: no avisa y no cambia el mejor precio anterior.
+- Repetir el análisis con la misma hora no duplica la fila (PK `(alert_id, analyzed_at)`).
 - El análisis se puede lanzar desde la interfaz y desde un job agendado, con el mismo resultado.
-- Un análisis genera a lo más un aviso por alerta, con un `transaction_id` por alerta analizada.
-- Una caída sospechosa se marca: el análisis evalúa cada snapshot nuevo con la estrategia activa y guarda el veredicto en `price_anomaly`, sin tocar el snapshot (DEC-18, ADR-0005).
+- Un análisis genera a lo más un aviso por alerta, con el `transaction_id` de su fila en `alert_analysis`.
+- Una caída sospechosa se marca: el análisis evalúa cada chequeo `ok` nuevo con la estrategia activa y guarda el veredicto en `price_anomaly`, sin tocar el chequeo (DEC-18, ADR-0005).
 - La primera captura de una URL nunca es anómala, y con muestra insuficiente de comparación no se marca nada.
 - Cambiar de estrategia no exige migrar ni reescribir datos.
 - El stock no se tiene en cuenta para el mejor precio: una URL sin stock sigue contando (DEC-22).
-- Si el scraper no informa el stock, se guarda nulo y no se inventa un valor (DEC-21). El snapshot se crea solo cuando cambia el precio.
+- Si el scraper no informa el stock, se guarda nulo y no se inventa un valor (DEC-21).
 - Con una sola URL, el mejor precio es su precio vigente.
-- Cuando el mejor precio **baja**, el motor pide el aviso a `notify` (CU-10) **después** de confirmar la transacción que actualiza el mejor precio.
+- Cuando el mejor precio **baja** (`dropped`), el motor pide el aviso a `notify` (CU-10) **después** de confirmar la transacción que guarda la fila de `alert_analysis`.
 
 ---
 
@@ -346,7 +349,7 @@ graph LR
 | VIS-4 | 🎨🖥️ Estadísticas (mín., máx., promedio) | Estadísticas de mínimo, máximo y promedio. | ⛔ | Funcionalidad | — | Opcional si alcanza el tiempo 🆕 |
 
 **Criterios de aceptación** 🆕
-- El histórico se reconstruye desde los snapshots: el precio vale hasta el siguiente cambio o hasta el último chequeo.
+- El histórico son los chequeos de la alerta en `alert_snapshot`, ordenados por fecha; los `no_price` y `error` aparecen como huecos sin precio (DEC-29).
 - Con 2 o más URLs, el comparador muestra todas las series en el mismo gráfico con su fluctuación.
 - El gráfico es accesible (descripción textual o tabla equivalente).
 
@@ -374,7 +377,7 @@ graph LR
 - Un precio igual o más alto no avisa; la primera vez (sin mejor precio anterior) tampoco.
 - Una caída anómala llega con la advertencia «valida manualmente».
 - El email trae un enlace de baja; al usarlo la suscripción pasa a `unsubscribed` y no recibe más. Un token inválido o ya usado recibe una respuesta uniforme.
-- Si el envío falla, se reintenta (outbox de `notify`) y **no** bloquea ni revierte el análisis ni el snapshot.
+- Si el envío falla, se reintenta (outbox de `notify`) y **no** bloquea ni revierte el análisis ni el chequeo.
 - Repetir el mismo callback, o la misma llamada REST, no genera avisos duplicados.
 - Si `notify` no responde a la llamada, `core` reintenta de forma acotada con el mismo `transaction_id`; si se agota, queda en el log con ese `transactionId` (limitación declarada, DEC-12).
 - Una suscripción `unsubscribed` no genera aviso: `core` no llama a `notify`.
@@ -390,7 +393,7 @@ graph LR
 | Idempotencia | Llave natural `(transaction_id, app_user_id, channel, destination)`, que es `UNIQUE` en `notification` (DEC-11). Repetir la llamada devuelve **200** con la notificación existente y no crea otra |
 | Errores | **4xx**: error del contrato; `core` no reintenta y lo deja en el log. **5xx o sin respuesta**: `core` reintenta |
 | Reintentos | `core` reintenta de forma acotada (hasta 3 intentos con espera creciente). **Todos los reintentos usan el mismo `transaction_id`**, así la llave de idempotencia evita duplicar el aviso. El reintento del **envío del email** es responsabilidad de `notify`, con su outbox |
-| Momento | `core` llama **después** de confirmar el snapshot y el mejor precio, fuera de esa transacción: si la llamada falla, el análisis no se revierte |
+| Momento | `core` llama **después** de confirmar la decisión del análisis, fuera de esa transacción: si la llamada falla, el análisis no se revierte |
 | Datos | El `payload` no lleva el correo completo más allá del `destination`; ningún log guarda el correo |
 
 ---
@@ -450,7 +453,7 @@ graph LR
 | DEC-3 | Switch de modo | Se agrega EJ-1; la búsqueda por palabra clave con LLM queda para otro momento |
 | DEC-4 | ¿El correo solo se registra o también se notifica? | **También se notifica**: entra CU-10 |
 | DEC-5 | `title` y `product_name` en la base | **Siguen obligatorios** (`NOT NULL`). El sistema los completa con el dominio de la primera URL |
-| DEC-6 | ¿Cuándo se notifica? | Cuando el análisis ve que el mejor precio **bajó** respecto del vigente anterior; la primera vez no hay contra qué comparar y no avisa. El análisis es quien decide, no el guardado del snapshot |
+| DEC-6 | ¿Cuándo se notifica? | Cuando el análisis ve que el mejor precio **bajó** respecto del vigente anterior; la primera vez no hay contra qué comparar y no avisa. El análisis es quien decide, no el guardado del chequeo |
 | DEC-7 | ¿Qué sitios? | **No se fijan sitios.** Se usa la cascada de estrategias (EJ-2): cada sitio se resuelve con la primera estrategia que aplique. Fixtures: uno por estrategia y uno que falle todas |
 | DEC-8 | Frecuencia del agendamiento | Cada alerta corre **2 veces al día** (SCH-1, SCH-6, SCH-7). La corrida inicial al crear la alerta cuenta dentro de ese tope 🆕 |
 | DEC-9 | Selector del modo | **Visible**, con «Palabra clave» deshabilitado; la disponibilidad la define `ALERT_CREATION_MODES` |
@@ -461,11 +464,11 @@ graph LR
 | DEC-14 | Doble confirmación del correo antes de activar la suscripción | **No en esta versión; queda como mejora.** Mitigación actual: solo correos de prueba mientras D21 siga pendiente, y cada aviso trae su enlace de baja (DEC-13). Antes de abrir el sistema a correos reales hará falta un estado `pending` en `subscription.status`, un token con caducidad, el correo de confirmación y su endpoint (aprobada 2026-11-19) |
 | DEC-15 | Consistencia `core`↔`schedule` (D7) y cola (B2) | **Cola: no** (ADR-0004: sin cola de mensajería). **Consistencia:** `core` guarda alerta, URLs y suscripciones en una transacción con `alert.schedule_job_id` nulo; luego llama a `schedule` con la llave `alert-<id>` (3 reintentos con 1, 2 y 4 s) y guarda el `job_id`. Si todo falla, la alerta queda «sin schedule» y `core` reintenta al inicio de cada análisis, sin duplicar por la llave. `schedule` gana `job.external_key` con `UNIQUE (system, external_key)`. Una alerta puede pasar hasta ~12 h sin captura si `schedule` está caído (aprobada 2026-11-19) |
 | DEC-16 | Semántica del «mejor precio» | El **mínimo vigente** entre los últimos precios de las URLs activas de la alerta, sin considerar el stock (DEC-22). Se avisa cuando baja respecto del anterior; si sube y vuelve a bajar, avisa otra vez |
-| DEC-17 | Cómo muestra el dashboard un sitio «sin precio» | **Se deriva sin cambiar el esquema:** el estado `no_price`/`error` vive en el resultado de `schedule` (Mongo, TTL 90 días) y `alert_url` solo guarda el último chequeo exitoso. La UI muestra la fecha de `last_checked_at` y marca «sin datos recientes» si pasaron más de 24 h (aprobada 2026-11-18) |
+| DEC-17 | Cómo muestra el dashboard un sitio «sin precio» | **Se deriva del seguimiento (modificada por DEC-29, 2026-11-22):** el estado `no_price`/`error` queda en `alert_snapshot` como cualquier chequeo. La UI muestra el último estado y la fecha del último chequeo `ok`, y marca «sin datos recientes» si pasaron más de 24 h desde ese chequeo (aprobada 2026-11-18) |
 | DEC-18 | Umbral de la «caída anómala» (PRO-5) | **Sin umbral fijo ni variable de entorno.** La caída se compara con los cambios de otros productos (mediana y MAD; anómala si el *modified z-score* ≤ −3,5, sobre 30 días y mínimo 30 cambios de comparación; valores de partida míos, sin medición). El algoritmo es una **estrategia intercambiable** (`AnomalyStrategy`) y el veredicto se guarda aparte en `price_anomaly`, así que cambiar de método no toca los datos. Ver [ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md) (aprobada 2026-11-19) |
 | DEC-19 | Forma del resultado del scrape en `job_execution_result` | Un documento por ejecución (una URL): `alert_url_id`, estado (`ok`, `no_price` o `error`), estrategia ganadora, `price_raw`, moneda, stock, título, metadatos y error |
 | DEC-20 | Hallazgos de modelo de datos | `alert_url` gana `UNIQUE (alert_id, url)` y `CHECK` de largo de URL (**≤ 2048**); `subscription.email` gana `CHECK` de largo (**≤ 254**, igual que `auth`). Los largos son valores de partida míos, sin medición. El agendamiento: `core` fija hora y minuto dentro de las franjas horarias (04–06 y 18–20, por entorno) y la primera corrida se dispara con `next_run_at = ahora` (aprobada 2026-11-18; largos de `title`, `product_name` y `notes` quedan pendientes) |
-| DEC-21 | Stock desconocido | **Se guarda nulo**, sin asumir «disponible»: `price_snapshot.in_stock` admite nulo, igual que `alert_url.last_in_stock`. En Mongo el dato se guarda tal como llegue. Como el análisis no usa el stock (DEC-22), no hace falta un valor por defecto (aprobada 2026-11-19) |
+| DEC-21 | Stock desconocido | **Se guarda nulo**, sin asumir «disponible»: `alert_snapshot.in_stock` admite nulo. En Mongo el dato se guarda tal como llegue. Como el análisis no usa el stock (DEC-22), no hace falta un valor por defecto (aprobada 2026-11-19) |
 | DEC-22 | ¿El stock cuenta para el mejor precio? | **No, por ahora.** El análisis ignora el stock: una URL sin stock sigue contando. El stock se sigue guardando, así que retomarlo es cambiar una regla. Modifica la decisión inicial («una URL sin stock no cuenta»); aprobada 2026-11-19. Riesgo aceptado: un aviso puede basarse en el precio de una URL agotada |
 | DEC-23 | Moneda distinta de COP | **Se descarta** y no se guarda: la versión solo trabaja en COP |
 | DEC-24 | Unidad de trabajo del scraping | **Una URL = una ejecución** con su `transaction_id`. `schedule` las envía una tras otra y cada resultado se entrega a `core` de inmediato. Tres estados: `ok`, `no_price` (definitivo) y `error` (único que se reintenta, hasta 3 veces con 10–15 min). Cambia R4 y SCR-8 respecto del original |
@@ -473,6 +476,8 @@ graph LR
 | DEC-26 | Aviso de errores al administrador | **Barrido diario** agendado en `schedule` que pide un solo correo a `notify`, en vez de un correo por ejecución fallida |
 | DEC-27 | Quién manda sobre el contrato del scraper | El **README de `scraper-service`** manda sobre el contrato y el comportamiento del scraper (petición, callback, códigos de motivo, estrategias, variables `SCRAPER_*`); los docs de este repo lo siguen. Consecuencia: el scraper no recibe `transaction_id` ni `item`, y `schedule` correlaciona por `scraper_id`. Un 403 o captcha es `no_price` (definitivo) y `robots.txt` es principio sin verificación implementada | ✅ 2026-11-17 |
 | DEC-28 | Notas y etiquetas de la alerta | **Entran las notas:** campo opcional de hasta 500 caracteres, saneado, que se guarda y se muestra como texto. **Las etiquetas quedan para la siguiente fase o el proyecto completo**; el modelo (`tag`, `alert_tag`) ya las tiene (aprobada 2026-11-19; el largo de 500 es un valor mío, sin medición) |
+| DEC-29 | Seguimiento de precios sin datos repetidos | **Una fila por chequeo** en `core.alert_snapshot` (`ok`, `no_price` o `error`), única fuente del histórico de la alerta; el resultado completo sigue en la Mongo de `schedule` (TTL 90 días). **Nada derivable se guarda:** último estado, mejor precio (DEC-16) y estadísticas por sitio son vistas. Reemplaza a `price_snapshot` por cambio, a los `last_*` de precio de `alert_url`, a `alert.best_price_*` y a `site_stats_daily`; modifica R7 y DEC-17. Medido con datos sintéticos: ~173 B por fila (~3,8 GB/año con el supuesto de 22 M chequeos) y ~5 ms el mejor precio de una alerta con 1.000 URLs (aprobada 2026-11-22) |
+| DEC-30 | ¿Contra qué se compara el mejor precio para avisar? | **Contra el último análisis registrado.** `core.alert_analysis` guarda una fila por alerta en cada análisis (append-only) con su resultado (`first`, `dropped`, `not_lower`, `no_data`), el `transaction_id` y una FK al chequeo ganador, sin copiar el precio. No se recalcula desde `alert_snapshot` porque `alert_url.is_active` no se historiza y el recálculo podría diferir de lo que se decidió. Medido con datos sintéticos: ~153 B por fila (~1,1 GB/año con el supuesto de 10.000 alertas × 2 análisis/día) (aprobada 2026-11-22) |
 
 **Abiertas**
 

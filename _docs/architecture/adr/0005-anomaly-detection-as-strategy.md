@@ -4,6 +4,8 @@
 - **Fecha:** 2026-11-19
 - **Requerimientos / casos de uso afectados:** PRO-5, PRO-6, CU-06, CU-07, CU-10, NOT-5; regla R9; decisión DEC-18; pendiente B5
 
+> **Enmienda (2026-11-22, DEC-29):** `price_snapshot` (por cambio) se reemplazó por `alert_snapshot`, una fila por chequeo con su estado; el último precio, el mejor precio y las estadísticas por sitio ya no se materializan, son vistas. Donde este ADR dice «snapshot», léase «chequeo `ok`». Ver [modelo de datos](../../data/data-model.md).
+
 ## Contexto
 
 La regla R9 pide marcar una caída sospechosa sin descartarla. No hay un umbral definido, y el usuario no quiere un valor fijo ni una variable de entorno para él: la caída se compara con lo que hacen otros productos. Ese método puede cambiar mañana (otro algoritmo, otra ventana). Hoy el veredicto vive como una columna `price_snapshot.is_anomalous`, atada a un solo algoritmo: cambiar de método obligaría a reescribir snapshots que son append-only.

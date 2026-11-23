@@ -8,7 +8,8 @@
 // a la Mongo de `schedule` (2026-09-30, ver ../schedule/mongo-setup.js)
 // porque son detalle de una corrida (`run`), y `run` ya vivía en el
 // esquema de `schedule`. `core` solo conserva `exchange_rate`, que es
-// suya (se referencia desde `price_snapshot.exchange_rate_date`).
+// suya (se referencia desde `alert_snapshot.exchange_rate_date`). Solo
+// proyecto: el ejercicio trabaja solo en COP (DEC-23) y no la usa.
 // =====================================================================
 
 const zstd = { storageEngine: { wiredTiger: { configString: "block_compressor=zstd" } } };

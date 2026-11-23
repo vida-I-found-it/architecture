@@ -13,12 +13,10 @@
 // CUALQUIER ejecución, con forma libre según el `execution_type` del job
 // — opaca para `schedule`, igual que `payload` lo es en PostgreSQL.
 //
-// PENDIENTE (no resuelto aquí, ver docs/09-pendientes.md): el detalle
-// específico de scraping que antes vivía en `job_state`/`raw_capture`/
-// `scrape_result` (progreso por sitio, HTML crudo para adapters, precio
-// extraído) necesita un nuevo dueño — candidato natural: la Mongo de
-// `core`, que es quien de verdad conoce "sitios" y "adapters". No se
-// decide en este cambio.
+// Para un `scrape`, el documento es el resultado COMPLETO del scraper
+// para una URL (DEC-19); `core` guarda en alert_snapshot solo lo que
+// consulta (DEC-29). Sigue sin hogar el HTML crudo para construir
+// adapters (solo proyecto, ver ../../../00-context/pending.md, D15).
 //
 // Los TTL requieren un campo `createdAt` (Date) en cada documento; el
 // servicio lo escribe al insertar.
@@ -28,7 +26,7 @@ const zstd = { storageEngine: { wiredTiger: { configString: "block_compressor=zs
 
 // job_execution_result — resultado/detalle de UNA corrida, forma libre
 // según execution_type (p.ej. filas afectadas de un db_query, stdout de
-// un script, resultado crudo de un scrape). TTL 90 días: una vez
+// un script, resultado completo de un scrape). TTL 90 días: una vez
 // entregado por el callback, solo sirve para depurar entregas fallidas.
 // _id = job_execution.transaction_id (UUID binario).
 db.createCollection("job_execution_result", zstd);
