@@ -2,11 +2,11 @@
 
 Sistema **académico** que vigila el precio de productos en tiendas online, guarda su **historial por sitio** y avisa por **email a los suscritos** cuando aparece una bajada de precio real, apoyándose en datos y no en el marketing de la tienda.
 
-> **Estado:** 📐 Fase de diseño / documentación (aún no se ha escrito código de la aplicación). Fase 0 casi cerrada; pendiente definir la topología de despliegue ([INF-15](docs/deliverables/requerimientos.md)).
+> **Estado:** 📐 Fase de diseño / documentación (aún no se ha escrito código de la aplicación). Fase 0 casi cerrada; pendiente definir la topología de despliegue ([INF-15](docs_/deliverables/requerimientos.md)).
 
 ## ¿Qué es esto?
 
-Tres conceptos que no hay que confundir (detalle en [01 · Visión](docs/01-vision-objetivos.md)):
+Tres conceptos que no hay que confundir (detalle en [01 · Visión](docs_/01-vision-objetivos.md)):
 
 | Concepto | Qué es |
 |----------|--------|
@@ -29,19 +29,19 @@ Tres conceptos que no hay que confundir (detalle en [01 · Visión](docs/01-visi
 
 ## Documentación
 
-La documentación vive en [`docs/`](docs/) y está pensada para leerse en orden:
+La documentación original vive en [`docs_/`](docs_/) y está pensada para leerse en orden. La versión del ejercicio universitario, organizada por carpetas, vive en [`docs/`](docs/README.md).
 
 | # | Documento | Contenido |
 |---|-----------|-----------|
-| 01 | [Visión y objetivos](docs/01-vision-objetivos.md) | Problema, glosario, roles, módulos, no-objetivos |
-| 02 | [Arquitectura](docs/02-arquitectura.md) | Componentes, diagramas y despliegue |
-| 03 | [Modelo de datos](docs/03-modelo-datos.md) | Entidades, diagrama ER, historial de precios |
-| 04 | [Stack tecnológico](docs/04-stack-tecnologico.md) | Tecnologías y por qué; organización polyrepo |
-| 05 | [Flujo de scraping](docs/05-flujo-scraping.md) | Secuencia de una corrida de alerta |
-| 06 | [Roadmap](docs/06-roadmap.md) | Fases e hitos |
-| 07 | [Consideraciones legales y éticas](docs/07-consideraciones-legales.md) | robots.txt, ToS, rate limiting |
-| 08 | [Preguntas de Alcance 1](docs/08-alcance-1-preguntas.md) | Decisiones que acotaron el MVP |
-| — | [**Requerimientos Fase 1**](docs/deliverables/requerimientos.md) | Requerimientos con ID, prioridad, track y estado |
+| 01 | [Visión y objetivos](docs_/01-vision-objetivos.md) | Problema, glosario, roles, módulos, no-objetivos |
+| 02 | [Arquitectura](docs_/02-arquitectura.md) | Componentes, diagramas y despliegue |
+| 03 | [Modelo de datos](docs_/03-modelo-datos.md) | Entidades, diagrama ER, historial de precios |
+| 04 | [Stack tecnológico](docs_/04-stack-tecnologico.md) | Tecnologías y por qué; organización polyrepo |
+| 05 | [Flujo de scraping](docs_/05-flujo-scraping.md) | Secuencia de una corrida de alerta |
+| 06 | [Roadmap](docs_/06-roadmap.md) | Fases e hitos |
+| 07 | [Consideraciones legales y éticas](docs_/07-consideraciones-legales.md) | robots.txt, ToS, rate limiting |
+| 08 | [Preguntas de Alcance 1](docs_/08-alcance-1-preguntas.md) | Decisiones que acotaron el MVP |
+| — | [**Requerimientos Fase 1**](docs_/deliverables/requerimientos.md) | Requerimientos con ID, prioridad, track y estado |
 
 Las reglas para trabajar con IA en este proyecto están en [`CLAUDE.md`](CLAUDE.md) (se copia a cada repositorio).
 
@@ -61,7 +61,7 @@ Este repo trae agentes especializados en `.claude/agents/` (ficha completa y ros
 | `backend-developer` | Implementa un requerimiento de backend (API, workers, migraciones) con tests y verificación; propone patrones y arquitectura. | *"Usa backend-developer para `<ID>`."* |
 | `frontend-developer` | Implementa pantallas y flujos con accesibilidad, estados de carga/error e i18n, y los prueba en el navegador. | *"Usa frontend-developer para `<ID>`."* |
 
-Con `architect`, dale un alcance concreto (un componente, un ADR, una pregunta de [doc 09](docs/09-pendientes.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
+Con `architect`, dale un alcance concreto (un componente, un ADR, una pregunta de [doc 09](docs_/09-pendientes.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
 
 **Nombres de los agentes.** Los identificadores están en inglés (coinciden con el nombre del archivo en `.claude/agents/` y con el campo `name`). Si encuentras un nombre antiguo en un chat o documento viejo, esta es la equivalencia:
 
