@@ -33,7 +33,7 @@ La funcionalidad priorizada es **el recorrido completo de una alerta**: desde qu
 
 **2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda **un chequeo por resultado** en PostgreSQL (`alert_snapshot`), sea `ok`, `no_price` o `error` (DEC-29). No calcula el mejor precio ni avisa.
 
-**3 · Analizar el resultado (CU-06, CU-10, CU-11).** El **análisis** es otro proceso, por alerta: arranca solo cuando termina la corrida de la alerta, o a mano desde la interfaz (DEC-33). Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. La primera vez no hay contra qué comparar y no avisa. Cuando el mejor precio baja, `notify` envía un email al correo registrado, con un enlace para darse de baja de esa alerta.
+**3 · Analizar el resultado (CU-06, CU-10, CU-11).** El **análisis** es otro proceso, por alerta: arranca solo cuando termina la corrida de la alerta, o a mano desde la interfaz (DEC-33). Con lo guardado, `core` calcula el **mejor precio vigente** entre las URLs de la alerta y marca las caídas anómalas. La primera vez no hay contra qué comparar y no avisa. Cuando el mejor precio baja, `notify` envía un email a cada correo registrado en la alerta (1 a 5, DEC-11), cada uno con su enlace para darse de baja.
 
 **4 · Mostrar en el dashboard (CU-07, CU-08).** El usuario ve la lista de alertas y, al abrir una, su dashboard: último precio por URL, mejor precio, marca de anomalía, histórico (el precio vale hasta el siguiente cambio) y un comparador con una serie por URL. El correo se muestra siempre enmascarado.
 
@@ -123,10 +123,10 @@ FastAPI y PostgreSQL. Es el dueño del negocio.
 
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
-| **Alertas**<br>`AlertService` | Crea la alerta con sus URLs y su correo; si algo falla, no se guarda nada. Después la alerta no se puede cambiar. También la consulta y la lista | CU-02, CU-07 | *Modelo de alerta*, *Crear alerta por URL*, *Alerta inmutable*, *Consultar alertas*, *Suscripción al correo*, *Suscribirse a una alerta*, *Detalle de la alerta* |
+| **Alertas**<br>`AlertService` | Crea la alerta con sus URLs y sus correos (1 a 5); si algo falla, no se guarda nada. Después la alerta no se puede cambiar. También la consulta y la lista | CU-02, CU-07 | *Modelo de alerta*, *Crear alerta por URL*, *Alerta inmutable*, *Consultar alertas*, *Suscripción al correo*, *Suscribirse a una alerta*, *Detalle de la alerta* |
 | **Modos de creación**<br>`AlertSource` | Permite cambiar la forma de crear una alerta sin tocar el resto. Hoy solo funciona «URL directa»; «palabra clave con LLM» llegará después | CU-02 | *Selector de modo de creación* |
 | **Política de URLs**<br>`UrlPolicy` | Al crear la alerta, rechaza direcciones peligrosas (por ejemplo, redes internas) para que el sistema nunca las visite | CU-02 | *Protección anti-SSRF* |
-| **Suscripciones**<br>`SubscriptionService` | Guarda si el correo está activo o dado de baja y procesa la baja con el enlace del email | CU-11 | *Suscripción al correo*, *Baja por enlace* |
+| **Suscripciones**<br>`SubscriptionService` | Guarda si cada correo está activo o dado de baja y procesa la baja con el enlace del email | CU-11 | *Suscripción al correo*, *Baja por enlace* |
 | **Detalle del job**<br>`JobDetailService` | Le dice a `schedule` qué URLs tiene que visitar cada alerta | CU-04 | *El scraper entrega a schedule* |
 | **Ingesta de precios**<br>`PriceIngestService` | Recibe el precio capturado, lo limpia y lo convierte a número, descarta lo inválido (precio cero o página de error), marca las caídas sospechosas y guarda el precio solo si cambió. Procesa juntas todas las URLs de una alerta: si una es inválida, las demás se guardan igual | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes*, *Saneamiento de datos* |
 | **Análisis de precio**<br>`BestPriceStrategy` | En el análisis (al terminar la corrida de la alerta), calcula cuál es el mejor precio vigente entre todas las URLs de la alerta, lo compara con el anterior y decide si hay que avisar | CU-06 | *Motor de mejor precio* |
@@ -438,7 +438,7 @@ erDiagram
 
 #### Relacional · `notify`
 
-Lo que usa CU-10 (notificar al correo registrado).
+Lo que usa CU-10 (notificar a los correos registrados).
 
 ```mermaid
 erDiagram
@@ -521,7 +521,7 @@ Las piezas no comparten claves foráneas: se enlazan solo por identificadores.
 |---|---|---|
 | `alert_snapshot.transaction_id` | `job_execution.transaction_id` | La ejecución que generó el chequeo |
 | `job.payload` | `alert.id` | El job identifica a su alerta |
-| `notification.transaction_id` | `job_execution.transaction_id` | El aviso nace de esa corrida |
+| `notification.transaction_id` | `alert_analysis.transaction_id` | El aviso nace de ese análisis (DEC-30) |
 | `job_execution_result._id` | `job_execution.transaction_id` | El resultado de esa corrida |
 | `created_by`, `app_user_id` | Usuario fijo de la versión | Un identificador configurado por entorno |
 
@@ -563,7 +563,7 @@ Se implementan los 9 casos de uso de esta versión, descritos en la sección 1:
 5. **CU-06** · Analizar el mejor precio
 6. **CU-07** · Ver el dashboard de una alerta
 7. **CU-08** · Ver histórico y comparar sitios
-8. **CU-10** · Notificar al correo registrado
+8. **CU-10** · Notificar a los correos registrados
 9. **CU-11** · Darse de baja de una alerta
 
 ### 11 · Qué queda fuera del alcance

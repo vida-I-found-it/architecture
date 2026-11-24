@@ -34,8 +34,7 @@
 |---|---|---|
 | `core.alert.created_by`, `core.site_adapter.created_by`, `core.subscription.created_by` | `core` | `auth.app_user.id` |
 | `core.alert_snapshot.transaction_id` | `core` | `schedule.job_execution.transaction_id` |
-| `notify.notification.alert_id`, `notify.notification.trigger_alert_url_id` | `notify` | `core.alert.id` / `core.alert_url.id` |
-| `notify.notification.run_id` | `notify` | `schedule.job_execution.id` |
+| `notify.notification.transaction_id` | `notify` | Correlación opaca con quien pide el aviso (en I Found It, `core.alert_analysis.transaction_id`, DEC-30; en el barrido, la ejecución de `schedule`) |
 | `notify.notification.app_user_id` | `notify` | `auth.app_user.id` (obligatorio: toda funcionalidad exige cuenta, 2026-09-30) |
 | `notify.notification.system` | `notify` | `auth.system.code` |
 
@@ -49,7 +48,7 @@ Esto es deliberado: al no haber ninguna FK que cruce un esquema, **los 4 scripts
 >
 > ✅ **`notification` se movió de `core` a `notify`** (decidido 2026-09-30): es el dato que `notify` posee de punta a punta. Consecuencia pendiente de resolver: el motor de decisión de `core` ya no puede insertar el outbox en la misma transacción donde actualiza `best_price_*` — falta el mecanismo de entrega confiable entre `core` y `notify` — ver [pendientes](../../00-context/pending.md), D12.
 >
-> ✅ **El outbox se partió en 3 tablas** (decidido 2026-09-30): `notification` (configurada, sin estado) ya no muta un `status` en el sitio — `notification_sent` se llena solo si `SEND` entrega con éxito, y `notification_outbox` solo si falla (cola de reintento real, con `FOR UPDATE SKIP LOCKED` sobre `next_retry_at`). Antes una sola fila mezclaba "por enviar" con "enviada".
+> ✅ **Una tabla con estado, más una cola de reintento:** `notification` guarda el aviso configurado **y** su resultado (`status`, `sent_at`, `provider`, `attempts`, `last_error`), y `notification_outbox` solo existe mientras se reintenta (con `FOR UPDATE SKIP LOCKED` sobre `next_retry_at`) y se borra al resolverse. Reemplaza al modelo de 3 tablas del 2026-09-30, que tenía además `notification_sent`.
 >
 > ✅ **Se retiró el rol incógnito** (decidido 2026-09-30): toda funcionalidad exige usuario registrado. `auth.role` queda sembrado con solo `admin`/`user`, y `notify.notification` se amarra a `app_user_id` (obligatorio) + `system` en vez de `subscription_id` — ya no hay destino anónimo que resolver.
 >

@@ -22,7 +22,7 @@
    - [CU-06 · Analizar el mejor precio](#cu-06--analizar-el-mejor-precio)
    - [CU-07 · Ver el dashboard de una alerta](#cu-07--ver-el-dashboard-de-una-alerta)
    - [CU-08 · Ver histórico y comparar sitios](#cu-08--ver-histórico-y-comparar-sitios)
-   - [CU-10 · Notificar al correo registrado](#cu-10--notificar-al-correo-registrado)
+   - [CU-10 · Notificar a los correos registrados](#cu-10--notificar-a-los-correos-registrados)
    - [CU-11 · Darse de baja de una alerta](#cu-11--darse-de-baja-de-una-alerta)
 4. [Fuera de esta versión](#4--fuera-de-esta-versión)
 5. [Decisiones](#5--decisiones)
@@ -106,7 +106,7 @@ sequenceDiagram
     end
 
     rect rgba(150, 90, 200, 0.14)
-        Note over CO,U: CU-10 · Notificar al correo registrado
+        Note over CO,U: CU-10 · Notificar a los correos registrados
         CO->>NT: si el mejor precio bajó, llamada REST que crea la notificación (destino = correo de la suscripción)
         NT->>NT: crea la notificación y arma el email con su enlace de baja
         NT-->>U: envía el email (si falla, su outbox reintenta)
@@ -360,7 +360,7 @@ graph LR
 
 ---
 
-### CU-10 · Notificar al correo registrado
+### CU-10 · Notificar a los correos registrados
 
 **Descripción.** Cuando el análisis detecta que el mejor precio de una alerta bajó, `core` se la entrega a `notify` mediante una **llamada REST**, y `notify` arma el email y lo envía al correo escrito al crear la alerta. Cada email trae un enlace para darse de baja.
 

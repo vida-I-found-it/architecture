@@ -97,7 +97,7 @@ sequenceDiagram
     end
 
     rect rgba(150, 90, 200, 0.14)
-        Note over CO,U: CU-10 · Notificar al correo registrado
+        Note over CO,U: CU-10 · Notificar a los correos registrados
         CO->>NT: si el mejor precio bajó, llamada REST que crea la notificación (destino = correo de la suscripción)
         NT->>NT: crea la notificación y arma el email con su enlace de baja
         NT-->>U: envía el email (si falla, su outbox reintenta)

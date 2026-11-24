@@ -42,7 +42,7 @@
 | Regex con timeout | **regex** (mrab-regex) | Último recurso de la estrategia 2, con *timeout* de 1 s sobre los primeros 2 MB (anti-ReDoS). |
 | robots.txt + rate limit | **Protego** + **aiolimiter** *(proyecto; no implementado en el scraper v1.0.0)* | Respeta `robots.txt`/`Crawl-delay` y controla la tasa por dominio (SCR-5/6). El README del scraper lo declara como principio, sin verificación implementada. |
 | Parseo precio/moneda | **price-parser** + **Babel** | Extrae precio numérico y normaliza moneda por locale (PRO-1, multi-moneda). |
-| Cola / workers | **Redis** + **Arq** (async) *(alt. RQ / Celery)* | Scraping en background escalonado; reintentos. **Decidido ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)):** `schedule` envía el trabajo al scraper por HTTP, sin cola; Redis + Arq queda como evolución futura — [pendientes](../00-context/pending.md) B2. |
+| Cola / workers | ~~**Redis** + **Arq**~~ **No en el ejercicio** | Scraping en background escalonado; reintentos. **Decidido ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)):** `schedule` envía el trabajo al scraper por HTTP, sin cola; Redis + Arq queda como evolución futura — [pendientes](../00-context/pending.md) B2. |
 | Scheduler | **APScheduler** (repo `schedule`) | Encola corridas en ventanas horarias (04–06 / 18–20, env). |
 | ORM relacional / migraciones | **SQLAlchemy 2 + Alembic** | Modelo versionado y migrable (PostgreSQL). |
 | Acceso MongoDB | **Motor** (async) / **Beanie** (ODM) | Cliente/ODM para las colecciones documentales. |
@@ -54,9 +54,9 @@
 
 | Store | Tecnología | Uso |
 |-------|-----------|-----|
-| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), dos roles por esquema (migraciones y servicio) sin permisos sobre el de los demás — ver [docs/deliverables/db](../data/scripts/README.md). Guarda RBAC, usuarios, alertas, urls, `alert_snapshot` (un chequeo por resultado, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Correos como `text` en minúsculas con `CHECK` (sin `citext` ni extensiones compartidas entre esquemas). |
+| Relacional | **PostgreSQL 16** (+ JSONB) | **1 sola instancia, 4 esquemas** (`auth`, `core`, `schedule`, `notify`), un rol de servicio por esquema, sin permisos sobre el de los demás (`provision-roles.sql`) — ver [docs/deliverables/db](../data/scripts/README.md). Guarda RBAC, usuarios, alertas, urls, `alert_snapshot` (un chequeo por resultado, partición anual), suscripciones, `notification` (outbox), adapters, `site_stats_daily`, `schedule`/`run`. Correos como `text` en minúsculas con `CHECK` (sin `citext` ni extensiones compartidas entre esquemas). |
 | Documental | **MongoDB** (compresión **zstd**, índices **TTL**) | Solo consulta, voluminoso/efímero: `job_execution_result` (`schedule`), `notification_log` (`notify`, solo proyecto) y `exchange_rate` (`core`, solo proyecto). Retenciones en [modelo de datos](../data/data-model.md#retención-resumen). |
-| Cola / caché | **Redis** | Backend de la cola de trabajos. |
+| Cola / caché | ~~**Redis**~~ **No en el ejercicio** | Sin cola de mensajería (ADR-0004, DEC-15); queda como evolución futura (B2). |
 
 ### Frontend (PWA)
 
@@ -337,4 +337,4 @@ Insumos para los análisis, no decisiones:
 
 - Verificar con fuentes primarias las lagunas de [Actualidad](#lagunas-por-verificar) antes de apoyar un ADR en ellas.
 - Proveedor de tasa de cambio concreto (ej. `exchangerate.host`) — parametrizable.
-- Resto de pendientes de este documento (si Redis/Arq sigue haciendo falta, runner de cola concreto, proveedor de BD, despliegue) consolidados en los [Pendientes](../00-context/pending.md).
+- Resto de pendientes de este documento (proveedor de BD, despliegue; Redis/Arq solo como evolución futura, B2) consolidados en los [Pendientes](../00-context/pending.md).
