@@ -21,7 +21,7 @@ Solo los criterios de presentación. El orden sigue las dependencias de las hist
 |---|---|---|---|
 | 1 | [CU-02](../requirements/user-stories/CU-02.md) · alta | US-02-01-AC1, AC2, AC13, AC14 (validación visible); US-02-03-AC1 a AC3 (modal); US-02-04-AC1 (selector «Modo»); US-02-05-AC1 (correo enmascarado) | Primera pantalla. El modal es de frontend. |
 | 2 | [CU-03](../requirements/user-stories/CU-03.md) · aviso | US-03-05-AC1 a AC5 | Aviso tras crear. Sin *polling*. |
-| 3 | [CU-07](../requirements/user-stories/CU-07.md) · lista y dashboard | US-07-01-AC1 a AC6; US-07-02-AC1, AC3, AC6, AC8, AC9, AC12, AC13; US-07-03-AC1 a AC7; US-07-04-AC1 a AC3, AC6; US-07-05-AC1 | Estados vacío, carga, error y marcas. |
+| 3 | [CU-07](../requirements/user-stories/CU-07.md) · lista y dashboard | US-07-01-AC1 a AC6; US-07-02-AC1, AC3, AC6, AC8, AC9, AC12, AC13; US-07-03-AC1 a AC7; US-07-04-AC1 a AC3, AC6; US-07-05-AC1; US-07-06-AC15 a AC24 (vista de detalle por número, prototipo) | Estados vacío, carga, error y marcas. |
 | 4 | [CU-06](../requirements/user-stories/CU-06.md) · análisis manual | US-06-03-AC1 a AC4, AC6 | Botón «Analizar ahora» (rótulo propuesto, sin aprobar). |
 | 5 | [CU-08](../requirements/user-stories/CU-08.md) · histórico | US-08-01-AC3 a AC5 (transformación de la serie); US-08-02-AC1 a AC8; US-08-03-AC1 a AC6; US-08-04-AC1 a AC5 | Gráfico escalonado con huecos y tabla equivalente. |
 | 6 | [CU-11](../requirements/user-stories/CU-11.md) · página de baja | US-11-01-AC1 a AC6; US-11-02-AC6, AC7 | Sin petición que modifique al abrir la página. |
@@ -43,7 +43,7 @@ Solo los criterios de presentación. El orden sigue las dependencias de las hist
 | `POST /api/alerts` | US-02-01 | Cuerpo y respuesta pendientes ([CU-02, pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas)). |
 | `GET /api/alert-modes` | US-02-04-AC4 | Formato pendiente. |
 | `GET /api/alerts` | US-07-01 | Cuerpo pendiente ([CU-07, pregunta 1](../requirements/user-stories/CU-07.md#preguntas-abiertas)). |
-| `GET /api/alerts/{alert_id}` | US-07-02 a US-07-05 | Cuerpo pendiente (CU-07, pregunta 1). |
+| `GET /api/alerts/{alert_id}` | US-07-02 a US-07-05; US-07-06 (prototipo) | Cuerpo pendiente (CU-07, pregunta 1). |
 | `GET /api/alerts/{alert_id}/price-history` | US-08-01, US-08-04 | Cuerpo pendiente ([CU-08, pregunta 1](../requirements/user-stories/CU-08.md#preguntas-abiertas)). |
 | `POST /api/alerts/{alert_id}/analysis` | US-06-03 | Respuesta pendiente ([CU-06, pregunta 1](../requirements/user-stories/CU-06.md#preguntas-abiertas)). |
 | `POST /api/subscriptions/{subscription_id}/unsubscribe` | US-11-02 | Dónde viaja el token: pendiente (CU-11, pregunta 2). |

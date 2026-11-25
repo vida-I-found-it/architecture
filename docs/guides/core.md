@@ -25,7 +25,7 @@ El orden sigue las dependencias de cada historia (ver [`README`](../requirements
 | 4 | [CU-05](../requirements/user-stories/CU-05.md) · procesar y almacenar | US-05-01-AC1 a AC12; US-05-02-AC1 a AC9; US-05-03-AC1 a AC8; US-05-04-AC1 a AC5; US-05-05-AC1 a AC10 | Normalizador y validador como funciones puras. `POST /api/internal/prices`. |
 | 5 | [CU-06](../requirements/user-stories/CU-06.md) · análisis | US-06-01-AC1 a AC16; US-06-02-AC1 a AC7; US-06-03 (AC5 y AC7 de backend); US-06-04-AC1 a AC8; US-06-05-AC1 a AC5 | `POST /api/alerts/{alert_id}/analysis` y `POST /api/internal/run-completed`. |
 | 6 | [CU-10](../requirements/user-stories/CU-10.md) · aviso desde `core` | US-10-01-AC1 a AC13 | Llamada a `notify`, después del commit del análisis. |
-| 7 | [CU-07](../requirements/user-stories/CU-07.md) · dashboard (lectura) | US-07-01-AC1 a AC7; US-07-02-AC1 a AC11 y AC14; US-07-03-AC1 a AC6; US-07-04-AC1 a AC6; US-07-05-AC1 a AC5 | Solo lectura. Enmascarado de correos en el backend. |
+| 7 | [CU-07](../requirements/user-stories/CU-07.md) · dashboard (lectura) | US-07-01-AC1 a AC7; US-07-02-AC1 a AC11 y AC14; US-07-03-AC1 a AC6; US-07-04-AC1 a AC6; US-07-05-AC1 a AC5; US-07-06-AC1 a AC14 (prototipo) | Solo lectura. Enmascarado de correos en el backend. |
 | 8 | [CU-08](../requirements/user-stories/CU-08.md) · histórico (lectura) | US-08-01-AC1 a AC11; US-08-04-AC1, AC6 y AC7 (backend) | `GET /api/alerts/{alert_id}/price-history`. |
 | 9 | [CU-11](../requirements/user-stories/CU-11.md) · baja | US-11-02-AC1 a AC10; US-11-03-AC1 a AC9; US-11-04-AC3 a AC6 | Token HMAC; respuesta uniforme. |
 
@@ -40,7 +40,7 @@ Los criterios de presentación (la mayoría de `US-07-*`, `US-08-*`, `US-11-01`)
 | `POST /api/alerts` | US-02-01, US-02-02, US-02-04 | Ruta según la historia; cuerpo y respuesta pendientes ([CU-02, pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas)). |
 | `GET /api/alert-modes` | US-02-04-AC4 | Responde los modos y marca solo `url`. Formato pendiente. |
 | `GET /api/alerts` | US-07-01 | Lista. Cuerpo y paginación pendientes ([CU-07, preguntas 1 y 2](../requirements/user-stories/CU-07.md#preguntas-abiertas)). |
-| `GET /api/alerts/{alert_id}` | US-07-02, US-07-03, US-07-04 | Detalle. Cuerpo pendiente (CU-07, pregunta 1). |
+| `GET /api/alerts/{alert_id}` | US-07-02, US-07-03, US-07-04, US-07-06 | Detalle. Cuerpo pendiente (CU-07, pregunta 1). |
 | `GET /api/alerts/{alert_id}/price-history` | US-08-01, US-08-04 | Histórico. Cuerpo pendiente ([CU-08, pregunta 1](../requirements/user-stories/CU-08.md#preguntas-abiertas)). |
 | `POST /api/alerts/{alert_id}/analysis` | US-06-03 | Análisis manual. Respuesta pendiente ([CU-06, pregunta 1](../requirements/user-stories/CU-06.md#preguntas-abiertas)). |
 | `POST /api/subscriptions/{subscription_id}/unsubscribe` | US-11-02, US-11-03 | Dónde viaja el token: pendiente ([CU-11, pregunta 2](../requirements/user-stories/CU-11.md#preguntas-abiertas)). |

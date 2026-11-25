@@ -330,7 +330,7 @@ graph LR
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
-| VIS-1 | 🎨🖥️ Detalle de la alerta | Muestra el detalle de la alerta y el último precio de cada URL. | ✅ | Funcionalidad | 🔌 `GET /api/alerts/{alert_id}` | Es el núcleo del dashboard |
+| VIS-1 | 🎨🖥️ Detalle de la alerta | Muestra el detalle de la alerta y el último precio de cada URL. | ✅ | Funcionalidad | 🔌 `GET /api/alerts/{alert_id}` | Es el núcleo del dashboard. Primer incremento del prototipo: detalle sin precios ([US-07-06](user-stories/CU-07.md#us-07-06--consultar-una-alerta-por-su-número-prototipo-universitario)) |
 | ALE-5 | 🎨🖥️ Consultar alertas | Lista las alertas para poder abrirlas. | 🔧 | Funcionalidad | 🔌 `GET /api/alerts` | Lista simple para llegar al dashboard; sin permisos por rol |
 | FE-4 | 🎨 Pantallas de consulta | Pantallas de la lista y del dashboard de la alerta. | 🔧 | Funcionalidad | — (consume los `GET`) | Lista de alertas y dashboard de la alerta |
 | RNF-4 | 🎨🖥️ Privacidad del correo | Muestra el correo siempre enmascarado. | ✅ | Regla [R13](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (el correo sale enmascarado) | Enmascarado en el detalle |
