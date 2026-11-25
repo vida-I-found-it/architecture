@@ -1,51 +1,130 @@
-# I Found It
+<div align="center">
+
+# 🔎 I Found It
+
+**Compra cuando el precio baja.**
+
+[![Estado](https://img.shields.io/badge/estado-en%20implementaci%C3%B3n-orange?style=flat-square)](#-alcance-del-ejercicio-universitario)
+[![Docs as code](https://img.shields.io/badge/docs-as%20code-blueviolet?style=flat-square&logo=markdown&logoColor=white)](#-cómo-trabajamos-docs-as-code)
+[![Polyrepo](https://img.shields.io/badge/organizaci%C3%B3n-polyrepo-informational?style=flat-square&logo=github)](#-repositorios)
+[![Ejercicio universitario](https://img.shields.io/badge/ejercicio-universitario-success?style=flat-square&logo=googlescholar&logoColor=white)](#-alcance-del-ejercicio-universitario)
+
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](docs/tools/tech-stack.md)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](docs/tools/tech-stack.md)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](docs/data/data-model.md)
+[![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=flat-square&logo=mongodb&logoColor=white)](docs/data/data-model.md)
+[![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=flat-square&logo=playwright&logoColor=white)](docs/architecture/scraping-flow.md)
+[![React](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)](docs/guides/frontend.md)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](docs/guides/frontend.md)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](docs/tools/tech-stack.md)
+
+[![Mermaid](https://img.shields.io/badge/diagramas-Mermaid-FF3670?style=flat-square&logo=mermaid&logoColor=white)](docs/architecture/architecture.md)
+[![ADR](https://img.shields.io/badge/decisiones-ADR-lightgrey?style=flat-square)](docs/architecture/adr/README.md)
+[![Claude Code](https://img.shields.io/badge/agentes-Claude%20Code-D97757?style=flat-square&logo=claude&logoColor=white)](#-agentes-de-claude-code)
+
+</div>
+
+---
 
 Sistema **académico** que vigila el precio de productos en tiendas online, guarda su **historial por sitio** y avisa por **email a los suscritos** cuando aparece una bajada de precio real, apoyándose en datos y no en el marketing de la tienda.
 
-> **Estado:** 📐 Fase de diseño / documentación (aún no se ha escrito código de la aplicación). Fase 0 casi cerrada; pendiente definir la topología de despliegue ([INF-15](docs/requirements/original-requirements.md)).
+Este repositorio (`architecture`) es la **fuente de verdad del diseño**: requerimientos, arquitectura, modelo de datos, decisiones e historias de usuario. El código vive en repositorios aparte ([ver abajo](#-repositorios)).
 
-## ¿Qué es esto?
+> **Estado:** 🛠️ Implementación del ejercicio universitario en curso. CU-02 (alta de alerta) está implementado y probado de punta a punta; CU-03 y CU-04 (programar y capturar el precio) se están integrando. El resto de casos de uso tiene historia de usuario escrita y preguntas abiertas por decidir.
 
-Tres conceptos que no hay que confundir (detalle en [01 · Visión](docs/00-context/vision-goals.md)):
+## 🧭 Cómo trabajamos: docs-as-code
+
+La documentación se trata **como código** (*docs-as-code*):
+
+- Todo es **Markdown, Mermaid y SQL** dentro del repositorio, junto a las decisiones que lo justifican.
+- Se **versiona en git** y cada cambio entra por **pull request** con revisión humana, igual que el código.
+- Cada requerimiento, decisión y criterio tiene un **ID estable** (`CU-NN`, `DEC-NN`, `ADR-NNNN`, `US-NN-MM-ACn`, `TC-NN-NN`) que enlaza historia, prueba y código.
+- Las decisiones importantes quedan como **ADR**; lo que aún no se decide queda como **pregunta abierta**, nunca como suposición.
+- Los agentes de IA leen y escriben esta documentación con las mismas reglas: lo que proponen es un borrador hasta que una persona lo aprueba.
+
+El mapa de carpetas y qué agente lee cada una está en [`docs/README.md`](docs/README.md).
+
+## 🎓 Alcance del ejercicio universitario
+
+Versión **local** y acotada del proyecto completo:
+
+- **Casos de uso:** CU-02 a CU-08, CU-10 y CU-11. Se omiten CU-01 (sesión) y CU-09 (supervisión).
+- **Sin login ni roles:** hay un usuario fijo configurado por entorno.
+- **Solo COP** y **solo URL directa** (el modo por palabra clave queda para después).
+- Detalle y decisiones (`DEC-*`) en [`requirements.md`](docs/requirements/requirements.md).
+
+## 💡 ¿Qué es esto?
+
+Tres conceptos que no hay que confundir (detalle en [Visión y objetivos](docs/00-context/vision-goals.md)):
 
 | Concepto | Qué es |
 |----------|--------|
-| 🔔 **Alerta** | Un proceso: scraping de los sitios que ofrecen el producto + notificación. Corre solo, **2 veces al día** en background. |
-| 📧 **Suscripción** | Una persona suscrita a una alerta para recibir sus novedades por email. |
-| 📈 **Histórico de precios** *(antes "consumo")* | Vista de la evolución del precio en el tiempo y entre sitios, para saber cuándo ofrece su mejor precio. |
+| 🔔 **Alerta** | Un proceso: scraping de los sitios que ofrecen el producto + notificación. Corre sola, **2 veces al día** en segundo plano. Es inmutable una vez creada. |
+| 📧 **Suscripción** | Un correo suscrito a una alerta para recibir sus avisos; cada correo puede darse de baja. |
+| 📈 **Histórico de precios** | Evolución del precio en el tiempo y entre sitios, para saber cuándo ofrece su mejor precio. |
 
-**Modos de monitoreo:** por **URL directa** (Fase 1) y por **tema descubierto con IA** (Fase 2).
+## ⚙️ Cómo funciona
 
-**Roles:** administrador (único que crea cuentas) y usuario con cuenta — toda funcionalidad exige login, sin acceso anónimo.
+1. El usuario crea una **alerta** con una o varias URLs de producto y los correos que recibirán el aviso (`core`).
+2. `core` pide a `schedule` un **job de captura**: la primera corrida sale de inmediato y luego corre **2 veces al día** dentro de las franjas horarias, en hora de Bogotá.
+3. En cada corrida, `schedule` despacha cada URL al **`scraper`**, que extrae el precio con una cascada de estrategias (JSON-LD/schema.org, microdata, navegador, XHR) y devuelve el resultado por callback.
+4. Cada chequeo se guarda como una fila del historial (`alert_snapshot`, en COP); el resultado crudo de cada intento queda en MongoDB.
+5. Al terminar la corrida se **analiza la alerta**: si el mejor precio bajó frente al último análisis, `notify` envía un **email** a cada suscripción activa.
 
-## Cómo funciona (Fase 1)
+```mermaid
+flowchart LR
+    U([👤 Usuario]) -->|crea alerta| W[🖥️ foundit-web-app]
+    W -->|POST /api/alerts| C[🧠 core]
+    C -->|crea job| S[⏰ schedule]
+    S -->|despacha URL| X[🕷️ scraper]
+    X -->|callback con precio| S
+    S -->|precios y fin de corrida| C
+    C -->|si bajó el precio| N[📧 notify]
+    N -->|email| U
+    C --- PG[(🐘 PostgreSQL)]
+    S --- PG
+    S --- MG[(🍃 MongoDB)]
+```
 
-1. El usuario crea una **alerta** con una o varias URLs de producto (las alertas son inmutables; solo se pausan o reactivan).
-2. Un scheduler encola corridas **2×/día**, escalonadas en ventanas horarias, y los workers hacen el scraping en background.
-3. La extracción es genérica: **JSON-LD / schema.org + `og:price`**, con cascada HTTP → Playwright → IA solo si lo anterior falla.
-4. Cada captura se guarda como snapshot histórico (moneda original + equivalente en COP).
-5. Un motor de decisión de **"mejor precio móvil"** detecta cuándo se rompe el mínimo observado.
-6. Se envía un **email** a los suscritos a esa alerta.
+Secuencia completa en [Flujo de scraping](docs/architecture/scraping-flow.md).
 
-## Documentación
+## 📦 Repositorios
 
-La documentación vive en [`docs/`](docs/README.md), organizada por carpetas (versión del ejercicio universitario). La versión original, en un solo nivel, quedó en el historial de git. Lectura sugerida:
+Organización **polyrepo**: cada pieza en su propio repositorio, sin paquetes compartidos.
 
-| # | Documento | Contenido |
-|---|-----------|-----------|
-| 01 | [Visión y objetivos](docs/00-context/vision-goals.md) | Problema, glosario, roles, módulos, no-objetivos |
-| 02 | [Arquitectura](docs/architecture/general-architecture.md) | Componentes, diagramas y despliegue |
-| 03 | [Modelo de datos](docs/data/data-model.md) | Entidades, diagrama ER, historial de precios |
-| 04 | [Stack tecnológico](docs/tools/tech-stack.md) | Tecnologías y por qué; organización polyrepo |
-| 05 | [Flujo de scraping](docs/architecture/scraping-flow.md) | Secuencia de una corrida de alerta |
-| 06 | [Roadmap](docs/00-context/roadmap.md) | Fases e hitos |
-| 07 | [Consideraciones legales y éticas](docs/00-context/legal-considerations.md) | robots.txt, ToS, rate limiting |
-| 08 | [Preguntas de Alcance 1](docs/00-context/scope-1-questions.md) | Decisiones que acotaron el MVP |
-| — | [**Requerimientos Fase 1**](docs/requirements/original-requirements.md) | Requerimientos con ID, prioridad, track y estado |
+| Repositorio | Pieza | Qué hace | Guía de arranque |
+|-------------|-------|----------|------------------|
+| [`architecture`](https://github.com/vida-I-found-it/architecture) | — | Diseño, requerimientos e historias (este repo) | — |
+| [`core-service`](https://github.com/vida-I-found-it/core-service) | `core` | API pública: alertas, suscripciones, precios y análisis | [core](docs/guides/core.md) |
+| [`schedule-service`](https://github.com/vida-I-found-it/schedule-service) | `schedule` | Jobs de captura, franjas horarias y despacho al scraper | [schedule](docs/guides/schedule.md) |
+| [`scraper-service`](https://github.com/vida-I-found-it/scraper-service) | `scraper` | Extracción del precio de una URL con su cascada de estrategias | [scraper](docs/guides/scraper.md) |
+| [`notify-service`](https://github.com/vida-I-found-it/notify-service) | `notify` | Envío de correos con plantillas | [notify](docs/guides/notify.md) |
+| [`foundit-web-app`](https://github.com/vida-I-found-it/foundit-web-app) | frontend | Landing y board de la aplicación (React) | [frontend](docs/guides/frontend.md) |
+
+En local, todos los repositorios viven como carpetas hermanas de este.
+
+## 📚 Documentación
+
+Todo vive en [`docs/`](docs/README.md). Lectura sugerida:
+
+| Tema | Documento | Contenido |
+|------|-----------|-----------|
+| Contexto | [Visión y objetivos](docs/00-context/vision-goals.md) | Problema, glosario, módulos y no-objetivos |
+| Contexto | [Entregable 01](docs/00-context/deliverable01.md) | Documento de entrega del ejercicio |
+| Requerimientos | [Requerimientos del ejercicio](docs/requirements/requirements.md) | Casos de uso, reglas y decisiones `DEC-*` vigentes |
+| Requerimientos | [Historias de usuario](docs/requirements/user-stories/README.md) | Criterios de aceptación y guía de implementación por repositorio |
+| Arquitectura | [Arquitectura](docs/architecture/architecture.md) y [arquitectura general](docs/architecture/general-architecture.md) | Piezas, comunicación, configuración y despliegue |
+| Arquitectura | [Flujo de scraping](docs/architecture/scraping-flow.md) | Una corrida de alerta, de punta a punta |
+| Arquitectura | [ADR](docs/architecture/adr/README.md) | Decisiones de arquitectura con su porqué |
+| Datos | [Modelo de datos](docs/data/data-model.md) y [scripts](docs/data/scripts/README.md) | Diagrama ER, PostgreSQL por esquema y MongoDB |
+| Pruebas | [Estrategia](docs/testing/strategy.md) y [trazabilidad](docs/testing/traceability.md) | Niveles de prueba y matriz criterio → caso de prueba |
+| Herramientas | [Stack tecnológico](docs/tools/tech-stack.md) | Tecnologías y por qué |
+| Contexto | [Pendientes](docs/00-context/pending.md), [roadmap](docs/00-context/roadmap.md) y [consideraciones legales](docs/00-context/legal-considerations.md) | Lo que falta decidir, fases y política de scraping |
+| Historia | [Requerimientos originales](docs/requirements/original-requirements.md) y [preguntas de Alcance 1](docs/00-context/scope-1-questions.md) | Versión del proyecto completo, antes del recorte del ejercicio |
 
 Las reglas para trabajar con IA en este proyecto están en [`CLAUDE.md`](CLAUDE.md) (se copia a cada repositorio).
 
-## Agentes de Claude Code
+## 🤖 Agentes de Claude Code
 
 Este repo trae agentes especializados en `.claude/agents/` (ficha completa y roster en [`.claude/rules/claude-config-guide.md`](.claude/rules/claude-config-guide.md)). No son un comando aparte: se piden en el chat y Claude Code los ejecuta como subagente, con su propio contexto, herramientas y modelo.
 
@@ -61,7 +140,7 @@ Este repo trae agentes especializados en `.claude/agents/` (ficha completa y ros
 | `backend-developer` | Implementa un requerimiento de backend (API, workers, migraciones) con tests y verificación; propone patrones y arquitectura. | *"Usa backend-developer para `<ID>`."* |
 | `frontend-developer` | Implementa pantallas y flujos con accesibilidad, estados de carga/error e i18n, y los prueba en el navegador. | *"Usa frontend-developer para `<ID>`."* |
 
-Con `architect`, dale un alcance concreto (un componente, un ADR, una pregunta de [doc 09](docs/00-context/pending.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
+Con `architect`, dale un alcance concreto (un componente, un ADR, una pregunta de los [pendientes](docs/00-context/pending.md)) — no le pidas "revisa toda la arquitectura" de una vez. Propone con un ADR en estado **🟡 Propuesta** cuando amerita; nunca aplica un cambio a una decisión ya cerrada sin que el humano lo apruebe.
 
 **Nombres de los agentes.** Los identificadores están en inglés (coinciden con el nombre del archivo en `.claude/agents/` y con el campo `name`). Si encuentras un nombre antiguo en un chat o documento viejo, esta es la equivalencia:
 
@@ -81,15 +160,16 @@ Todos corren con `effort: medium`. El modelo está fijado en el campo `model:` d
 
 > Si acabas de crear o editar un agente, abre `/hooks` (o reinicia la sesión) para que Claude Code lo cargue.
 
-## Decisiones vigentes
+## ✅ Decisiones vigentes
 
-- **Backend:** Python 3.12+ · FastAPI · SQLAlchemy + Alembic · Playwright/httpx · Redis + Arq · APScheduler.
-- **Datos:** PostgreSQL (+ JSONB) y MongoDB (estado de jobs, log de notificaciones, capturas).
-- **Frontend:** React + Vite + TypeScript + shadcn/ui, en español con andamiaje i18n.
-- **Organización:** **polyrepo**, contenedores con Docker Compose, portable a free tier (Oracle Cloud / GCP) sin lock-in.
-- **Email:** SMTP propio con plantilla única.
+- **Backend:** Python 3.12+ · FastAPI · SQLAlchemy · httpx · Playwright (en el scraper). El esquema de cada base sale de los scripts SQL de [`docs/data/scripts`](docs/data/scripts/README.md).
+- **Programación de corridas:** el motor de `schedule` guarda `next_run_at` en PostgreSQL y los workers toman lo vencido con `FOR UPDATE SKIP LOCKED`; sin cola externa.
+- **Datos:** PostgreSQL 16 con un esquema y un rol por pieza, sin claves foráneas entre esquemas; MongoDB para resultados crudos e intentos.
+- **Frontend:** React + Vite + TypeScript + Tailwind, en español con textos centralizados para i18n.
+- **Organización:** **polyrepo**, contenedores con Docker, todo local en esta versión.
+- **Email:** SMTP con plantillas versionadas en `notify`.
 
-> Si algo cambia, se actualiza aquí y en el doc correspondiente.
+> Si algo cambia, se actualiza aquí y en el documento correspondiente.
 
 ---
 *Proyecto en construcción — la documentación evoluciona con cada nuevo requerimiento.*
