@@ -290,6 +290,30 @@
 | US-07-05 | RNF-4, RNF-7 | US-07-05-AC3 | — | unitaria, integración | Sin implementar |
 | US-07-05 | RNF-4, RNF-7 | US-07-05-AC4 | — | por definir | Sin implementar |
 | US-07-05 | RNF-4, RNF-7 | US-07-05-AC5 | — | unitaria, integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC1 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC2 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC3 | — | unitaria, integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC4 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC5 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC6 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC7 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC8 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC9 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC10 | — | integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC11 | — | unitaria, integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC12 | — | unitaria, integración | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC13 | — | medición local | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC14 | — | unitaria | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC15 | — | unitaria, E2E | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC16 | — | unitaria, E2E | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC17 | — | unitaria | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC18 | — | unitaria | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC19 | — | unitaria | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC20 | — | unitaria | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC21 | — | unitaria | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC22 | — | unitaria | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC23 | — | unitaria, E2E | Sin implementar |
+| US-07-06 | VIS-1, FE-4, RNF-4, RNF-7 | US-07-06-AC24 | — | unitaria | Sin implementar |
 
 ## CU-08 · Ver histórico y comparar sitios
 
@@ -431,8 +455,8 @@
 | CU-04 | 57 | 57 | 0 |
 | CU-05 | 54 | 54 | 0 |
 | CU-06 | 43 | 20 | 23 |
-| CU-07 | 39 | 36 | 3 |
+| CU-07 | 63 | 60 | 3 |
 | CU-08 | 32 | 29 | 3 |
 | CU-10 | 46 | 31 | 15 |
 | CU-11 | 31 | 17 | 14 |
-| **Total CU-03 a CU-11** | **344** | **285** | **59** |
+| **Total CU-03 a CU-11** | **368** | **309** | **59** |
