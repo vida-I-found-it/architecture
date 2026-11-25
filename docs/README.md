@@ -1,6 +1,6 @@
 # docs · Documentación del proyecto (docs-as-code)
 
-> **Estado:** estructura piloto. Se trabaja **solo con la versión de `use-cases/`** (CU-02..CU-08, CU-10, CU-11). El original en `docs_/` (antes `docs/`) **no se modifica**: aquí viven **copias** organizadas por este marco. La carpeta `use-cases/` ya se migró aquí y se eliminó (sigue en el historial de git, commit `b1b0db5`).
+> **Estado:** estructura piloto. Se trabaja **solo con la versión de `use-cases/`** (CU-02..CU-08, CU-10, CU-11). La documentación original (`docs_/`) se retiró el 2026-11-25: su contenido vive aquí, actualizado, y la versión anterior sigue en el historial de git. La carpeta `use-cases/` ya se migró aquí y se eliminó (sigue en el historial de git, commit `b1b0db5`).
 
 ## Cómo se usa
 
