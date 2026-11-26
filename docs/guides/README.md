@@ -1,6 +1,10 @@
 # Guías
 
-> Pendiente. Aquí van los *cómo se hace*: levantar el entorno local, correr las pruebas, runbooks. Una guía por tarea, con pasos verificables.
+> Aquí van los *cómo se hace*: levantar el entorno local, correr las pruebas, runbooks. Una guía por tarea, con pasos verificables.
+
+## Guías de operación
+
+- [`local-environment.md`](local-environment.md): levantar todas las piezas juntas con docker-compose (INF-2). El código vive en [`infra/local/`](../../infra/local/).
 
 ## Guías de arranque por repositorio
 

@@ -1,0 +1,223 @@
+# Full local environment of I Found It (INF-2, "solo local"): every piece that exists today, wired
+# as the deployment view says (docs/architecture/architecture.md#vista-de-despliegue).
+#
+#   ./gen-env.sh                                   # once: writes .env with throwaway test values
+#   docker compose up -d --build --wait            # http://127.0.0.1:5173 (frontend) · :8000 (core)
+#   docker compose down                            # erases both databases (tmpfs)
+#
+# Pieces: frontend · core · schedule (API + worker) · scraper · PostgreSQL 16 · MongoDB 8.0.
+# notify (and its test SMTP) joins when notify-service has code; auth is not part of the exercise.
+# Each service keeps its own compose as a building block; this file only builds them from the
+# sibling repos (IFI_REPOS_DIR, default: the folder that holds `architecture`).
+#
+# Networks (who can talk to whom):
+#   web      (bridge)   frontend, core          -> the only one with published ports (127.0.0.1)
+#   backend  (internal) core, schedule, worker, db, mongo
+#   scraping (internal) schedule, worker, scraper -> the only edge between the scraper and the rest
+#   egress   (bridge)   scraper                  -> the only piece that reaches the internet
+# The scraper shares no network with core or the databases (SSRF defence in depth, SCR-18).
+
+name: ifoundit
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+x-schedule-env: &schedule-env
+  DATABASE_URL: postgresql+psycopg://schedule_service:${SCHEDULE_DB_PASSWORD}@db:5432/ifoundit
+  MONGO_URL: mongodb://schedule_service:${SCHEDULE_MONGO_PASSWORD}@mongo:27017/schedule?authSource=schedule
+  MONGO_DATABASE: schedule
+  JOB_SYSTEM: ifoundit
+  SCHEDULE_BASE_URL: http://schedule:8000            # the scraper calls back here (scraping network)
+  SCRAPER_URL: http://scraper:8001
+  CORE_JOB_DETAIL_URL: http://core:8000/api/internal/job-detail
+  SCHEDULE_CALLBACK_ALLOWLIST: http://core:8000       # schedule only delivers results to core
+  SCHEDULE_SCRAPE_WINDOWS: ${SCHEDULE_SCRAPE_WINDOWS:-04:00-06:00,18:00-20:00}
+
+services:
+  # ---------------------------------------------------------------- data
+  db:
+    image: postgres:16
+    user: postgres            # no gosu/chown at start, so no capability is needed
+    <<: *hardening
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: ifoundit
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?run ./gen-env.sh}
+      CORE_DB_PASSWORD: ${CORE_DB_PASSWORD:?run ./gen-env.sh}
+      SCHEDULE_DB_PASSWORD: ${SCHEDULE_DB_PASSWORD:?run ./gen-env.sh}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+      - ../../docs/data/scripts:/sql:ro                # single source of truth for the schemas
+    tmpfs:
+      - /var/lib/postgresql/data:mode=1777
+      - /var/run/postgresql:mode=1777
+      - /tmp
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 200
+    networks: [backend]       # no published port
+    healthcheck:
+      # Over TCP on purpose: the temporary server of the init only listens on the socket,
+      # so this turns healthy once the init (roles + both schemas) has finished.
+      test: ["CMD-SHELL", "pg_isready -U schedule_service -d ifoundit -h 127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  mongo:
+    image: mongo:8.0
+    user: "999:999"           # mongodb user of the image: no chown at start, no capability needed
+    <<: *hardening
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?run ./gen-env.sh}
+      SCHEDULE_MONGO_PASSWORD: ${SCHEDULE_MONGO_PASSWORD:?run ./gen-env.sh}
+    volumes:
+      # Reuses schedule-service's own init (creates schedule_service, applies its mongo-setup.js).
+      - ${IFI_REPOS_DIR:-../../..}/schedule-service/docker/mongo-init:/docker-entrypoint-initdb.d:ro
+      - ../../docs/data/scripts:/sql:ro
+    tmpfs:
+      - /data/db:mode=1777
+      - /data/configdb:mode=1777
+      - /tmp:mode=1777
+      - /home/mongodb:mode=1777   # mongosh writes its history/logs here during init
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 300
+    networks: [backend]       # no published port; only schedule uses MongoDB in the exercise
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  # ---------------------------------------------------------------- scraping
+  scraper:
+    build: ${IFI_REPOS_DIR:-../../..}/scraper-service
+    image: i-found-it/scraper-service:local
+    <<: *hardening
+    environment:
+      SCRAPER_ENV: development
+      SCRAPER_LOG_FORMAT: json
+      SCRAPER_CALLBACK_ALLOWLIST: http://schedule:8000  # only schedule may receive its results
+    tmpfs:
+      - /tmp
+      - /home/pwuser          # Chromium writes its profile and crash dumps here
+    shm_size: 512m            # Chromium needs more than the default 64 MB of /dev/shm
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 300
+    networks: [scraping, egress]   # no published port
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/scraper/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  schedule:
+    build: ${IFI_REPOS_DIR:-../../..}/schedule-service
+    image: i-found-it/schedule-service:local
+    <<: *hardening
+    depends_on:
+      db:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment: *schedule-env
+    tmpfs: [/tmp]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 100
+    networks: [backend, scraping]  # no published port (SCH-11: schedule has no public route)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/schedule/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    image: i-found-it/schedule-service:local   # same image as `schedule`, built once
+    command: ["python", "-m", "schedule_service.worker"]
+    <<: *hardening
+    depends_on:
+      schedule:
+        condition: service_healthy
+      scraper:
+        condition: service_healthy
+    environment: *schedule-env
+    tmpfs: [/tmp]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 100
+    networks: [backend, scraping]  # reads PostgreSQL, asks core for job detail, sends URLs to the scraper
+
+  # ---------------------------------------------------------------- business API and UI
+  core:
+    build: ${IFI_REPOS_DIR:-../../..}/core-service
+    image: i-found-it/core-service:local
+    <<: *hardening
+    depends_on:
+      db:
+        condition: service_healthy
+      schedule:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://core_service:${CORE_DB_PASSWORD}@db:5432/ifoundit
+      FIXED_USER_ID: ${FIXED_USER_ID:?run ./gen-env.sh}
+      ALERT_CREATION_MODES: url
+      CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      SCHEDULE_URL: http://schedule:8000
+      CORE_RUN_COMPLETED_URL: http://core:8000/api/internal/run-completed
+      SCHEDULE_SCRAPE_WINDOWS: ${SCHEDULE_SCRAPE_WINDOWS:-04:00-06:00,18:00-20:00}
+    ports:
+      - "127.0.0.1:8000:8000" # never 0.0.0.0: the API has no authentication in the exercise
+    tmpfs: [/tmp]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 100
+    networks: [backend, web]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ${IFI_REPOS_DIR:-../../..}/foundit-web-app
+      args:
+        # Baked in by Vite at build time: the browser (not this container) calls core here.
+        VITE_API_BASE_URL: http://127.0.0.1:8000
+    image: i-found-it/foundit-web-app:local
+    <<: *hardening
+    depends_on:
+      core:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5173:5173" # never 0.0.0.0
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 50
+    networks: [web]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  web: {}                     # published ports live here: Docker does not publish from an internal network
+  backend:
+    internal: true            # no route to the internet from the databases, core<->schedule traffic
+  scraping:
+    internal: true            # only schedule/worker <-> scraper
+  egress: {}                  # internet access, scraper only
