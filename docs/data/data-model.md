@@ -365,6 +365,7 @@ erDiagram
         string currency "Código de moneda original, ISO 4217 (null si COP) — ref. informativa"
         date exchange_rate_date "🔗 Fecha de la tasa → NoSQL exchange_rate (null si COP)"
         bool in_stock "Disponibilidad informada (null si no se informa)"
+        string error_code "Motivo de no_price o error, del scraper o del descarte de core (máx. 64; null si ok) · CU-05 D5-4"
     }
     PRICE_ANOMALY {
         int alert_url_id PK, FK "Chequeo evaluado (FK compuesta con checked_at)"

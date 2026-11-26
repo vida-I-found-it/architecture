@@ -119,7 +119,9 @@ CREATE TABLE ALERT_SNAPSHOT (
     CURRENCY            text REFERENCES CURRENCY(CODE), -- null si COP
     EXCHANGE_RATE_DATE  date,                   -- 🔗 Mongo exchange_rate (null si COP)
     IN_STOCK            boolean,                -- stock informado; null si el sitio no lo informa (DEC-21). El análisis no lo usa (DEC-22)
+    ERROR_CODE          text CHECK (char_length(ERROR_CODE) <= 64), -- motivo de `no_price`/`error` (scraper o descarte de core, CU-05 D5-4); null si `ok`
     -- Solo un `ok` trae precio; `no_price` y `error` no traen ningún dato de precio.
+    CHECK (STATUS <> 'ok' OR ERROR_CODE IS NULL),
     CHECK ((STATUS = 'ok') = (PRICE_COP IS NOT NULL)),
     CHECK (STATUS = 'ok' OR (STRATEGY IS NULL AND LIST_PRICE_COP IS NULL AND PRICE_VALID_UNTIL IS NULL
                              AND PRICE_ORIGINAL IS NULL AND CURRENCY IS NULL AND IN_STOCK IS NULL)),
