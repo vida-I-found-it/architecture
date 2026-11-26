@@ -19,7 +19,7 @@
 | [`data/`](data/) | [Modelo de datos](data/data-model.md) y [esquemas SQL/Mongo](data/scripts/) | `dba`, `backend-developer` |
 | [`api/`](api/) | Contratos OpenAPI por pieza (pendiente) | `backend-developer`, `qa` |
 | [`testing/`](testing/) | [Estrategia](testing/strategy.md), [casos de prueba](testing/test-cases/) y [trazabilidad](testing/traceability.md) | `qa` |
-| [`guides/`](guides/) | Cómo se hace (setup local, correr pruebas, runbooks) | `devops` |
+| [`guides/`](guides/) | Cómo se hace ([entorno local completo](guides/local-environment.md), correr pruebas, runbooks). El código de infraestructura no vive en `docs/`, sino en [`infra/`](../infra/) | `devops` |
 | [`tools/`](tools/) | [Stack tecnológico](tools/tech-stack.md) y convenciones | `devops` |
 | [`templates/`](templates/) | Formato de [historia](templates/user-story.md), [caso de prueba](templates/test-case.md) y [ADR](templates/adr.md) | todos |
 
