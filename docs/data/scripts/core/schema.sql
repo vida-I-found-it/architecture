@@ -132,6 +132,11 @@ CREATE INDEX IX_ALERT_SNAPSHOT_OK ON ALERT_SNAPSHOT(ALERT_URL_ID, CHECKED_AT DES
 
 CREATE TABLE ALERT_SNAPSHOT_2026 PARTITION OF ALERT_SNAPSHOT
     FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+-- 2027 se crea a mano (2026-11-26) mientras el job de particiones sigue pendiente:
+-- sin ella, todo chequeo desde el 2027-01-01 falla al insertarse (CU-07 #20, CU-08 #12).
+-- Sin partición DEFAULT a propósito: un chequeo fuera de rango debe fallar a la vista, no esconderse.
+CREATE TABLE ALERT_SNAPSHOT_2027 PARTITION OF ALERT_SNAPSHOT
+    FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
 
 -- Veredicto de «caída anómala» (R9, DEC-18, ADR-0005). Append-only y aparte del
 -- chequeo: cambiar de estrategia agrega filas, nunca reescribe las anteriores.
