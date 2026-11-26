@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: core-service · dashboard e histórico (lectura)
+  version: 0.1.0
+  description: |
+    Contrato de las lecturas de CU-07 (dashboard) y CU-08 (histórico), según las decisiones D-1 a D-10
+    aprobadas el 2026-11-26 (registradas en las preguntas abiertas de CU-07 y CU-08).
+    Reglas comunes:
+    - Fechas en UTC, ISO 8601 (D-5).
+    - Precios en COP como cadena decimal con 2 decimales, nunca float (D-6).
+    - Correos siempre enmascarados en el backend (RNF-4).
+    - Texto del sitio o del usuario como texto plano (RNF-6, DEC-28).
+    - Sin sesión en esta versión: es un riesgo aceptado solo en local (CU-07 #21).
+servers:
+  - url: http://127.0.0.1:8000
+    description: Entorno local (infra/local)
+paths:
+  /api/alerts:
+    get:
+      operationId: listAlerts
+      summary: Lista de alertas (US-07-01)
+      description: Orden por created_at descendente. Sin filtro por usuario en esta versión (D-7). Incluye las alertas inactive con su estado (D-8).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        "200":
+          description: Lista, posiblemente vacía
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AlertList"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /api/alerts/{alert_id}:
+    get:
+      operationId: getAlert
+      summary: Detalle de la alerta con precios (US-07-02 a US-07-05; amplía US-07-06)
+      description: Solo agrega campos a la respuesta de US-07-06; no quita ninguno. Las URLs son solo las activas (D-8). Solo lectura.
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "200":
+          description: Detalle
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AlertDetail"}
+        "404": {$ref: "#/components/responses/AlertNotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /api/alerts/{alert_id}/price-history:
+    get:
+      operationId: getPriceHistory
+      summary: Histórico y comparador de sitios (CU-08)
+      description: |
+        Todos los chequeos del rango, incluidos no_price y error como puntos sin precio (D-3).
+        Rango por defecto: los 30 días anteriores a "to" (y "to" por defecto es ahora). Máximo 366 días (D-2).
+        Incluye las URLs inactivas con is_active false (D-8).
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+        - name: from
+          in: query
+          required: false
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          required: false
+          schema: {type: string, format: date-time}
+      responses:
+        "200":
+          description: Series por URL
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PriceHistory"}
+        "404": {$ref: "#/components/responses/AlertNotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+components:
+  parameters:
+    AlertId:
+      name: alert_id
+      in: path
+      required: true
+      schema: {type: integer, minimum: 1, maximum: 2147483647}
+  responses:
+    AlertNotFound:
+      description: La alerta no existe
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: {code: alert_not_found, message: La alerta no existe., details: []}}
+    ValidationError:
+      description: Parámetro con formato inválido (id fuera de rango, from > to, rango > 366 días, limit fuera de rango)
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    Error:
+      description: Formato de error de todo core (D-1). Sin trazas ni SQL.
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code: {type: string, description: Código estable, en inglés}
+            message: {type: string, description: Mensaje legible, en español}
+            details: {type: array, items: {type: object}}
+    Money:
+      description: Precio en COP como cadena decimal con 2 decimales (D-6)
+      type: string
+      pattern: "^[0-9]{1,12}\\.[0-9]{2}$"
+      examples: ["1099000.00"]
+    AlertStatus:
+      type: string
+      enum: [active, inactive]
+    CheckStatus:
+      type: string
+      enum: [ok, no_price, error]
+    AlertList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AlertListItem"}
+    AlertListItem:
+      type: object
+      required: [id, title, product_name, status, created_at]
+      properties:
+        id: {type: integer}
+        title: {type: string}
+        product_name: {type: string}
+        status: {$ref: "#/components/schemas/AlertStatus"}
+        created_at: {type: string, format: date-time}
+    Anomaly:
+      description: Veredicto de la estrategia activa (ANOMALY_STRATEGY y ANOMALY_STRATEGY_VERSION, D-9) sobre el último chequeo ok
+      type: object
+      required: [is_anomalous, reason]
+      properties:
+        is_anomalous: {type: boolean}
+        reason:
+          type: string
+          enum: [ok, first_capture, insufficient_sample, no_dispersion, outlier]
+    BestPrice:
+      type: object
+      required: [alert_url_id, price_cop, checked_at]
+      properties:
+        alert_url_id: {type: integer}
+        price_cop: {$ref: "#/components/schemas/Money"}
+        checked_at: {type: string, format: date-time}
+    AlertUrlDetail:
+      type: object
+      required: [id, url, domain, last_title, last_checked_at, last_status, last_ok_at, price_cop, in_stock, is_best, anomaly]
+      properties:
+        id: {type: integer}
+        url: {type: string}
+        domain: {type: string}
+        last_title: {type: [string, "null"], description: Texto del sitio, no confiable; se muestra como texto}
+        last_checked_at: {type: [string, "null"], format: date-time}
+        last_status:
+          oneOf:
+            - {$ref: "#/components/schemas/CheckStatus"}
+            - {type: "null"}
+        last_ok_at: {type: [string, "null"], format: date-time}
+        price_cop:
+          description: Último precio ok
+          oneOf:
+            - {$ref: "#/components/schemas/Money"}
+            - {type: "null"}
+        in_stock: {type: [boolean, "null"], description: null = el sitio no lo informa (DEC-21)}
+        is_best: {type: boolean}
+        anomaly:
+          description: null = sin evaluar
+          oneOf:
+            - {$ref: "#/components/schemas/Anomaly"}
+            - {type: "null"}
+    Subscription:
+      type: object
+      required: [email_masked, status]
+      properties:
+        email_masked: {type: string, examples: ["a***@dominio.com"]}
+        status: {type: string, enum: [active, unsubscribed]}
+    AlertDetail:
+      type: object
+      required: [id, status, created_at, title, product_name, notes, data_state, best_price, urls, subscriptions]
+      properties:
+        id: {type: integer}
+        status: {$ref: "#/components/schemas/AlertStatus"}
+        created_at: {type: string, format: date-time}
+        title: {type: string}
+        product_name: {type: string}
+        notes: {type: [string, "null"]}
+        data_state:
+          description: |
+            pending_first_capture = ninguna URL tiene chequeos.
+            stale = el último chequeo ok tiene más de 24 h, o hay chequeos pero ninguno ok.
+            fresh = en otro caso. Se calcula en el backend (US-07-03, DEC-17).
+          type: string
+          enum: [pending_first_capture, stale, fresh]
+        best_price:
+          description: null si ninguna URL activa tiene precio ok
+          oneOf:
+            - {$ref: "#/components/schemas/BestPrice"}
+            - {type: "null"}
+        urls:
+          type: array
+          items: {$ref: "#/components/schemas/AlertUrlDetail"}
+        subscriptions:
+          type: array
+          items: {$ref: "#/components/schemas/Subscription"}
+    HistoryPoint:
+      type: object
+      required: [checked_at, status, price_cop, in_stock, is_anomalous]
+      properties:
+        checked_at: {type: string, format: date-time}
+        status: {$ref: "#/components/schemas/CheckStatus"}
+        price_cop:
+          description: null si status no es ok
+          oneOf:
+            - {$ref: "#/components/schemas/Money"}
+            - {type: "null"}
+        in_stock: {type: [boolean, "null"]}
+        is_anomalous: {type: [boolean, "null"], description: null = sin evaluar o no aplica}
+    HistorySeries:
+      type: object
+      required: [alert_url_id, domain, is_active, min_price_cop, min_price_at, points]
+      properties:
+        alert_url_id: {type: integer}
+        domain: {type: string}
+        is_active: {type: boolean}
+        min_price_cop:
+          description: Mínimo precio ok de toda la historia de la URL, no solo del rango (D-4)
+          oneOf:
+            - {$ref: "#/components/schemas/Money"}
+            - {type: "null"}
+        min_price_at: {type: [string, "null"], format: date-time}
+        points:
+          description: Orden ascendente por checked_at; [] si no hay chequeos en el rango
+          type: array
+          items: {$ref: "#/components/schemas/HistoryPoint"}
+    PriceHistory:
+      type: object
+      required: [alert_id, from, to, series]
+      properties:
+        alert_id: {type: integer}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        series:
+          type: array
+          items: {$ref: "#/components/schemas/HistorySeries"}
