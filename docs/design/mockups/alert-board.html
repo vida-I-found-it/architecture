@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board de alertas</title>
+<!-- Mockup navegable (CU-07, CU-08). Datos sintéticos, sin red salvo las fuentes. Tokens copiados de foundit-web-app/src/styles/index.css -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:oklch(0.985 0.004 90);--surface:oklch(1 0 0);--fg:oklch(0.2 0.01 90);--muted:oklch(0.48 0.01 90);
+  --border:oklch(0.9 0.006 90);--accent:oklch(0.75 0.16 60);--accent-fg:oklch(0.2 0.03 60);--accent-text:oklch(0.5 0.14 50);
+  --grid-line:oklch(0.2 0.01 90 / 0.06);--skel:oklch(0.2 0.01 90 / 0.07);--skel-hi:oklch(0.2 0.01 90 / 0.13);
+  --s1:#0072b2;--s2:#d55e00;--s3:#009e73;--s4:#cc79a7;--s5:#e69f00;--s6:#56b4e9;--s7:#7a6a00;--s8:#555;
+  --warn:#b45309;--ok:#047857;
+  --font-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --font-sans:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:oklch(0.16 0.006 260);--surface:oklch(0.2 0.008 260);--fg:oklch(0.96 0.004 90);--muted:oklch(0.72 0.01 260);
+  --border:oklch(0.3 0.01 260);--accent:oklch(0.8 0.15 65);--accent-text:oklch(0.82 0.14 65);
+  --grid-line:oklch(1 0 0 / 0.06);--skel:oklch(1 0 0 / 0.06);--skel-hi:oklch(1 0 0 / 0.12);
+  --s1:#56b4e9;--s2:#e69f00;--s3:#2dd4a7;--s4:#e5a6c9;--s5:#f0c35a;--s6:#9fd4f5;--s7:#d9c86a;--s8:#bbb;
+  --warn:#f59e0b;--ok:#34d399;color-scheme:dark;
+}
+*{box-sizing:border-box;border-radius:0}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:16px;line-height:1.5}
+h1,h2,h3{font-family:var(--font-display);margin:0;letter-spacing:-0.01em}
+button,select,input{font:inherit;color:inherit}
+.mono{font-family:var(--font-mono)}
+.muted{color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Cabecera igual al board actual */
+header{border-bottom:1px solid color-mix(in oklch,var(--border) 60%,transparent);background:var(--bg)}
+/* padding derecho: deja libre el riel del panel, que va fijo sobre el borde derecho */
+.bar{display:flex;align-items:center;gap:24px;min-height:64px;padding:8px 64px 8px 28px;flex-wrap:wrap}
+.theme-btn{margin-left:auto}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600}
+.brand i{display:grid;place-items:center;width:32px;height:32px;background:var(--accent);color:var(--accent-fg);font-style:normal}
+nav ul{display:flex;gap:4px;list-style:none;margin:0;padding:0;flex:1}
+nav a{display:inline-flex;gap:8px;padding:8px 12px;font-size:14px;color:var(--muted);text-decoration:none}
+nav a[aria-current=page]{color:var(--fg);font-weight:600;text-decoration:underline;text-underline-offset:8px}
+.btn{border:1px solid var(--border);background:var(--surface);padding:6px 12px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--muted)}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.soon{border:1px solid var(--border);padding:0 6px;font-size:12px}
+
+/* Layout: contenido + panel derecho colapsable */
+/* El board usa todo el ancho; el panel es un cajón fijo a la derecha que se superpone al expandirse.
+   Colapsado deja un riel de 40 px, así que el contenido reserva ese espacio y nada queda tapado. */
+.layout{padding:24px 64px 48px 28px;display:block}
+.scrim{position:fixed;inset:0;background:oklch(0 0 0 / .28);z-index:19;opacity:0;pointer-events:none;transition:opacity .2s}
+.layout:not(.collapsed) .scrim{opacity:1;pointer-events:auto}
+@media (prefers-reduced-motion:reduce){.scrim,aside{transition:none}}
+.row2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);gap:20px;align-items:start}
+@media (max-width:1200px){.row2{grid-template-columns:1fr}}
+.content{min-width:0}
+aside{position:fixed;top:0;right:0;bottom:0;z-index:20;width:clamp(280px,20vw,320px);border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;box-shadow:-12px 0 32px oklch(0 0 0 / .16);transition:width .2s}
+.collapsed aside{width:40px;box-shadow:none}
+.p-head{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--border)}
+.p-head h2{font-size:16px;flex:1}
+.collapsed .p-head h2,.collapsed .p-body,.collapsed .p-search{display:none}
+.collapsed .p-head{flex-direction:column;padding:8px 4px;border-bottom:0}
+.collapsed .p-head .btn{width:30px;padding:4px 0;justify-content:center}
+.new-alert{text-decoration:none;font-weight:600}
+.collapsed .new-alert .lbl{display:none}
+.rail-count{display:none;writing-mode:vertical-rl;font-size:13px;color:var(--muted);margin-top:8px}
+.collapsed .rail-count{display:block}
+.p-search{padding:10px 12px;border-bottom:1px solid var(--border)}
+.p-search input{width:100%;border:1px solid var(--border);background:var(--bg);padding:6px 10px;font-size:14px}
+.p-body{overflow:auto;padding:4px 0}
+.p-body ul{list-style:none;margin:0;padding:0}
+.alert-item{width:100%;text-align:left;border:0;border-left:3px solid transparent;background:none;padding:10px 12px;cursor:pointer;display:grid;gap:2px}
+.alert-item:hover{background:var(--bg)}
+.alert-item[aria-current=true]{border-left-color:var(--accent);background:color-mix(in oklch,var(--accent) 10%,var(--surface))}
+.alert-item .t{font-weight:600;font-size:15px;display:flex;gap:6px;align-items:center}
+.alert-item .m{font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{font-size:12px;padding:0 6px;border:1px solid currentColor;white-space:nowrap}
+.b-fresh{color:var(--ok)}.b-stale{color:var(--warn)}.b-pending{color:var(--muted)}.b-inactive{color:var(--muted)}
+.anom{color:var(--warn);font-weight:700}
+.p-empty{padding:16px 12px;color:var(--muted);font-size:14px}
+.mobile-pick{display:none}
+
+/* Contenido */
+.card{border:1px solid var(--border);background:var(--surface);padding:20px}
+.stack>*+*{margin-top:20px}
+.title-row{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:end}
+.title-row h1{font-size:28px;line-height:1.15}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.kpi{border:1px solid var(--border);background:var(--surface);padding:14px 16px}
+.kpi .l{font-size:13px;color:var(--muted)}
+.kpi .v{font-family:var(--font-display);font-size:24px;font-weight:700}
+.kpi .s{font-size:13px;color:var(--muted)}
+.chart-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--border)}
+.seg button{border:0;background:none;padding:6px 12px;font-size:14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.seg button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
+.seg button[disabled]{color:var(--muted);cursor:not-allowed}
+.chart-wrap{position:relative;margin-top:12px}
+svg.chart{width:100%;height:auto;display:block;cursor:crosshair}
+svg.chart:focus-visible{outline:2px solid var(--accent-text)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}
+.legend button{border:1px solid var(--border);background:none;padding:4px 10px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.legend button[aria-pressed=false]{opacity:.45;text-decoration:line-through}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--fg);padding:10px 12px;font-size:13px;min-width:220px;box-shadow:0 6px 24px oklch(0 0 0 / .12);z-index:5}
+.tip .h{font-weight:600;font-size:14px}
+.tip dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0 0}
+.tip dt{color:var(--muted)}.tip dd{margin:0}
+.tip .price{font-family:var(--font-display);font-size:20px;font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:13px}
+td.num{font-family:var(--font-mono);white-space:nowrap}
+.notice{border:1px solid var(--warn);color:var(--fg);padding:10px 12px;font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.notice.err{border-color:var(--s2)}
+.empty{padding:48px 20px;text-align:center;color:var(--muted)}
+.subs ul{list-style:none;margin:8px 0 0;padding:0}
+.sub{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.sub:last-child{border-bottom:0}
+.av{display:grid;place-items:center;width:36px;height:36px;background:color-mix(in oklch,var(--accent) 22%,var(--surface));font-family:var(--font-display);font-weight:700}
+.who{display:grid;min-width:0}.who .mono{overflow:hidden;text-overflow:ellipsis}
+.ch{font-size:12px}
+.hint{margin:8px 0 0;padding:10px 12px;background:var(--bg);border-left:3px solid var(--accent);font-size:14px}
+
+/* Skeletons */
+.sk{background:linear-gradient(90deg,var(--skel) 0%,var(--skel-hi) 40%,var(--skel) 80%);background-size:300% 100%;animation:sh 1.3s ease-in-out infinite}
+@keyframes sh{0%{background-position:100% 0}100%{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+.sk-line{height:14px;margin:6px 0}
+.sk-title{height:30px;width:60%}
+.sk-kpi{height:88px}
+.sk-chart{height:300px}
+.sk-row{height:36px;margin:6px 0}
+
+.demo{padding:0 28px 24px;font-size:13px;color:var(--muted)}
+.demo label{margin-right:16px}
+
+@media (max-width:820px){
+  .layout{padding:20px 16px 40px}
+  .bar{padding:8px 16px}
+  aside,.scrim{display:none}
+  .mobile-pick{display:flex;gap:8px;margin-bottom:16px}
+  .mobile-pick select{flex:1;border:1px solid var(--border);background:var(--surface);padding:8px}
+}
+</style>
+</head>
+<body>
+<a class="sr-only" href="#contenido">Saltar al contenido</a>
+<header>
+  <div class="bar">
+    <span class="brand"><i aria-hidden="true">⌕</i>I Found It</span>
+    <!-- Sin menú: el board es la única pantalla; «Crear alerta» vive en el panel -->
+    <button class="btn theme-btn" id="theme" type="button" aria-label="Cambiar tema">◐ Tema</button>
+  </div>
+</header>
+
+<div class="layout collapsed" id="layout">
+  <div class="scrim" id="scrim" aria-hidden="true"></div>
+  <main class="content" id="contenido" aria-live="polite">
+    <div class="mobile-pick"><label class="sr-only" for="mpick">Alerta</label><select id="mpick"></select><a class="btn primary new-alert" href="#crear" aria-label="Crear alerta">＋</a></div>
+    <div id="view"></div>
+  </main>
+
+  <!-- En el DOM va antes que el gráfico en el orden de tabulación gracias a tabindex natural: el panel se recorre primero -->
+  <aside id="panel" aria-label="Alertas">
+    <div class="p-head">
+      <button class="btn" id="collapse" type="button" aria-expanded="false" aria-controls="pbody" title="Expandir panel de alertas">⟨</button>
+      <h2>Alertas</h2>
+      <!-- «Crear alerta» sale del menú y vive aquí; con el panel colapsado queda solo el «+» -->
+      <a class="btn primary new-alert" href="#crear" title="Crear alerta" aria-label="Crear alerta">＋<span class="lbl"> Crear alerta</span></a>
+      <span class="rail-count" id="railcount"></span>
+    </div>
+    <div class="p-search"><label class="sr-only" for="q">Buscar alerta</label><input id="q" type="search" placeholder="Buscar por título…" autocomplete="off"></div>
+    <div class="p-body" id="pbody"></div>
+  </aside>
+</div>
+
+<div class="demo">
+  Controles del mockup (no son parte del producto):
+  <label><input type="checkbox" id="slow" checked> Simular carga (skeleton)</label>
+  <label><input type="checkbox" id="fail"> Simular error de red</label>
+</div>
+
+<script>
+"use strict";
+// ---------- Datos sintéticos (nunca reales) ----------
+const DAY = 864e5, NOW = Date.UTC(2026, 10, 26, 15, 0);
+function rng(seed){ return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
+function makeSeries(id, domain, title, base, seed, opts = {}){
+  const r = rng(seed), pts = []; let price = base;
+  for (let d = 30; d >= 0; d--){
+    for (const h of [opts.h1 ?? 10, opts.h2 ?? 22]){
+      const t = NOW - d*DAY + (h - 15)*36e5 + Math.round(r()*40)*6e4;
+      if (t > NOW) continue;
+      if (r() < 0.12) price = Math.max(base*0.8, Math.round((price*(0.94 + r()*0.1))/1000)*1000);
+      const x = r(); const status = x < 0.04 ? "error" : x < 0.07 ? "no_price" : "ok";
+      pts.push({checked_at: t, status, price_cop: status === "ok" ? price : null,
+        in_stock: status === "ok" ? (r() < 0.9 ? true : (r() < 0.5 ? false : null)) : null, is_anomalous: status === "ok" ? false : null});
+    }
+  }
+  if (opts.anomalyAt != null){ const p = pts[opts.anomalyAt]; p.status = "ok"; p.price_cop = Math.round(base*0.55/1000)*1000; p.is_anomalous = true; p.in_stock = true; }
+  // Ajuste a D-4: el mínimo histórico no cuenta los chequeos anómalos
+  const ok = pts.filter(p => p.status === "ok" && !p.is_anomalous);
+  const min = ok.reduce((a,p) => p.price_cop < a.price_cop ? p : a, ok[0] || {price_cop:null});
+  return {alert_url_id:id, domain, last_title:title, is_active: opts.inactive ? false : true, min_price_cop:min.price_cop, min_price_at:min.checked_at, points:pts};
+}
+const ALERTS = [
+  {id:12, title:"Audífonos inalámbricos con cancelación de ruido", product_name:"Audífonos X Pro", status:"active", series:[
+    makeSeries(31,"tiendauno.com","Audífonos X Pro (negro)",1199000,7),
+    makeSeries(32,"megastore.co","Audífonos inalámbricos X Pro ANC",1149000,11,{h1:9,h2:21,anomalyAt:40}),
+    makeSeries(33,"electro.com.co","X Pro Noise Cancelling",1239000,23,{h1:11,h2:23})]},
+  {id:15, title:"Portátil 14\" para estudio", product_name:"Portátil Y 14", status:"active", stale:true, series:[
+    makeSeries(41,"tiendauno.com","Portátil Y 14 8GB",2899000,5),
+    makeSeries(42,"compumundo.co","Portátil Y 14 — 512 GB",2799000,9)]},
+  {id:18, title:"Monitor 27\" 4K", product_name:"Monitor Z 27", status:"active", pending:true, series:[]},
+  {id:9, title:"Silla ergonómica", product_name:"Silla E", status:"inactive", series:[
+    makeSeries(51,"mueblesya.com","Silla ergonómica E",899000,13),
+    makeSeries(52,"oficina.co","Silla E malla",859000,17,{inactive:true})]}
+];
+// created_at = inicio del seguimiento; suscripciones con el correo ya enmascarado por core
+const META = {
+  12: {created_at: Date.UTC(2026, 9, 27, 14, 5), subs: [{email_masked:"a***@correo.com", status:"active"}, {email_masked:"m***@empresa.co", status:"active"}, {email_masked:"j***@dominio.co", status:"unsubscribed"}]},
+  15: {created_at: Date.UTC(2026, 9, 20, 9, 30), subs: [{email_masked:"a***@correo.com", status:"active"}]},
+  18: {created_at: Date.UTC(2026, 10, 26, 13, 40), subs: [{email_masked:"l***@correo.com", status:"active"}]},
+  9:  {created_at: Date.UTC(2026, 8, 2, 16, 0), subs: []}
+};
+ALERTS.forEach(a => Object.assign(a, META[a.id]));
+// Un chequeo con más de 24 h simula «sin datos recientes»
+ALERTS[1].series.forEach(s => s.points = s.points.filter(p => p.checked_at < NOW - 2*DAY));
+// Nombre corto del sitio: sin «www.» ni dominio (.com, .co, .com.co…). Si dos sitios de la misma
+// alerta quedan con el mismo nombre (tienda.com y tienda.co), se muestra el dominio completo.
+// idx fija el color, el marcador y el trazo del sitio en el gráfico, la leyenda y la tabla.
+ALERTS.forEach(a => {
+  const short = d => d.replace(/^www\./, "").split(".")[0];
+  a.series.forEach((s, i) => { s.idx = i; s.name = short(s.domain); });
+  a.series.forEach(s => { if (a.series.filter(o => o.name === s.name).length > 1) s.name = s.domain; });
+});
+
+// ---------- Utilidades ----------
+// Toda cifra lleva su moneda; el eje del gráfico usa la versión corta y declara «COP» en su título.
+const fmtAxis = v => new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(v);
+const fmtCOP = v => v == null ? "—" : new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits: v % 1 ? 2 : 0}).format(v) + " COP";
+const fmtDT = t => new Intl.DateTimeFormat("es-CO",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(t);
+const fmtLong = t => new Intl.DateTimeFormat("es-CO",{day:"numeric",month:"long",year:"numeric"}).format(t);
+const ago = t => { const d = Math.floor((NOW - t) / DAY); return d < 1 ? "hoy" : d === 1 ? "hace 1 día" : `hace ${d} días`; };
+const fmtD = t => new Intl.DateTimeFormat("es-CO",{day:"numeric",month:"short"}).format(t);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const stockTxt = v => v === true ? "Disponible" : v === false ? "Agotado" : "No informado";
+const COLORS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
+const MARKERS = ["circle","square","triangle","diamond"];
+const DASH = ["", "6 4", "2 3", "10 3 2 3"];
+
+function lastOk(s){ for (let i = s.points.length-1; i >= 0; i--) if (s.points[i].status === "ok") return s.points[i]; return null; }
+function summarize(a){
+  const active = a.series.filter(s => s.is_active);
+  const lasts = active.map(s => ({s, p:lastOk(s)})).filter(x => x.p);
+  const best = lasts.reduce((b,x) => !b || x.p.price_cop < b.p.price_cop || (x.p.price_cop === b.p.price_cop && x.s.alert_url_id < b.s.alert_url_id) ? x : b, null);
+  const anyChecks = a.series.some(s => s.points.length);
+  const newest = Math.max(...lasts.map(x => x.p.checked_at), 0);
+  const data_state = !anyChecks ? "pending_first_capture" : (!lasts.length || NOW - newest > DAY) ? "stale" : "fresh";
+  const has_anomaly = lasts.some(x => x.p.is_anomalous);
+  return {best, data_state, has_anomaly};
+}
+const STATE = {fresh:["Al día","b-fresh"], stale:["Sin datos recientes","b-stale"], pending_first_capture:["Pendiente de primera captura","b-pending"]};
+
+// ---------- Registro de tipos de gráfico (como features.ts del board) ----------
+const chartRenderers = [
+  {id:"line", label:"Línea", ready:true, render: renderStepLine},
+  {id:"candles", label:"Velas", ready:false}   // futuro: transform toDailyOHLC + render propio
+];
+
+// ---------- Estado ----------
+const ui = {selected: Number(new URLSearchParams(location.hash.slice(1)).get("alert")) || 12, chart:"line", hidden:new Set(), q:"", loadingPanel:true, focusIdx:-1};
+const panel = document.getElementById("panel"), layout = document.getElementById("layout"), view = document.getElementById("view");
+const collapseBtn = document.getElementById("collapse");
+// Por defecto colapsado en cada visita: el board arranca con todo el ancho.
+function setCollapsed(c){
+  layout.classList.toggle("collapsed", c);
+  collapseBtn.setAttribute("aria-expanded", String(!c));
+  collapseBtn.textContent = c ? "⟨" : "⟩";
+  collapseBtn.title = c ? "Expandir panel de alertas" : "Colapsar panel de alertas";
+  if (!c) setTimeout(() => document.getElementById("q").focus(), 0);
+}
+collapseBtn.onclick = () => setCollapsed(!layout.classList.contains("collapsed"));
+document.getElementById("scrim").onclick = () => setCollapsed(true);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !layout.classList.contains("collapsed")){ setCollapsed(true); collapseBtn.focus(); } });
+document.getElementById("theme").onclick = () => { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"; renderView(); };
+document.getElementById("q").oninput = e => { ui.q = e.target.value.trim().toLowerCase(); renderPanel(); };
+
+// ---------- Panel ----------
+function renderPanel(){
+  const body = document.getElementById("pbody");
+  document.getElementById("railcount").textContent = `${ALERTS.length} alertas`;
+  if (ui.loadingPanel){
+    body.innerHTML = Array.from({length:4}, () => `<div style="padding:10px 12px"><div class="sk sk-line" style="width:80%"></div><div class="sk sk-line" style="width:50%"></div></div>`).join("");
+    body.setAttribute("aria-busy","true"); return;
+  }
+  body.removeAttribute("aria-busy");
+  const list = ALERTS.filter(a => !ui.q || a.title.toLowerCase().includes(ui.q));
+  if (!list.length){ body.innerHTML = `<p class="p-empty">Ninguna alerta coincide con «${esc(ui.q)}».</p>`; return; }
+  body.innerHTML = `<ul>${list.map(a => {
+    const s = summarize(a); const [lbl, cls] = a.status === "inactive" ? ["Inactiva","b-inactive"] : STATE[s.data_state];
+    return `<li><button class="alert-item" data-id="${a.id}" aria-current="${a.id === ui.selected}">
+      <span class="t">${esc(a.title)}${s.has_anomaly ? ' <span class="anom" title="Caída anómala">⚠</span>' : ""}</span>
+      <span class="m"><span class="mono">${s.best ? fmtCOP(s.best.p.price_cop) : "Sin precio"}</span><span class="badge ${cls}">${lbl}</span></span>
+    </button></li>`;}).join("")}</ul>`;
+  body.querySelectorAll(".alert-item").forEach(b => {
+    b.onclick = () => select(Number(b.dataset.id));
+    b.onmouseenter = () => {/* en el producto: prefetch del detalle y del histórico */};
+  });
+  const mp = document.getElementById("mpick");
+  mp.innerHTML = ALERTS.map(a => `<option value="${a.id}" ${a.id === ui.selected ? "selected" : ""}>${esc(a.title)}</option>`).join("");
+  mp.onchange = e => select(Number(e.target.value));
+}
+
+// ---------- Vista de la alerta ----------
+let loadTimer;
+function select(id){
+  ui.selected = id; ui.hidden.clear(); ui.focusIdx = -1;
+  history.replaceState(null, "", `#alert=${id}`);
+  setCollapsed(true);   // al elegir, el cajón se cierra y el board queda a todo el ancho
+  renderPanel(); load();
+}
+function load(){
+  clearTimeout(loadTimer);
+  const slow = document.getElementById("slow").checked;
+  view.setAttribute("aria-busy","true");
+  view.innerHTML = skeleton();
+  loadTimer = setTimeout(() => {
+    view.removeAttribute("aria-busy");
+    if (document.getElementById("fail").checked){ view.innerHTML = errorView(); view.querySelector("#retry").onclick = load; return; }
+    renderView();
+  }, slow ? 900 : 0);
+}
+function skeleton(){
+  return `<div class="stack" aria-label="Cargando la alerta">
+    <div><div class="sk sk-line" style="width:20%"></div><div class="sk sk-title"></div></div>
+    <div class="kpis">${'<div class="sk sk-kpi"></div>'.repeat(4)}</div>
+    <div class="card"><div class="sk sk-line" style="width:30%"></div><div class="sk sk-chart" style="margin-top:12px"></div></div>
+    <div class="row2"><div class="card">${'<div class="sk sk-row"></div>'.repeat(3)}</div><div class="card">${'<div class="sk sk-row"></div>'.repeat(3)}</div></div>
+    <span class="sr-only" role="status">Cargando…</span></div>`;
+}
+function errorView(){
+  return `<div class="card"><div class="notice err" role="alert">No pudimos cargar la alerta (error de red). <button class="btn" id="retry" type="button">Reintentar</button></div></div>`;
+}
+function renderView(){
+  const a = ALERTS.find(x => x.id === ui.selected); if (!a) { view.innerHTML = `<div class="card empty">La alerta no existe.</div>`; return; }
+  const s = summarize(a); const [lbl, cls] = a.status === "inactive" ? ["Inactiva","b-inactive"] : STATE[s.data_state];
+  const bestSeries = s.best?.s;
+  // Mínimo histórico entre todos los sitios, con el sitio y la fecha en que ocurrió (min_price_at)
+  const minAll = a.series.filter(x => x.min_price_cop != null).reduce((m, x) => !m || x.min_price_cop < m.min_price_cop ? x : m, null);
+  const kpis = `<div class="kpis">
+    <div class="kpi"><div class="l">Mejor precio hoy</div><div class="v">${s.best ? fmtCOP(s.best.p.price_cop) : "—"}</div><div class="s">${s.best ? esc(bestSeries.name) + " · " + fmtDT(s.best.p.checked_at) : "Aún sin precio"}</div></div>
+    <div class="kpi"><div class="l">Sitios seguidos</div><div class="v">${a.series.filter(x => x.is_active).length}</div><div class="s">${a.series.filter(x => !x.is_active).length} inactivos</div></div>
+    <div class="kpi"><div class="l">En seguimiento</div><div class="v">${Math.floor((NOW - a.created_at) / DAY)} días</div><div class="s">desde el ${fmtLong(a.created_at)}</div></div>
+    <div class="kpi"><div class="l">Mínimo desde la creación</div><div class="v">${fmtCOP(minAll?.min_price_cop)}</div><div class="s">${minAll ? `${esc(minAll.name)} · ${fmtLong(minAll.min_price_at)}` : "Aún sin precio"}</div></div>
+  </div>`;
+  const notice = s.data_state === "stale" ? `<div class="notice">⏱ Sin datos recientes: el último precio tiene más de 24 h.</div>`
+    : s.has_anomaly ? `<div class="notice">⚠ Caída anómala en un sitio: el precio es mucho menor que en los demás. Valida manualmente antes de comprar.</div>` : "";
+  if (s.data_state === "pending_first_capture"){
+    view.innerHTML = `<div class="stack">${titleRow(a,lbl,cls)}<div class="card empty"><h2 style="font-size:20px;color:var(--fg)">Pendiente de primera captura</h2><p>Todavía no hay precios para esta alerta. Se capturan en las franjas de 04:00–06:00 y 18:00–20:00 (hora de Bogotá).</p></div></div>`;
+    return;
+  }
+  view.innerHTML = `<div class="stack">${titleRow(a,lbl,cls)}${notice}${kpis}
+    <section class="card" aria-labelledby="ch-t">
+      <div class="title-row"><h2 id="ch-t" style="font-size:18px">Precio por sitio</h2>
+        <div class="chart-tools">
+          <div class="seg" role="group" aria-label="Tipo de gráfico">${chartRenderers.map(c => c.ready
+            ? `<button type="button" aria-pressed="${ui.chart === c.id}" data-chart="${c.id}">${c.label}</button>`
+            : `<button type="button" disabled aria-pressed="false" title="Próximamente">${c.label} <span class="soon">Próximamente</span></button>`).join("")}</div>
+          <span class="btn" aria-label="Rango">Últimos 30 días</span>
+          <button class="btn" type="button" id="astable" aria-expanded="false">▦ Ver como tabla</button>
+        </div></div>
+      <div class="chart-wrap" id="cwrap"></div>
+      <div class="legend" id="legend"></div>
+      <div id="tablebox" hidden></div>
+    </section>
+    <div class="row2">
+      <section class="card"><h2 style="font-size:18px;margin-bottom:8px">Sitios</h2><div style="overflow-x:auto">${sitesTable(a, s)}</div></section>
+      ${subsCard(a, s)}
+    </div>
+  </div>`;
+  chartRenderers.find(c => c.id === ui.chart).render(a);
+  const tb = document.getElementById("astable");
+  tb.onclick = () => { const box = document.getElementById("tablebox"); box.hidden = !box.hidden; tb.setAttribute("aria-expanded", String(!box.hidden)); if (!box.hidden) box.innerHTML = historyTable(a); };
+}
+function titleRow(a,lbl,cls){
+  return `<div class="title-row"><div><p class="muted" style="margin:0 0 4px;font-size:14px">Alerta #${a.id} · ${esc(a.product_name)}</p><h1>${esc(a.title)}</h1>
+    <p class="muted" style="margin:6px 0 0;font-size:14px">📅 Seguimiento desde el <time datetime="${new Date(a.created_at).toISOString()}">${fmtLong(a.created_at)}</time> · ${ago(a.created_at)}</p></div>
+    <span class="badge ${cls}">${lbl}</span></div>`;
+}
+function subsCard(a, s){
+  const active = a.subs.filter(x => x.status === "active").length;
+  const rule = s.best ? `Se avisa cuando el mejor precio baje de <strong class="mono">${fmtCOP(s.best.p.price_cop)}</strong>.` : "Se avisará cuando exista el primer precio y luego baje.";
+  const items = a.subs.map(x => { const on = x.status === "active";
+    return `<li class="sub"><span class="av" aria-hidden="true">${esc(x.email_masked[0].toUpperCase())}</span>
+      <span class="who"><span class="mono">${esc(x.email_masked)}</span><span class="muted ch">✉ Correo</span></span>
+      <span class="badge ${on ? "b-fresh" : "b-inactive"}">${on ? "Activa" : "Dada de baja"}</span></li>`; }).join("");
+  return `<section class="card subs" aria-labelledby="subs-t">
+    <div class="title-row" style="align-items:center"><h2 id="subs-t" style="font-size:18px">Avisos</h2>
+      <span class="muted" style="font-size:14px">${active} de ${a.subs.length} activas</span></div>
+    <p class="hint">🔔 ${rule}</p>
+    ${a.subs.length ? `<ul>${items}</ul>` : `<p class="empty" style="padding:20px 0">Nadie recibe avisos de esta alerta.</p>`}
+    <p class="muted" style="font-size:13px;margin:10px 0 0">Los correos se muestran enmascarados. Cada aviso trae un enlace para darse de baja.</p>
+  </section>`;
+}
+// Muestra del sitio: mismo color, marcador y trazo que su línea en el gráfico (no depende solo del color)
+function swatch(idx){
+  const c = `var(${COLORS[idx % 8]})`, m = MARKERS[idx % 4], d = DASH[idx % 4];
+  const shape = m === "square" ? `<rect x="10.5" y="4.5" width="7" height="7" style="fill:var(--surface);stroke:${c}" stroke-width="1.5"/>`
+    : m === "triangle" ? `<path d="M14 3.5L18.5 11.5H9.5Z" style="fill:var(--surface);stroke:${c}" stroke-width="1.5"/>`
+    : m === "diamond" ? `<path d="M14 3.5L18.5 8L14 12.5L9.5 8Z" style="fill:var(--surface);stroke:${c}" stroke-width="1.5"/>`
+    : `<circle cx="14" cy="8" r="3.5" style="fill:var(--surface);stroke:${c}" stroke-width="1.5"/>`;
+  return `<svg width="28" height="16" aria-hidden="true"><line x1="0" x2="28" y1="8" y2="8" style="stroke:${c}" stroke-width="2.5" stroke-dasharray="${d}"/>${shape}</svg>`;
+}
+function sitesTable(a, s){
+  return `<table><thead><tr><th><span class="sr-only">Color en el gráfico</span></th><th>Sitio</th><th>Producto en el sitio</th><th>Último precio</th><th>Stock</th><th>Mínimo histórico</th><th>Último chequeo</th></tr></thead><tbody>${
+    a.series.map(x => { const p = lastOk(x); const last = x.points.at(-1);
+      return `<tr><td style="width:40px">${swatch(x.idx)}</td><td title="${esc(x.domain)}">${esc(x.name)}${x.is_active ? "" : ' <span class="badge b-inactive">inactiva</span>'}${s.best && s.best.s === x ? ' <span class="badge b-fresh">mejor</span>' : ""}</td>
+      <td>${esc(x.last_title)}</td><td class="num">${p ? fmtCOP(p.price_cop) : "—"}${p?.is_anomalous ? ' <span class="anom">⚠</span>' : ""}</td>
+      <td>${p ? stockTxt(p.in_stock) : "—"}</td><td class="num">${fmtCOP(x.min_price_cop)}${x.min_price_at ? `<br><span class="muted" style="font-family:var(--font-sans);font-size:12px">${fmtLong(x.min_price_at)}</span>` : ""}</td><td>${last ? fmtDT(last.checked_at) + (last.status !== "ok" ? ` · ${last.status === "error" ? "error" : "sin precio"}` : "") : "—"}</td></tr>`; }).join("")}</tbody></table>`;
+}
+function historyTable(a){
+  const rows = a.series.flatMap(x => x.points.map(p => ({x, p}))).sort((m,n) => n.p.checked_at - m.p.checked_at).slice(0, 40);
+  return `<table style="margin-top:12px"><caption class="sr-only">Histórico de precios por sitio, más reciente primero</caption><thead><tr><th>Fecha</th><th>Sitio</th><th>Precio</th><th>Stock</th><th>Estado</th></tr></thead><tbody>${
+    rows.map(({x,p}) => `<tr><td>${fmtDT(p.checked_at)}</td><td>${esc(x.name)}</td><td class="num">${fmtCOP(p.price_cop)}</td><td>${p.status === "ok" ? stockTxt(p.in_stock) : "—"}</td><td>${p.status === "ok" ? (p.is_anomalous ? "⚠ anómalo" : "ok") : p.status === "error" ? "error" : "sin precio"}</td></tr>`).join("")}</tbody></table><p class="muted" style="font-size:13px">Se muestran los 40 chequeos más recientes.</p>`;
+}
+
+// ---------- Renderer: línea escalonada por sitio ----------
+function renderStepLine(a){
+  const W = 1100, H = 390, L = 84, R = 16, T = 26, B = 34;
+  const css = getComputedStyle(document.documentElement);
+  const series = a.series.map(s => ({...s, color: css.getPropertyValue(COLORS[s.idx % 8]).trim(), marker: MARKERS[s.idx % 4], dash: DASH[s.idx % 4]}));
+  const vis = series.filter(s => !ui.hidden.has(s.alert_url_id));
+  const okPts = vis.flatMap(s => s.points.filter(p => p.status === "ok"));
+  const t0 = NOW - 30*DAY, t1 = NOW;
+  let lo = Math.min(...okPts.map(p => p.price_cop)), hi = Math.max(...okPts.map(p => p.price_cop));
+  if (!okPts.length){ lo = 0; hi = 1; } const pad = (hi - lo) * 0.12 || hi * 0.05; lo -= pad; hi += pad;
+  const X = t => L + (t - t0) / (t1 - t0) * (W - L - R), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const yTicks = Array.from({length:5}, (_,i) => lo + (hi - lo) * i / 4);
+  const xTicks = Array.from({length:6}, (_,i) => t0 + (t1 - t0) * i / 5);
+  const mk = (m, x, y, c, filled) => {
+    const f = filled ? c : "var(--surface)";
+    if (m === "square") return `<rect x="${x-3.5}" y="${y-3.5}" width="7" height="7" fill="${f}" stroke="${c}" stroke-width="1.5"/>`;
+    if (m === "triangle") return `<path d="M${x} ${y-4.5}L${x+4.5} ${y+3.5}H${x-4.5}Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`;
+    if (m === "diamond") return `<path d="M${x} ${y-4.5}L${x+4.5} ${y}L${x} ${y+4.5}L${x-4.5} ${y}Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`;
+    return `<circle cx="${x}" cy="${y}" r="3.5" fill="${f}" stroke="${c}" stroke-width="1.5"/>`;
+  };
+  let paths = "", marks = "", gaps = "";
+  for (const s of vis){
+    let d = "", prev = null;
+    for (const p of s.points){
+      if (p.status !== "ok"){ prev = null; gaps += `<line x1="${X(p.checked_at)}" x2="${X(p.checked_at)}" y1="${H-B}" y2="${H-B-6}" stroke="${s.color}" stroke-width="2"/>`; continue; }
+      const x = X(p.checked_at), y = Y(p.price_cop);
+      d += prev ? `H${x.toFixed(1)}V${y.toFixed(1)}` : `M${x.toFixed(1)} ${y.toFixed(1)}`; prev = p;
+    }
+    paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-dasharray="${s.dash}" ${s.is_active ? "" : 'opacity=".55"'}/>`;
+    s.points.forEach((p,i) => { if (p.status === "ok" && (i % 4 === 0 || p.is_anomalous)) marks += mk(s.marker, X(p.checked_at), Y(p.price_cop), s.color, p.is_anomalous); });
+    s.points.filter(p => p.is_anomalous).forEach(p => marks += `<text x="${X(p.checked_at)}" y="${Y(p.price_cop)+18}" text-anchor="middle" font-size="12" fill="var(--warn)" font-weight="700">⚠</text>`);
+  }
+  const cw = document.getElementById("cwrap");
+  cw.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" tabindex="0" role="img" aria-label="Precio por sitio en los últimos 30 días. Usa las flechas para recorrer los chequeos." aria-describedby="tipsr">
+    <text x="${L}" y="12" text-anchor="start" font-size="11" font-weight="600" fill="var(--muted)">Precio (COP)</text>
+    ${yTicks.map(v => `<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid-line)"/><text x="${L-8}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--font-mono)">${fmtAxis(Math.round(v/1000)*1000)}</text>`).join("")}
+    ${xTicks.map(t => `<text x="${X(t)}" y="${H-12}" text-anchor="middle" font-size="11" fill="var(--muted)">${fmtD(t)}</text>`).join("")}
+    ${gaps}${paths}${marks}
+    <g id="hover" visibility="hidden"><line id="vx" y1="${T}" y2="${H-B}" stroke="var(--fg)" stroke-dasharray="3 3"/><circle id="hp" r="6" fill="none" stroke="var(--fg)" stroke-width="2"/></g>
+    <rect x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent" id="hit"/></svg>
+    <div class="tip" id="tip" hidden></div><p class="sr-only" id="tipsr" aria-live="polite"></p>`;
+  // Puntos navegables: todos los chequeos (ok y huecos) de las series visibles
+  const all = vis.flatMap(s => s.points.map(p => ({s, p, x: X(p.checked_at), y: p.status === "ok" ? Y(p.price_cop) : H - B - 3}))).sort((m,n) => m.p.checked_at - n.p.checked_at);
+  const svg = cw.querySelector("svg"), tip = cw.querySelector("#tip");
+  function show(k){
+    if (k < 0 || !all[k]) return; ui.focusIdx = k; const {s,p,x,y} = all[k];
+    const g = svg.querySelector("#hover"); g.setAttribute("visibility","visible");
+    svg.querySelector("#vx").setAttribute("x1", x); svg.querySelector("#vx").setAttribute("x2", x);
+    const hp = svg.querySelector("#hp"); hp.setAttribute("cx", x); hp.setAttribute("cy", y);
+    const st = p.status === "ok" ? "" : `<dt>Estado</dt><dd>${p.status === "error" ? "Error al consultar el sitio" : "Sin precio en el sitio"}</dd>`;
+    tip.innerHTML = `<div class="h">${fmtDT(p.checked_at)}</div>
+      <div class="price" style="color:${p.status === "ok" ? "inherit" : "var(--muted)"}">${p.status === "ok" ? fmtCOP(p.price_cop) : "Sin dato"}</div>
+      <dl><dt>Sitio</dt><dd><span style="color:${s.color}">■</span> ${esc(s.name)}${s.is_active ? "" : " (inactiva)"}</dd>
+      <dt>Producto</dt><dd>${esc(s.last_title)}</dd>
+      ${p.status === "ok" ? `<dt>Stock</dt><dd>${stockTxt(p.in_stock)}</dd>` : ""}${st}</dl>
+      ${p.is_anomalous ? `<p style="margin:6px 0 0;color:var(--warn);font-weight:600">⚠ Caída anómala · valida manualmente</p>` : ""}`;
+    tip.hidden = false;
+    const box = svg.getBoundingClientRect(), sc = box.width / W, tw = tip.offsetWidth;
+    let left = x*sc + 14; if (left + tw > box.width) left = x*sc - tw - 14;
+    tip.style.left = Math.max(0,left) + "px"; tip.style.top = Math.max(0, Math.min(y*sc - 40, box.height - tip.offsetHeight)) + "px";
+    document.getElementById("tipsr").textContent = `${fmtDT(p.checked_at)}, ${s.name}, ${p.status === "ok" ? fmtCOP(p.price_cop) : "sin dato"}`;
+  }
+  function hide(){ svg.querySelector("#hover").setAttribute("visibility","hidden"); tip.hidden = true; }
+  svg.addEventListener("mousemove", e => {
+    const b = svg.getBoundingClientRect(), mx = (e.clientX - b.left) * W / b.width, my = (e.clientY - b.top) * W / b.width;
+    let k = -1, dmin = Infinity; all.forEach((q,i) => { const d = (q.x-mx)**2 + ((q.y-my)*0.6)**2; if (d < dmin){ dmin = d; k = i; } });
+    show(k);
+  });
+  svg.addEventListener("mouseleave", hide);
+  svg.addEventListener("blur", hide);
+  svg.addEventListener("keydown", e => {
+    if (!["ArrowLeft","ArrowRight","Home","End","Escape"].includes(e.key)) return; e.preventDefault();
+    if (e.key === "Escape") return hide();
+    const k = e.key === "Home" ? 0 : e.key === "End" ? all.length-1 : Math.min(all.length-1, Math.max(0, (ui.focusIdx < 0 ? all.length : ui.focusIdx) + (e.key === "ArrowRight" ? 1 : -1)));
+    show(k);
+  });
+  svg.addEventListener("touchstart", e => { const t = e.touches[0]; svg.dispatchEvent(new MouseEvent("mousemove",{clientX:t.clientX, clientY:t.clientY})); }, {passive:true});
+  document.getElementById("legend").innerHTML = series.map(s => `<button type="button" aria-pressed="${!ui.hidden.has(s.alert_url_id)}" data-id="${s.alert_url_id}">
+    ${swatch(s.idx)}${esc(s.name)}${s.is_active ? "" : " (inactiva)"}</button>`).join("");
+  document.querySelectorAll("#legend button").forEach(b => b.onclick = () => { const id = Number(b.dataset.id); ui.hidden.has(id) ? ui.hidden.delete(id) : ui.hidden.add(id); renderStepLine(a); });
+  document.querySelectorAll("[data-chart]").forEach(b => b.onclick = () => { ui.chart = b.dataset.chart; renderView(); });
+}
+
+// ---------- Arranque: el panel también carga con skeleton ----------
+renderPanel(); load();
+setTimeout(() => { ui.loadingPanel = false; renderPanel(); }, document.getElementById("slow").checked ? 700 : 0);
+</script>
+</body>
+</html>

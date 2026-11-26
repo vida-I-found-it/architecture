@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: core-service · dashboard e histórico (lectura)
-  version: 0.1.0
+  version: 0.2.0
   description: |
-    Contrato de las lecturas de CU-07 (dashboard) y CU-08 (histórico), según las decisiones D-1 a D-10
+    Contrato de las lecturas de CU-07 (dashboard) y CU-08 (histórico), según las decisiones D-1 a D-12
     aprobadas el 2026-11-26 (registradas en las preguntas abiertas de CU-07 y CU-08).
     Reglas comunes:
     - Fechas en UTC, ISO 8601 (D-5).
@@ -125,13 +125,26 @@ components:
           items: {$ref: "#/components/schemas/AlertListItem"}
     AlertListItem:
       type: object
-      required: [id, title, product_name, status, created_at]
+      description: Cada fila alimenta una entrada del panel del board (D-11), sin pedir el detalle de cada alerta.
+      required: [id, title, product_name, status, created_at, best_price_cop, data_state, has_anomaly]
       properties:
         id: {type: integer}
         title: {type: string}
         product_name: {type: string}
         status: {$ref: "#/components/schemas/AlertStatus"}
-        created_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time, description: Inicio del seguimiento}
+        best_price_cop:
+          description: Mejor precio vigente (v_alert_best_price); null si ninguna URL activa tiene precio ok
+          oneOf:
+            - {$ref: "#/components/schemas/Money"}
+            - {type: "null"}
+        data_state:
+          description: Mismas reglas que en el detalle (US-07-03)
+          type: string
+          enum: [pending_first_capture, stale, fresh]
+        has_anomaly:
+          description: true si el último chequeo ok de alguna URL activa es anómalo según la estrategia activa (D-9)
+          type: boolean
     Anomaly:
       description: Veredicto de la estrategia activa (ANOMALY_STRATEGY y ANOMALY_STRATEGY_VERSION, D-9) sobre el último chequeo ok
       type: object
@@ -223,13 +236,16 @@ components:
         is_anomalous: {type: [boolean, "null"], description: null = sin evaluar o no aplica}
     HistorySeries:
       type: object
-      required: [alert_url_id, domain, is_active, min_price_cop, min_price_at, points]
+      required: [alert_url_id, domain, last_title, is_active, min_price_cop, min_price_at, points]
       properties:
         alert_url_id: {type: integer}
-        domain: {type: string}
+        domain: {type: string, description: Dominio completo; el nombre corto que se muestra lo deriva el frontend (US-07-07)}
+        last_title:
+          description: Producto en ese sitio (D-12), para el detalle al pasar el cursor; incluye las URLs inactivas, que el detalle no trae. Texto no confiable
+          type: [string, "null"]
         is_active: {type: boolean}
         min_price_cop:
-          description: Mínimo precio ok de toda la historia de la URL, no solo del rango (D-4)
+          description: Mínimo precio ok de toda la historia de la URL, no solo del rango (D-4). Excluye los chequeos marcados como anómalos por la estrategia activa (ajuste 2026-11-26); los no evaluados sí cuentan. null si no queda ninguno
           oneOf:
             - {$ref: "#/components/schemas/Money"}
             - {type: "null"}
