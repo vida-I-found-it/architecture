@@ -40,8 +40,8 @@ button, input { font: inherit; color: inherit; }
 .btn.primary { background: var(--accent); color: var(--on-accent); }
 .btn.ghost:hover { background: rgba(14, 26, 40, 0.06); }
 
-.overlay { position: fixed; inset: 0; background: rgba(14, 26, 40, 0.62); display: grid; place-items: center; }
-.modal { background: var(--surface); border-radius: 20px; box-shadow: 0 30px 80px rgba(14, 26, 40, 0.4); }
+.overlay { position: fixed; inset: 0; background: rgba(14, 26, 40, 0.62); display: grid; overflow-y: auto; padding: 24px 16px; }
+.modal { margin: auto; background: var(--surface); border-radius: 20px; box-shadow: 0 30px 80px rgba(14, 26, 40, 0.4); }
 .icon-badge { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: var(--accent); color: var(--on-accent); }
 .icon-badge .ic { width: 22px; height: 22px; }
 .icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
@@ -77,6 +77,8 @@ main.lista h1 { font-size: 30px; line-height: 1.15; margin: 0 0 24px; font-weigh
 .input input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; color: var(--ink); height: 100%; }
 .input:focus-within { box-shadow: 0 0 0 2px var(--accent); }
 .url-row { margin-bottom: 8px; }
+.input.textarea { height: auto; padding: 10px 14px; }
+.input textarea { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; color: var(--ink); font: inherit; resize: vertical; }
 .add { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--accent); font-weight: 500; padding: 6px 0; cursor: pointer; }
 
 .notice { display: flex; gap: 12px; align-items: flex-start; background: var(--amber-soft); color: var(--amber-ink); border-radius: 12px; padding: 12px 14px; margin: 0 0 24px; font-size: 14px; }

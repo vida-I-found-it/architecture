@@ -48,16 +48,23 @@
       </div>
 
       <div class="field">
-        <label class="label" for="correo">Correo para el aviso</label>
-        <div class="input"><i data-i="mail"></i><input id="correo" type="email" value="ana@correo.com"></div>
+        <div class="label-row"><label class="label" for="c1">Correos para el aviso</label><span class="count num">2 de 10</span></div>
+        <div class="input url-row"><i data-i="mail"></i><input id="c1" type="email" value="ana@correo.com"><button class="icon-btn" type="button" aria-label="Quitar correo 1"><i data-i="x"></i></button></div>
+        <div class="input url-row"><i data-i="mail"></i><input aria-label="Correo 2" type="email" value="luis@correo.com"><button class="icon-btn" type="button" aria-label="Quitar correo 2"><i data-i="x"></i></button></div>
+        <button class="add" type="button"><i data-i="plus"></i>Agregar otro correo</button>
         <p class="help">Te escribimos aquí cuando baje el mejor precio. Cada correo trae un enlace para darte de baja.</p>
+      </div>
+
+      <div class="field">
+        <div class="label-row"><label class="label" for="nota">Nota <span class="count">(opcional)</span></label><span class="count num">27 de 1000</span></div>
+        <div class="input textarea"><textarea id="nota" rows="2">Comprar antes de diciembre.</textarea></div>
       </div>
 
       <div class="notice" role="note"><i data-i="lock"></i><p>La alerta no se puede editar después de guardarla. Antes de crearla te pediremos confirmar.</p></div>
 
       <div class="actions">
         <button class="btn ghost" type="button">Cancelar</button>
-        <button class="btn primary" type="button">Guardar alerta</button>
+        <button class="btn primary" type="button">Crear alerta</button>
       </div>
     </section>
   </div>
