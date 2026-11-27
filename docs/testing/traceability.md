@@ -1,6 +1,6 @@
 # Matriz de trazabilidad
 
-> Une `CU → requerimiento → historia → criterio → caso de prueba`. Se actualiza en cada cambio de historia o de prueba; una historia no está terminada hasta que todos sus criterios tienen un caso **Verde**. Cobertura actual: las 9 historias (CU-02 a CU-08, CU-10 y CU-11). Solo CU-02 tiene casos `TC-NN-NN`; en las demás la columna «Caso de prueba» queda en «—» hasta que se escriban sus casos.
+> Une `CU → requerimiento → historia → criterio → caso de prueba`. Se actualiza en cada cambio de historia o de prueba; una historia no está terminada hasta que todos sus criterios tienen un caso **Verde**. Cobertura actual: los 9 CU (CU-02 a CU-08, CU-10 y CU-11), con 45 historias. Solo CU-02 tiene casos `TC-NN-NN`; en las demás la columna «Caso de prueba» queda en «—» hasta que se escriban sus casos.
 
 ## CU-02 · Registrar una alerta con URLs
 
@@ -62,21 +62,24 @@
 | US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC10 | — | unitaria, integración | Sin implementar |
 | US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC11 | — | unitaria, integración | Sin implementar |
 | US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC12 | — | unitaria, integración | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC1 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC2 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC3 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC4 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC5 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC6 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC7 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC8 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC9 | — | unitaria, integración, E2E | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC1 | — | integración | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC2 | — | unitaria | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC3 | — | unitaria | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC4 | — | unitaria | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC5 | — | integración | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC6 | — | integración | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC7 | — | integración | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC8 | — | unitaria | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC9 | — | unitaria | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC10 | — | por definir | Sin implementar |
-| US-03-05 | FE-4, DEC-31 | US-03-05-AC1 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-05 | FE-4, DEC-31 | US-03-05-AC2 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-05 | FE-4, DEC-31 | US-03-05-AC3 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-05 | FE-4, DEC-31 | US-03-05-AC4 | — | unitaria, integración, E2E | Sin implementar |
-| US-03-05 | FE-4, DEC-31 | US-03-05-AC5 | — | unitaria, integración, E2E | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC11 | — | unitaria | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC12 | — | integración (carga) | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC13 | — | integración | Sin implementar |
+| US-03-05 | FE-4, DEC-31 | US-03-05-AC1 | — | unitaria, E2E | Sin implementar |
+| US-03-05 | FE-4, DEC-31 | US-03-05-AC2 | — | E2E | Sin implementar |
+| US-03-05 | FE-4, DEC-31 | US-03-05-AC3 | — | unitaria | Sin implementar |
+| US-03-05 | FE-4, DEC-31 | US-03-05-AC4 | — | unitaria | Sin implementar |
+| US-03-05 | FE-4, DEC-31 | US-03-05-AC5 | — | unitaria | Sin implementar |
 
 ## CU-04 · Capturar el precio de un sitio
 
@@ -451,7 +454,7 @@
 
 | CU | Criterios | Con nivel | Nivel «por definir» |
 |---|---|---|---|
-| CU-03 | 42 | 41 | 1 |
+| CU-03 | 45 | 44 | 1 |
 | CU-04 | 57 | 57 | 0 |
 | CU-05 | 54 | 54 | 0 |
 | CU-06 | 43 | 20 | 23 |
@@ -459,4 +462,4 @@
 | CU-08 | 32 | 29 | 3 |
 | CU-10 | 46 | 31 | 15 |
 | CU-11 | 31 | 17 | 14 |
-| **Total CU-03 a CU-11** | **368** | **309** | **59** |
+| **Total CU-03 a CU-11** | **371** | **312** | **59** |
