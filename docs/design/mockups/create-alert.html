@@ -4,63 +4,190 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crear alerta</title>
+<!-- Mockup estático (CU-02). Mismo lenguaje visual que alert-board.html: tokens, fuentes, bordes rectos y «Crear alerta» desde el panel derecho. Datos sintéticos. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens copiados de alert-board.html (a su vez de foundit-web-app/src/styles/index.css) */
+:root{
+  --bg:oklch(0.985 0.004 90);--surface:oklch(1 0 0);--fg:oklch(0.2 0.01 90);--muted:oklch(0.48 0.01 90);
+  --border:oklch(0.9 0.006 90);--accent:oklch(0.75 0.16 60);--accent-fg:oklch(0.2 0.03 60);--accent-text:oklch(0.5 0.14 50);
+  --warn:#b45309;--ok:#047857;
+  --font-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --font-sans:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:oklch(0.16 0.006 260);--surface:oklch(0.2 0.008 260);--fg:oklch(0.96 0.004 90);--muted:oklch(0.72 0.01 260);
+  --border:oklch(0.3 0.01 260);--accent:oklch(0.8 0.15 65);--accent-text:oklch(0.82 0.14 65);
+  --warn:#f59e0b;--ok:#34d399;color-scheme:dark;
+}
+*{box-sizing:border-box;border-radius:0}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:16px;line-height:1.5}
+h1,h2{font-family:var(--font-display);margin:0;letter-spacing:-0.01em}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}
+.mono{font-family:var(--font-mono)}
+.ic{display:inline-flex;width:16px;height:16px;flex:none}
+.ic svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+
+/* Fondo: el board, igual que en alert-board.html */
+header{border-bottom:1px solid color-mix(in oklch,var(--border) 60%,transparent)}
+.bar{display:flex;align-items:center;gap:24px;min-height:64px;padding:8px 64px 8px 28px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600}
+.brand i{display:grid;place-items:center;width:32px;height:32px;background:var(--accent);color:var(--accent-fg);font-style:normal}
+.btn{border:1px solid var(--border);background:var(--surface);padding:6px 12px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.theme-btn{margin-left:auto}
+.layout{padding:24px 64px 48px 28px}
+.crumb{font-size:14px;color:var(--muted)}
+.layout h1{font-size:28px;line-height:1.15;margin:4px 0 20px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpi,.card{border:1px solid var(--border);background:var(--surface);padding:14px 16px}
+.kpi .l{font-size:13px;color:var(--muted)}
+.kpi .v{font-family:var(--font-display);font-size:24px;font-weight:700}
+.card{margin-top:20px;height:420px;padding:20px}
+.card h2{font-size:18px}
+aside{position:fixed;top:0;right:0;bottom:0;width:40px;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 4px}
+aside .btn{width:30px;padding:4px 0;justify-content:center}
+.rail-count{writing-mode:vertical-rl;font-size:13px;color:var(--muted);margin-top:8px}
+
+/* Modal: el scrim del board, algo más oscuro para dar foco al formulario */
+.overlay{position:fixed;inset:0;z-index:30;background:oklch(0 0 0 / .42);display:grid;overflow-y:auto;padding:24px 16px}
+/* En pantallas bajas solo el cuerpo hace scroll: el título y los botones siempre quedan a la vista */
+.modal{margin:auto;width:min(580px,100%);max-height:calc(100dvh - 48px);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 64px oklch(0 0 0 / .22)}
+.m-head{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--border)}
+.m-head h2{flex:1;font-size:22px}
+.m-head .rm{width:32px;height:32px}
+.step{font-family:var(--font-mono);font-size:13px;color:var(--muted)}
+.m-body{padding:18px 24px 2px;overflow-y:auto;min-height:0}
+.intro{margin:0 0 18px;color:var(--muted);max-width:58ch}
+.field{margin-bottom:18px}
+.label-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:8px}
+.label{font-weight:600}
+.opt{font-weight:400;color:var(--muted);font-size:14px}
+.count{font-family:var(--font-mono);font-size:13px;color:var(--muted)}
+.help{margin:8px 0 0;font-size:14px;color:var(--muted)}
+
+.seg{display:inline-flex;border:1px solid var(--border)}
+.seg button{border:0;background:none;padding:6px 12px;font-size:14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.seg button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
+.seg button[disabled]{color:var(--muted);cursor:not-allowed}
+.soon{border:1px solid var(--border);padding:0 6px;font-size:12px}
+
+/* Filas de entrada: borde fino como la búsqueda del panel; valores en mono como en la tabla de sitios */
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-bottom:6px}
+.input{display:flex;align-items:center;gap:10px;border:1px solid var(--border);background:var(--bg);padding:0 10px;min-height:40px;color:var(--muted)}
+.input:focus-within{border-color:var(--fg)}
+.input input{flex:1;min-width:0;border:0;background:transparent;outline:0;color:var(--fg);font-family:var(--font-mono);font-size:14px;padding:8px 0}
+.av{display:grid;place-items:center;width:24px;height:24px;flex:none;background:color-mix(in oklch,var(--accent) 22%,var(--surface));color:var(--fg);font-family:var(--font-display);font-weight:700;font-size:13px}
+.rm{width:40px;justify-content:center;padding:0;color:var(--muted)}
+.add{border:0;background:none;padding:4px 0;color:var(--accent-text);font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+textarea{width:100%;display:block;border:1px solid var(--border);background:var(--bg);padding:8px 10px;font-size:15px;resize:vertical;outline:0}
+textarea:focus{border-color:var(--fg)}
+
+/* Aviso de inmutabilidad: mismo patrón que .hint del board, con el color de advertencia */
+.hint{display:flex;gap:10px;align-items:flex-start;margin:0 0 20px;padding:10px 12px;background:var(--bg);border-left:3px solid var(--warn);font-size:14px}
+.hint .ic{color:var(--warn);margin-top:3px}
+.hint p{margin:0}
+.m-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 24px;border-top:1px solid var(--border)}
+.m-foot .btn{padding:8px 16px;font-size:15px}
+
+@media (max-width:820px){
+  .bar{padding:8px 16px}.layout{padding:20px 16px}aside{display:none}
+  .kpis{grid-template-columns:1fr 1fr}
+  .seg{display:flex;flex-wrap:wrap}
+  .m-head,.m-body,.m-foot{padding-left:16px;padding-right:16px}
+}
+</style>
 </head>
 <body>
-  <header class="bar">
-    <span class="brand"><i data-i="tag"></i>I Found It</span>
-    <span class="spacer"></span>
-    <button class="btn primary" type="button"><i data-i="plus"></i>Crear alerta</button>
-  </header>
-
-  <main class="lista" aria-hidden="true">
-    <h1>Alertas</h1>
-    <div class="fila"><b>Audífonos inalámbricos con cancelación de ruido</b><span>3 sitios</span><span class="precio">$1.099.000</span></div>
-    <div class="fila"><b>Cafetera de cápsulas automática</b><span>2 sitios</span><span class="precio">$389.900</span></div>
-    <div class="fila"><b>Bicicleta de montaña rodada 29</b><span>4 sitios</span><span class="precio">$2.150.000</span></div>
-  </main>
+  <!-- Fondo inerte mientras el modal está abierto -->
+  <div inert aria-hidden="true">
+    <header>
+      <div class="bar">
+        <span class="brand"><i>⌕</i>I Found It</span>
+        <button class="btn theme-btn" type="button">◐ Tema</button>
+      </div>
+    </header>
+    <main class="layout">
+      <div class="crumb">Alerta #12 · Audífonos X Pro</div>
+      <h1>Audífonos inalámbricos con cancelación de ruido</h1>
+      <div class="kpis">
+        <div class="kpi"><div class="l">Mejor precio hoy</div><div class="v">$ 1.126.000 COP</div></div>
+        <div class="kpi"><div class="l">Sitios seguidos</div><div class="v">3</div></div>
+        <div class="kpi"><div class="l">En seguimiento</div><div class="v">30 días</div></div>
+        <div class="kpi"><div class="l">Mínimo desde la creación</div><div class="v">$ 1.060.000 COP</div></div>
+      </div>
+      <section class="card"><h2>Precio por sitio</h2></section>
+    </main>
+    <!-- «Crear alerta» vive en el panel derecho; colapsado queda el «+» que abrió este modal -->
+    <aside>
+      <button class="btn" type="button">⟨</button>
+      <button class="btn primary" type="button">＋</button>
+      <span class="rail-count">4 alertas</span>
+    </aside>
+  </div>
 
   <div class="overlay">
-    <section class="modal alta" role="dialog" aria-modal="true" aria-labelledby="titulo">
-      <div class="head">
-        <span class="icon-badge"><i data-i="bell"></i></span>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="titulo" aria-describedby="intro">
+      <div class="m-head">
         <h2 id="titulo">Crear alerta</h2>
-        <button class="icon-btn" type="button" aria-label="Cerrar"><i data-i="x"></i></button>
+        <span class="step">Paso 1 de 2</span>
+        <button class="btn rm" type="button" aria-label="Cerrar"><i data-i="x"></i></button>
       </div>
-      <p class="intro">Pega las páginas del producto que quieres vigilar. Revisamos el precio dos veces al día y te avisamos cuando baje.</p>
 
-      <div class="field">
-        <span class="label" id="modo">Cómo quieres crearla</span>
-        <div class="segmented" role="group" aria-labelledby="modo">
-          <button type="button" aria-pressed="true"><i data-i="link"></i>URL directa</button>
-          <button type="button" disabled><i data-i="search"></i>Palabra clave<span class="soon">Próximamente</span></button>
+      <div class="m-body">
+        <p class="intro" id="intro">Pega las páginas del producto que quieres vigilar. Revisamos el precio dos veces al día y te avisamos cuando baje.</p>
+
+        <div class="field">
+          <div class="label-row"><span class="label" id="modo">Cómo quieres crearla</span></div>
+          <div class="seg" role="group" aria-labelledby="modo">
+            <button type="button" aria-pressed="true"><i data-i="link"></i>URL directa</button>
+            <button type="button" disabled><i data-i="search"></i>Palabra clave <span class="soon">Próximamente</span></button>
+          </div>
         </div>
+
+        <div class="field">
+          <div class="label-row"><label class="label" for="u1">Páginas del producto</label><span class="count">2 de 10</span></div>
+          <div class="row"><div class="input"><i data-i="link"></i><input id="u1" value="https://tienda-a.example/audifonos-xm5"></div><button class="btn rm" type="button" aria-label="Quitar página 1"><i data-i="x"></i></button></div>
+          <div class="row"><div class="input"><i data-i="link"></i><input aria-label="Página 2" value="https://tienda-b.example/p/48213"></div><button class="btn rm" type="button" aria-label="Quitar página 2"><i data-i="x"></i></button></div>
+          <button class="add" type="button"><i data-i="plus"></i>Agregar otra página</button>
+        </div>
+
+        <div class="field">
+          <div class="label-row"><label class="label" for="c1">Correos para el aviso</label><span class="count">2 de 10</span></div>
+          <div class="row"><div class="input"><span class="av" aria-hidden="true">A</span><input id="c1" type="email" value="ana@correo.com"></div><button class="btn rm" type="button" aria-label="Quitar correo 1"><i data-i="x"></i></button></div>
+          <div class="row"><div class="input"><span class="av" aria-hidden="true">L</span><input aria-label="Correo 2" type="email" value="luis@correo.com"></div><button class="btn rm" type="button" aria-label="Quitar correo 2"><i data-i="x"></i></button></div>
+          <button class="add" type="button"><i data-i="plus"></i>Agregar otro correo</button>
+          <p class="help">Te escribimos cuando baje el mejor precio. Después de guardar, los correos se muestran enmascarados (<span class="mono">a***@correo.com</span>) y cada aviso trae un enlace para darse de baja.</p>
+        </div>
+
+        <div class="field">
+          <div class="label-row"><label class="label" for="nota">Nota <span class="opt">(opcional)</span></label><span class="count">27 de 1000</span></div>
+          <textarea id="nota" rows="2" maxlength="1000">Comprar antes de diciembre.</textarea>
+        </div>
+
+        <div class="hint" role="note"><i data-i="lock"></i><p>La alerta no se puede editar después de guardarla. Antes de crearla te pediremos confirmar.</p></div>
       </div>
 
-      <div class="field">
-        <div class="label-row"><label class="label" for="u1">Páginas del producto</label><span class="count num">2 de 10</span></div>
-        <div class="input url-row"><i data-i="link"></i><input id="u1" value="https://tienda-a.example/audifonos-xm5"><button class="icon-btn" type="button" aria-label="Quitar página 1"><i data-i="x"></i></button></div>
-        <div class="input url-row"><i data-i="link"></i><input aria-label="Página 2" value="https://tienda-b.example/p/48213"><button class="icon-btn" type="button" aria-label="Quitar página 2"><i data-i="x"></i></button></div>
-        <button class="add" type="button"><i data-i="plus"></i>Agregar otra página</button>
-      </div>
-
-      <div class="field">
-        <label class="label" for="correo">Correo para el aviso</label>
-        <div class="input"><i data-i="mail"></i><input id="correo" type="email" value="ana@correo.com"></div>
-        <p class="help">Te escribimos aquí cuando baje el mejor precio. Cada correo trae un enlace para darte de baja.</p>
-      </div>
-
-      <div class="notice" role="note"><i data-i="lock"></i><p>La alerta no se puede editar después de guardarla. Antes de crearla te pediremos confirmar.</p></div>
-
-      <div class="actions">
-        <button class="btn ghost" type="button">Cancelar</button>
-        <button class="btn primary" type="button">Guardar alerta</button>
+      <div class="m-foot">
+        <button class="btn" type="button">Cancelar</button>
+        <button class="btn primary" type="button">Crear alerta</button>
       </div>
     </section>
   </div>
 <script src="icons.js"></script>
+<script>
+  // Atajo del mockup para revisar el modal en oscuro: tecla «t» (en el board es el botón «Tema»)
+  document.addEventListener('keydown', e => {
+    if (e.key !== 't' || e.target.matches('input,textarea')) return;
+    const r = document.documentElement;
+    r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark';
+  });
+</script>
 </body>
 </html>
