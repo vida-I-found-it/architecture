@@ -4,6 +4,11 @@
 - **Fecha:** 2026-11-26
 - **Requerimientos / casos de uso afectados:** todos los endpoints de `core`, `schedule`, `scraper` y `notify`; CU-02 a CU-11; pendiente D4
 
+> **Ampliación (2026-11-26, [CU-03 D25](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)) · contratos entre servicios:**
+> - El proveedor declara como modelo propio, con `extra="forbid"`, los datos que su base guarda como `jsonb` pero que otro servicio envía. En `schedule`, el `payload` de un job `scrape`: así aparece en su `openapi.json` y `oasdiff` detecta sus cambios. `schedule` sigue sin interpretar los datos de negocio fuera de ese modelo.
+> - El consumidor guarda una **copia de versión fijada** del `openapi.json` del proveedor, anotando de qué versión sale, y sus pruebas validan contra ella lo que envía. Las pruebas no descargan nada de la red.
+> - **Límite:** la copia no se actualiza sola; un cambio del proveedor no se ve en el consumidor hasta actualizarla. Se mitiga con `oasdiff` en el CI del proveedor y declarando el cambio en la sección «Impacto entre repos» del PR.
+
 ## Contexto
 
 La arquitectura pide un contrato OpenAPI por pieza que expone endpoints ([`architecture.md`](../architecture.md), [entregable 1](../../00-context/deliverable01.md)). Hasta ahora se escribían a mano en `docs/api/` antes del código: existe [`core-dashboard.yaml`](../../api/core-dashboard.yaml) (CU-07, CU-08), pero `POST /api/alerts`, `GET /api/alert-modes` y las rutas internas no tienen contrato. Mantener un YAML a mano y, además, el código que lo implementa crea dos fuentes que se separan con el tiempo.

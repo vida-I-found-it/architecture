@@ -87,7 +87,7 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 
 | Contrato | Con quién | Estado |
 |---|---|---|
-| Crear job de captura | `schedule` | Definido en [CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24). |
+| Crear job de captura | `schedule` | Definido en [CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24). Las pruebas validan el cuerpo contra la copia fijada del `openapi.json` de `schedule` (D25). |
 | Detalle del job para la captura | `schedule` → `core` | **Pendiente de decisión** ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
 | Resultado por URL | `schedule` → `core` | **Pendiente de decisión** ([CU-05, pregunta 1](../requirements/user-stories/CU-05.md#preguntas-abiertas)). |
 | Corrida terminada | `schedule` → `core` | Ruta y cuerpo (`job_id`, `run_id`) definidos; respuesta **pendiente** ([CU-06, pregunta 1](../requirements/user-stories/CU-06.md#preguntas-abiertas)). |

@@ -85,7 +85,7 @@ Conexiones (PostgreSQL con el rol de `schedule` y MongoDB): la arquitectura las 
 
 | Contrato | Estado |
 |---|---|
-| Entrada de jobs desde `core` | Definida ([CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
+| Entrada de jobs desde `core` | Definida ([CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). El `payload` de `scrape` es un modelo propio en el `openapi.json` (D25). |
 | Lista blanca de callbacks | Regla definida: `schedule` solo acepta `core` ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md), [CU-03, D7](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
 | Envío al scraper | Cuerpo definido (`url`, `callback_url`); la respuesta `202 {scraper_id}` está en [US-04-03](../requirements/user-stories/CU-04.md). |
 | Callback del scraper | Estados `ok`, `no_price`, `error` definidos; cuerpo sin formato de errores **pendiente** ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
