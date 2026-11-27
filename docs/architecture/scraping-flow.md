@@ -2,7 +2,7 @@
 
 > **Alcance: común al ejercicio y al proyecto completo.** El flujo de scraping es el mismo en ambos y es uno de los pilares del proyecto; por eso vive en un único documento. Donde algo solo aplica a uno de los dos, se marca **(ejercicio)** o **(solo proyecto)**.
 
-> Consolidado con la [arquitectura](general-architecture.md), el [modelo de datos](../data/data-model.md) y los [requerimientos](../requirements/requirements.md). Cada alerta **activa** se captura **2 veces al día** dentro de franjas horarias configurables (por defecto 04:00–06:00 y 18:00–20:00), en segundo plano y escalonada, y se **analiza** otras 2 veces al día, un tiempo después de cada captura (parametrizable, puede reducirse a 1 y 1). Cada URL es una unidad de trabajo con su propio `transaction_id`.
+> Consolidado con la [arquitectura](general-architecture.md), el [modelo de datos](../data/data-model.md) y los [requerimientos](../requirements/requirements.md). Cada alerta **activa** se captura **2 veces al día** a horas de inicio configurables (por defecto 04:00 y 18:00), en segundo plano y con un desfase por orden de creación, y se **analiza** otras 2 veces al día, un tiempo después de cada captura (parametrizable, puede reducirse a 1 y 1). Cada URL es una unidad de trabajo con su propio `transaction_id`.
 
 ## Tabla de contenido
 
@@ -39,10 +39,10 @@ sequenceDiagram
     participant SR as 🕷️ scraper
     participant WEB as 🌍 Sitios
 
-    SC->>SC: dispara el job a su hora (franja y escalonado)
+    SC->>SC: dispara el job a su hora (hora de inicio más desfase)
     SC->>SC: crea una ejecución por cada URL de job.payload.items (un transaction_id cada una, solo de schedule)
     loop una URL a la vez, en secuencia
-        SC->>SR: envía { url, callback_url } (HTTP, asíncrono)
+        SC->>SR: envía { url, callback_url, clean: true } (HTTP, asíncrono)
         SR-->>SC: 202 { scraper_id } (schedule lo guarda para correlacionar)
         SR->>SR: valida la URL contra SSRF
         SR->>WEB: descarga y prueba la cascada de estrategias
@@ -70,7 +70,7 @@ sequenceDiagram
 
     alt al terminar la corrida
         SC->>CO: POST /api/internal/run-completed (job_id, run_id, payload)
-        CO->>CO: busca la alerta por alert.schedule_job_id
+        CO->>CO: busca la alerta por payload.alert_id
     else manual
         UI->>CO: POST /api/alerts/{alert_id}/analysis
     end
@@ -311,7 +311,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | ID | Evento | Qué pasa | Estado |
 |----|--------|----------|--------|
 | EV-17 | **El scraper está en pie, pero un sitio lo rompe** por un error técnico (por ejemplo, se cuelga o lanza una excepción al procesarlo). No es lo mismo que EV-05: aquí falla el propio scraper, no solo la respuesta del sitio | No llega el callback dentro del plazo (por URL) o llega `error`. Se trata como `error` de esa URL: `schedule` la reinyecta hasta 3 veces. Agotados, la ejecución queda `failed` y entra en el **barrido diario de errores**, que pide **un solo correo** al administrador (`schedule` llama a `notify`). La idempotencia del chequeo evita duplicar datos (R7) | ✅ decisión del equipo · ADR-0004 |
-| EV-18 | El scraper termina pero **no logra ejecutar el callback** (el destino no responde) | El scraper no tiene estado: si no puede entregar, el resultado se pierde. Desde `schedule` se ve como un callback que no llega (EV-17). Si el scraper reintenta el callback antes de rendirse **no está definido** | ❓ |
+| EV-18 | El scraper termina pero **no logra ejecutar el callback** (el destino no responde) | El scraper reintenta el callback 3 veces (1, 2 y 4 s; ADR-0004, US-04-03-AC10). Si aun así no entrega, el resultado se pierde porque no tiene estado; `schedule` lo ve como un callback que no llega (EV-17) | ✅ ADR-0004 |
 | EV-19 | `schedule` cae y no dispara jobs a su hora | No se pierde nada: las alertas viven en `core`. La infraestructura lo reinicia y, al volver, `schedule` **toma el trabajo que no hizo**: carga los jobs de la tabla `job` y calcula la próxima ejecución de cada uno desde su `last_run_at` ([ADR-0007](adr/0007-schedule-apscheduler-loaded-from-postgres.md)). El tope de 2 corridas al día (R2) sigue vigente | ✅ decisión del equipo |
 | EV-20 | `core` no responde cuando `schedule` dispara el job | La corrida no depende de `core`: las URLs ya están en `job.payload`, así que se envían igual. Solo las entregas a `core` quedan pendientes y se reintentan ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md), enmienda del 2026-11-26) | ✅ CU-03, D15 |
 | EV-21 | `core` no responde al callback con los precios | El outbox de `schedule` reintenta la entrega; el estado del callback es independiente del estado del trabajo | ✅ `job_callback_outbox` |
@@ -329,7 +329,7 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 | ID | Evento | Qué pasa | Estado |
 |----|--------|----------|--------|
 | EV-24 | Se llega al tope de 2 corridas al día | No se dispara otra, aunque sea una recuperación. La corrida inicial al crear la alerta cuenta dentro del tope | ✅ R2, SCH-6 |
-| EV-25 | Una corrida cae fuera de las franjas horarias | No corre hasta la siguiente franja (por defecto 04:00–06:00 y 18:00–20:00) | ✅ SCH-7 |
+| EV-25 | Una corrida tarda más de lo previsto o `schedule` estuvo caído a la hora de inicio | No hay hora de cierre: la corrida termina cuando terminan sus URLs. Una corrida perdida se ejecuta una vez si no llegó la siguiente hora programada y el tope lo permite; no se crea otra mientras la anterior no termine | ✅ CU-03, D27 y D29 |
 | EV-28 | El análisis se lanza a mano cuando aún hay URLs pendientes de reintento | Usa los últimos chequeos disponibles; el análisis automático de fin de corrida toma lo que se resuelva después | ✅ por diseño (DEC-33) |
 | EV-29 | El barrido diario no encuentra errores | No envía correo (evita ruido) | ✅ ADR-0004 |
 | EV-30 | El análisis falla, o `core` no recibe el aviso de «corrida terminada» | No se pierde nada: los chequeos siguen guardados y el siguiente análisis los toma. `schedule` reintenta el aviso (`job_run`); si se agota queda `failed` y entra en el barrido diario. Un análisis manual lo cubre | 💡 pendiente de confirmar |
@@ -352,7 +352,7 @@ Como `schedule` es quien envía el trabajo, una caída se nota en el propio env�
 
 ## Pendientes y límites conocidos
 
-- **Eventos por definir (❓) y propuestas (💡):** ver el catálogo de [manejo de eventos](#manejo-de-eventos). Los que más condicionan el diseño son EV-18 y EV-20.
+- **Eventos por definir (❓) y propuestas (💡):** ver el catálogo de [manejo de eventos](#manejo-de-eventos).
 - **Valores y parámetros ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)):** reintentos, plazos, concurrencia y horas ya tienen un valor por defecto y son **variables de entorno** (sección «Parámetros» del ADR). Son estimaciones sin medir; se ajustan con los fixtures.
 - **Barrido diario y aviso al administrador:** la plantilla `admin-alert-email` se siembra con `notify/seed.sql` (EJ-3, DEC-33). Un día sin errores no envía correo (EV-29).
 - **D15:** dónde se persiste el detalle por etapa (`job_state`, `raw_capture`) tras genericizar `schedule`. Hoy `schedule` solo conserva el resultado genérico de la corrida; ver [pendientes](../00-context/pending.md).

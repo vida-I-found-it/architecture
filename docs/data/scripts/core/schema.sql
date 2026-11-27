@@ -210,6 +210,21 @@ FROM V_ALERT_URL_LAST_CHECK l
 WHERE l.IS_ACTIVE AND l.LAST_PRICE_COP IS NOT NULL
 ORDER BY l.ALERT_ID, l.LAST_PRICE_COP, l.ALERT_URL_ID;
 
+-- Mejor precio del día de cada URL (CU-05, D5-16): el menor `ok` no anómalo por día
+-- de Bogotá; empate: el chequeo más antiguo. No reescribe nada (DEC-29). Un chequeo
+-- se excluye si algún veredicto suyo en PRICE_ANOMALY es anómalo. Sin probar en una BD.
+CREATE VIEW V_ALERT_URL_DAILY_BEST AS
+SELECT DISTINCT ON (c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date)
+       c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date AS DAY,
+       c.PRICE_COP AS BEST_PRICE_COP, c.CHECKED_AT AS BEST_PRICE_AT
+FROM ALERT_SNAPSHOT c
+WHERE c.STATUS = 'ok'
+  AND NOT EXISTS (SELECT 1 FROM PRICE_ANOMALY a
+                  WHERE a.ALERT_URL_ID = c.ALERT_URL_ID AND a.CHECKED_AT = c.CHECKED_AT
+                    AND a.IS_ANOMALOUS)
+ORDER BY c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date,
+         c.PRICE_COP, c.CHECKED_AT;
+
 -- Estadísticas por sitio y día (antes la tabla SITE_STATS_DAILY).
 CREATE VIEW V_SITE_STATS_DAILY AS
 SELECT u.DOMAIN, (c.CHECKED_AT AT TIME ZONE 'UTC')::date AS DAY,

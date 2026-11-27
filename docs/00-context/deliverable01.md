@@ -29,7 +29,7 @@ El ejemplo es la construcción de un «sistema» que hace **scraping** sobre cie
 
 La funcionalidad priorizada es **el recorrido completo de una alerta**: desde que el usuario la crea hasta que ve el resultado en el dashboard. Se agrupa en cuatro bloques.
 
-**1 · Crear la alerta (CU-02, CU-03).** El usuario elige el modo de creación (hoy solo «URL directa»; «Palabra clave» con LLM queda preparado pero deshabilitado), pega de 1 a 10 URLs, escribe el correo al que se le avisará y confirma en un modal que advierte que la acción es definitiva. La alerta es inmutable. Al guardarse, el sistema crea por debajo su agendamiento: **2 veces al día**, dentro de las ventanas 04:00–06:00 y 18:00–20:00. La primera corrida es inmediata, cuenta dentro de esas 2 y puede quedar fuera de las ventanas. El usuario no vuelve a intervenir.
+**1 · Crear la alerta (CU-02, CU-03).** El usuario elige el modo de creación (hoy solo «URL directa»; «Palabra clave» con LLM queda preparado pero deshabilitado), pega de 1 a 10 URLs, escribe el correo al que se le avisará y confirma en un modal que advierte que la acción es definitiva. La alerta es inmutable. Al guardarse, el sistema crea por debajo su agendamiento: **2 veces al día**, a las horas de inicio configuradas (04:00 y 18:00 por defecto, hora de Bogotá) más un desfase por alerta. La primera corrida es inmediata y cuenta dentro de esas 2. El usuario no vuelve a intervenir.
 
 **2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda **un chequeo por resultado** en PostgreSQL (`alert_snapshot`), sea `ok`, `no_price` o `error` (DEC-29). No calcula el mejor precio ni avisa.
 
@@ -100,7 +100,7 @@ Reglas del catálogo:
 
   | Qué hace por dentro | Requerimientos | Pieza |
   |---|---|---|
-  | Programar las corridas: 2 al día, franjas horarias, reparto entre alertas y ejecución en segundo plano | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Franjas horarias* | `schedule` |
+  | Programar las corridas: 2 al día, horas de inicio, reparto entre alertas y ejecución en segundo plano | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Horas de inicio* | `schedule` |
   | Extraer el precio de la página: las 4 estrategias en cadena y los reintentos | *Descarga HTTP*, *Extractor genérico*, *Extracción con navegador*, *Reintentos controlados*, *Extracción por microdata y regex*, *Interceptar la llamada interna*, *Cascada de estrategias de extracción* | `scraper` |
   | Calcular el mejor precio | *Motor de mejor precio* | `core` |
   | Enviar el email: SMTP, plantilla y advertencia de caída anómala | *Envío de email*, *Plantilla de aviso*, *Advertencia de caída anómala* | `notify` |
@@ -140,7 +140,7 @@ FastAPI y APScheduler: los jobs viven en PostgreSQL y, al arrancar, se cargan en
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
 | **Gestión de jobs**<br>`JobService` | Crea y consulta los jobs (tareas programadas): cuándo corren, qué hacen y a quién entregan el resultado | CU-03 | *API de jobs*, *Acción del job*, *Callback del job* |
-| **Agendamiento**<br>`SchedulerEngine` | Decide cuándo corre cada job: 2 veces al día, dentro de las franjas horarias y repartidas para no saturar | CU-03 | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Franjas horarias* |
+| **Agendamiento**<br>`SchedulerEngine` | Decide cuándo corre cada job: 2 veces al día, a las horas de inicio configuradas y con un desfase por alerta para no saturar | CU-03 | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Horas de inicio* |
 | **Ejecución de corridas**<br>`ExecutionService` | Dispara el job a su hora y registra cada corrida con su estado y su identificador de transacción | CU-03, CU-04 | *Ejecución en segundo plano* |
 | **Entrega de trabajo**<br>`ScraperDispatcher` | Al disparar el job, envía al scraper las URLs guardadas en él **una a la vez**, cada una con su callback; si el envío falla, reintenta con backoff exponencial. Recibe `ok`, `no_price` o `error` y **administra los reintentos del scraper**: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min). Lo agotado queda `failed` y lo avisa el barrido diario | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
 | **Entrega del resultado**<br>`CallbackService` | Envía el resultado a `core`. Si falla, lo reintenta desde su propia cola de reintentos. Hoy solo soporta la acción «llamar a un endpoint» | CU-05 | *Acción del job*, *Callback del job* |
@@ -184,7 +184,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 | ID | Regla | Requerimientos |
 |---|---|---|
 | R1 | La unidad de captura es la **URL**. Una alerta con N URLs genera N capturas independientes: si una falla, las demás continúan | *El scraper entrega a schedule* |
-| R2 | Cada alerta se captura **hasta 2 veces al día**, dentro de las franjas horarias configuradas | *Programación por alerta*, *Máximo de corridas al día*, *Franjas horarias* |
+| R2 | Cada alerta se captura **hasta 2 veces al día**, a las horas de inicio configuradas | *Programación por alerta*, *Máximo de corridas al día*, *Horas de inicio* |
 | R3 | Una URL peligrosa (red interna, esquema no permitido, credenciales embebidas) se rechaza al crear la alerta y **de nuevo en cada descarga y redirección** | *Protección anti-SSRF* |
 | R4 | El precio se busca con estrategias en orden, de la más simple a la más pesada; **gana la primera** que devuelve un precio válido. Si ninguna funciona tras 3 reintentos (los administra `schedule`), la URL queda «sin precio hoy» y **no se guarda nada** | *Extractor genérico*, *Extracción por microdata y regex*, *Extracción con navegador*, *Interceptar la llamada interna*, *Reintentos controlados*, *Cascada de estrategias de extracción* |
 

@@ -13,6 +13,8 @@
 
 > **Enmienda (2026-11-26, [CU-03 D15 a D21](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** reemplaza la parte del punto 1 en la que `schedule` pide el detalle a `core`. Al crear el job, `core` envía las URLs en `payload.items`; `schedule` las guarda y, al disparar, crea una ejecución por elemento **sin llamar a `core`**. `GET /api/internal/job-detail` deja de existir. Además, la lista blanca de callbacks valida **origen y ruta exacta**, sale solo de variables de entorno y, antes de desplegar en proveedores distintos, son obligatorios HTTPS y autenticación entre servicios.
 
+> **Enmienda (2026-11-27, [CU-04 D13 a D26](../../requirements/user-stories/CU-04.md#decisiones-aprobadas-2026-11-24), [CU-03 D26 a D29](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** `SCHEDULE_MAX_ACTIVE_RUNS` se reemplaza por `SCHEDULE_MAX_IN_FLIGHT_URLS` (URLs en proceso, nunca más que la capacidad total del scraper) y todo envío comprueba antes un lugar libre. `SCHEDULE_SCRAPE_WINDOWS` se reemplaza por `SCHEDULE_RUN_START_TIMES` (sin hora de cierre) con desfase por orden de creación. Un `503` no gasta reintentos de envío (5 s; desde los 15 min cuenta como fallo). Al agotarse el envío o el plazo, la URL queda `failed` y se entrega `error` a `core`, en lugar de bloquear el trabajo. Se agregan `invalid_price` (solo con `clean: true`) y `SCHEDULE_PUBLIC_URL`; la lista del scraper valida origen y ruta. Donde las secciones siguientes digan otra cosa, manda esta enmienda.
+
 ## Contexto
 
 Hasta ahora el scraper hacía *pull*: preguntaba a `schedule` si había trabajo y le entregaba el resultado en la misma llamada. Eso lo dejaba sin puertos entrantes, pero tenía un costo: nadie sabía si estaba vivo y, si caía, no había una forma natural de detectarlo ni de reintentar el trabajo. Las tareas de scraping son asíncronas y el objetivo final del flujo es el scraper, así que conviene que quien las dispara (`schedule`) sea quien lo invoque.
@@ -43,6 +45,8 @@ Hasta ahora el scraper hacía *pull*: preguntaba a `schedule` si había trabajo 
 La fuente es el [README de `scraper-service`](https://github.com/vida-I-found-it/scraper-service#readme); aquí se resume lo que `schedule` y `core` necesitan.
 
 **Petición** `POST /scraper/internal/jobs`: `{ "url", "callback_url" }`. Respuestas: `202 {scraper_id}`, `400` (callback fuera de la lista blanca, o ausente en producción), `422` (cuerpo mal formado), `503` (sin cupo de concurrencia).
+
+> **Enmienda (2026-11-26, [CU-04 D12](../../requirements/user-stories/CU-04.md#decisiones-aprobadas-2026-11-24) y US-04-06):** la petición admite además `clean` (booleano opcional, `false` por defecto; `422` si no es booleano) y `schedule` envía siempre `clean: true`. Con `clean: true` el scraper entrega `data` ya limpio, no crudo, y el callback incluye `clean`. Ver los criterios de US-04-06.
 
 **Callback** `POST <callback_url>`:
 

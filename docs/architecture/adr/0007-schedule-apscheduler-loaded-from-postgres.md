@@ -6,6 +6,8 @@
 
 > **Ampliación (2026-11-26, [CU-03 D14, D15, D19 y D24](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** `schedule` **calcula** `schedule_cron` (el minuto sale de un hash estable de `external_key`) y no lo recibe de `core`. Las URLs ya están en `job.payload`, así que un disparo no depende de `core`. `SCHEDULE_TIMEZONE` es configurable (`America/Bogota`) y la tarea periódica de las colas usa `SCHEDULE_POLL_INTERVAL_SECONDS` = 2, **aprobado** (reemplaza la propuesta del punto 7). Para la memoria, el `payload` (hasta 32 KB) no se carga en APScheduler: solo el id y el cron; se lee de la base al disparar.
 
+> **Ampliación (2026-11-27, [CU-03 D26 a D29](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** el cron de cada job sale de `SCHEDULE_RUN_START_TIMES` (las horas comparten el minuto) más el desfase ((n − 1) × `SCHEDULE_STAGGER_INTERVAL_MINUTES`) mod `SCHEDULE_STAGGER_SPAN_MINUTES`. **Ya no hay franjas:** en los puntos 2 y 4, un disparo perdido se ejecuta una vez si no llegó la siguiente hora programada y el tope lo permite, y se quita la comprobación de franja; la protección contra el doble disparo compara `last_run_at` con la hora programada. No se crea una corrida si la anterior no terminó. APScheduler solo crea corridas; el envío lo limita el número de URLs en proceso.
+
 ## Contexto
 
 D4 (2026-11-24) dejó `next_run_at` en PostgreSQL y unos workers que, cada cierto tiempo, toman lo vencido con `FOR UPDATE SKIP LOCKED`. Quedaban sin definir en qué proceso corre ese bucle y cada cuánto revisa la tabla. El stack del proyecto ya nombraba APScheduler para `schedule` ([`tech-stack.md`](../../tools/tech-stack.md)).

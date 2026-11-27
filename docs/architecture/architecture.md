@@ -70,7 +70,7 @@ sequenceDiagram
     rect rgba(60, 170, 120, 0.14)
         Note over CO,SC: CU-03 · Programar la captura
         CO->>SC: crea el job con las URLs y sus callbacks (en segundo plano)
-        SC->>SC: lanza la primera corrida y luego dispara el job en las franjas
+        SC->>SC: lanza la primera corrida y luego dispara el job a sus horas de inicio
     end
 
     rect rgba(70, 130, 220, 0.14)
