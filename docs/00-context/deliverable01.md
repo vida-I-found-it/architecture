@@ -60,7 +60,7 @@ Frontend en **React + Vite + TypeScript** con shadcn/ui, `react-hook-form` + `zo
 
 **Dashboard de una alerta (CU-07, CU-08).** Muestra el mejor precio vigente con su advertencia si la caída es anómala, un gráfico de líneas con una curva por sitio (histórico y comparador) y la tabla de sitios con el último precio, el **mejor precio de cada sitio desde que se creó la alerta**, la disponibilidad y el estado. En el gráfico, un círculo marca el mejor precio de cada sitio y un detalle señala la caída anómala. El correo aparece enmascarado.
 
-![Dashboard de una alerta con gráfico y precios por sitio](../design/mockups/alert-dashboard.png)
+![Board de una alerta con gráfico y precios por sitio](../design/mockups/alert-board.png)
 
 Son maquetas con datos de ejemplo (sitios `*.example`), de estilo minimalista: tonos pizarra sin blanco, la fuente Geist e iconos de línea. La lista de alertas y la página pública de baja siguen el mismo estilo y no se dibujan aquí.
 
