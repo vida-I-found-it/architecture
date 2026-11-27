@@ -44,6 +44,8 @@
 | US-03-01 | ALE-8, SCH-1, SCH-13, SCH-14 | US-03-01-AC7 | — | unitaria, integración | Sin implementar |
 | US-03-01 | ALE-8, SCH-1, SCH-13, SCH-14 | US-03-01-AC8 | — | unitaria, integración | Sin implementar |
 | US-03-01 | ALE-8, SCH-1, SCH-13, SCH-14 | US-03-01-AC9 | — | unitaria, integración | Sin implementar |
+| US-03-01 | ALE-8, SCH-1, SCH-13, SCH-14 | US-03-01-AC10 | — | unitaria | Sin implementar |
+| US-03-01 | ALE-8, SCH-1, SCH-13, SCH-14 | US-03-01-AC11 | — | integración | Sin implementar |
 | US-03-02 | ALE-8 (DEC-15) | US-03-02-AC1 | — | unitaria, integración | Sin implementar |
 | US-03-02 | ALE-8 (DEC-15) | US-03-02-AC2 | — | unitaria, integración | Sin implementar |
 | US-03-02 | ALE-8 (DEC-15) | US-03-02-AC3 | — | unitaria, integración | Sin implementar |
@@ -62,6 +64,8 @@
 | US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC10 | — | unitaria, integración | Sin implementar |
 | US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC11 | — | unitaria, integración | Sin implementar |
 | US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC12 | — | unitaria, integración | Sin implementar |
+| US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC13 | — | integración | Sin implementar |
+| US-03-03 | SCH-11, SCH-12, SCH-13, SCH-14 | US-03-03-AC14 | — | integración | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC1 | — | integración | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC2 | — | unitaria | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC3 | — | unitaria | Sin implementar |
@@ -71,7 +75,7 @@
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC7 | — | integración | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC8 | — | unitaria | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC9 | — | unitaria | Sin implementar |
-| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC10 | — | por definir | Sin implementar |
+| US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC10 | — | integración | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC11 | — | unitaria | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC12 | — | integración (carga) | Sin implementar |
 | US-03-04 | SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-11 | US-03-04-AC13 | — | integración | Sin implementar |
@@ -192,6 +196,7 @@
 | US-05-05 | PRO-1, RNF-6 | US-05-05-AC8 | — | unitaria, integración, contrato | Sin implementar |
 | US-05-05 | PRO-1, RNF-6 | US-05-05-AC9 | — | unitaria, integración, contrato | Sin implementar |
 | US-05-05 | PRO-1, RNF-6 | US-05-05-AC10 | — | unitaria, integración, contrato | Sin implementar |
+| US-05-05 | PRO-1, RNF-6 | US-05-05-AC12 | — | integración | Sin implementar |
 | US-05-06 | SCH-14, SCR-20 | US-05-06-AC1 | — | unitaria, integración | Sin implementar |
 | US-05-06 | SCH-14, SCR-20 | US-05-06-AC2 | — | unitaria, integración | Sin implementar |
 | US-05-06 | SCH-14, SCR-20 | US-05-06-AC3 | — | unitaria, integración | Sin implementar |
@@ -454,12 +459,12 @@
 
 | CU | Criterios | Con nivel | Nivel «por definir» |
 |---|---|---|---|
-| CU-03 | 45 | 44 | 1 |
+| CU-03 | 49 | 49 | 0 |
 | CU-04 | 57 | 57 | 0 |
-| CU-05 | 54 | 54 | 0 |
+| CU-05 | 55 | 55 | 0 |
 | CU-06 | 43 | 20 | 23 |
 | CU-07 | 63 | 60 | 3 |
 | CU-08 | 32 | 29 | 3 |
 | CU-10 | 46 | 31 | 15 |
 | CU-11 | 31 | 17 | 14 |
-| **Total CU-03 a CU-11** | **371** | **312** | **59** |
+| **Total CU-03 a CU-11** | **376** | **318** | **58** |
