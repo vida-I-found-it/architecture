@@ -100,8 +100,9 @@ Ningún valor va fijo en el código (INF-3): todos son variables de entorno con 
 | `SCHEDULE_ERROR_MAX_RETRIES` | `3` | Reintentos de una URL que devolvió `error` (SCR-8) |
 | `SCHEDULE_ERROR_RETRY_MIN_SECONDS` / `_MAX_SECONDS` | `600` / `900` | Rango de la espera entre reintentos de `error`; se elige un valor al azar |
 | `SCHEDULE_CALLBACK_DEADLINE_SECONDS` | `120` | Plazo del callback **por URL**; vencido, la URL cuenta como `error` |
-| `SCHEDULE_MAX_ACTIVE_RUNS` | `2` | Corridas activas a la vez entre alertas distintas |
-| `SCHEDULE_SCRAPE_WINDOWS` | `04:00-06:00,18:00-20:00` | Franjas de captura (SCH-7); con una sola franja, 1 captura al día |
+| `SCHEDULE_MAX_IN_FLIGHT_URLS` | `2` | URLs en proceso a la vez; no supera la capacidad total del scraper (reemplaza a `SCHEDULE_MAX_ACTIVE_RUNS`, DEC-36) |
+| `SCHEDULE_RUN_START_TIMES` | `04:00,18:00` | Horas de inicio, sin hora de cierre (SCH-7); con una sola hora, 1 captura al día (reemplaza a `SCHEDULE_SCRAPE_WINDOWS`, DEC-36) |
+| `SCHEDULE_STAGGER_INTERVAL_MINUTES` / `_SPAN_MINUTES` | `2` / `120` | Desfase por orden de creación y periodo tras el que vuelve a empezar (DEC-36) |
 | `SCHEDULE_SWEEP_TIME` | `23:00` | Hora del barrido diario de errores |
 | `SCHEDULE_CALLBACK_ALLOWLIST` | solo `core` | Lista blanca de destinos de callback de `schedule` |
 | `ADMIN_ALERT_EMAIL` | sin defecto, obligatoria | Dirección del administrador para el barrido |
@@ -131,7 +132,7 @@ Los nombres y los valores del scraper son los de su README (ya implementados); l
 
 **Reglas entre parámetros** (no las puede validar una sola pieza, se documentan):
 - `SCHEDULE_CALLBACK_DEADLINE_SECONDS` debe ser mayor que `SCRAPER_URL_TIMEOUT_SECONDS` **más** el peor caso de entrega del callback (3 reintentos de 5 s más 1 + 2 + 4 s de espera, unos 22 s): por defecto 120 frente a 90 + 22 = 112.
-- `SCHEDULE_MAX_ACTIVE_RUNS` no debe superar `SCRAPER_MAX_CONCURRENCY`, para que el 503 sea la excepción.
+- `SCHEDULE_MAX_IN_FLIGHT_URLS` no debe superar la capacidad total del scraper (`SCRAPER_MAX_CONCURRENCY` por cada copia), para que el 503 sea la excepción (DEC-36).
 - `SCHEDULE_SWEEP_TIME` debe caer después de la última hora de análisis.
 
 **Cálculo de referencia (por defecto):** con 10 URLs, una pasada dura ~15 min en el peor caso (10 × 90 s). Un `error` vuelve a la cola con su espera sin frenar a las demás; con 3 reintentos, la corrida más lenta termina en ~1 h.
@@ -140,7 +141,7 @@ Los nombres y los valores del scraper son los de su README (ya implementados); l
 
 - **`job_execution` en el SQL:** `RUN_ID`, `SEQ`, `ITEM` (la unidad de trabajo es de `schedule`: **no viaja al scraper**), `SCRAPER_ID` (el id que el scraper devuelve en el `202`), `ATTEMPT` y `NEXT_ATTEMPT_AT`, con una sola ejecución en curso por disparo. Probado en `postgres:16` el 2026-11-12 (ver [modelo de datos](../../data/data-model.md)); no se midió rendimiento con volumen.
 - **El análisis es único para todas las alertas**, con un `alert_id` opcional para que la interfaz pueda pedirlo de una sola.
-- **El tope de corridas activas entre alertas** es `SCHEDULE_MAX_ACTIVE_RUNS`, más el escalonado que fija `core` (DEC-20).
+- **El tope entre alertas se mide en URLs en proceso** (`SCHEDULE_MAX_IN_FLIGHT_URLS`), y los arranques se reparten con el desfase por orden de creación que calcula `schedule` (DEC-36; reemplaza el tope de corridas activas y el escalonado de DEC-20).
 - **El barrido** reúne lo que falló **desde su última ejecución** (marcador en `job.last_run_at`), no «las últimas 24 h».
 - **Aviso al administrador:** plantilla `admin-alert-email` en `notify`, agrupada por alerta, solo con identificadores y códigos de error (nunca contenido del sitio sin sanear); `app_user_id` es el usuario fijo por entorno de las demás piezas; un día sin errores no envía correo (EV-29).
 

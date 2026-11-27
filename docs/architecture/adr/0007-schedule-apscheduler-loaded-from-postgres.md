@@ -6,7 +6,7 @@
 
 > **Ampliación (2026-11-26, [CU-03 D14, D15, D19 y D24](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** `schedule` **calcula** `schedule_cron` (el minuto sale de un hash estable de `external_key`) y no lo recibe de `core`. Las URLs ya están en `job.payload`, así que un disparo no depende de `core`. `SCHEDULE_TIMEZONE` es configurable (`America/Bogota`) y la tarea periódica de las colas usa `SCHEDULE_POLL_INTERVAL_SECONDS` = 2, **aprobado** (reemplaza la propuesta del punto 7). Para la memoria, el `payload` (hasta 32 KB) no se carga en APScheduler: solo el id y el cron; se lee de la base al disparar.
 
-> **Ampliación (2026-11-27, [CU-03 D26 a D29](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** el cron de cada job sale de `SCHEDULE_RUN_START_TIMES` (las horas comparten el minuto) más el desfase ((n − 1) × `SCHEDULE_STAGGER_INTERVAL_MINUTES`) mod `SCHEDULE_STAGGER_SPAN_MINUTES`. **Ya no hay franjas:** en los puntos 2 y 4, un disparo perdido se ejecuta una vez si no llegó la siguiente hora programada y el tope lo permite, y se quita la comprobación de franja; la protección contra el doble disparo compara `last_run_at` con la hora programada. No se crea una corrida si la anterior no terminó. APScheduler solo crea corridas; el envío lo limita el número de URLs en proceso.
+> **Ampliación (2026-11-27, [CU-03 D26 a D29](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** el cron de cada job sale de `SCHEDULE_RUN_START_TIMES` (las horas comparten el minuto) más el desfase ((n − 1) × `SCHEDULE_STAGGER_INTERVAL_MINUTES`) mod `SCHEDULE_STAGGER_SPAN_MINUTES`. **Ya no hay franjas** (los puntos 2, 3, 4 y 7, el diagrama y las alternativas ya lo reflejan; el texto anterior queda en el historial de git): en los puntos 2 y 4, un disparo perdido se ejecuta una vez si no llegó la siguiente hora programada y el tope lo permite, y se quita la comprobación de franja; la protección contra el doble disparo compara `last_run_at` con la hora programada. No se crea una corrida si la anterior no terminó. APScheduler solo crea corridas; el envío lo limita el número de URLs en proceso.
 
 ## Contexto
 
@@ -22,20 +22,18 @@ Dos hechos hacen simple llevar los disparadores en memoria:
 1. **La fuente de verdad es la tabla `schedule.job` en PostgreSQL.** APScheduler (planificador asíncrono, almacén en memoria) solo lleva los disparadores. Si la memoria se pierde, se reconstruye desde la tabla.
 2. **Al arrancar, antes de aceptar peticiones,** `schedule` lee en una sola consulta los jobs activos y registra cada uno en APScheduler con un disparador cron de su `schedule_cron`, en la zona `America/Bogota` (D5). La próxima ejecución de cada job se calcula **desde su `last_run_at`**:
    - **Sin `last_run_at`** (se cayó antes de su primera corrida): corre de inmediato, como la primera corrida del alta (D3).
-   - **Con `last_run_at`:** la próxima es el primer disparo del cron posterior a `last_run_at`. Si ese disparo ya pasó mientras la pieza estaba caída:
-     - y su franja **sigue abierta**, corre de inmediato si el tope del día lo permite (EV-19);
-     - y su franja **ya cerró**, se salta y queda agendado el siguiente disparo (EV-25).
-3. **Alta del job (D12 de CU-03).** `POST /schedule/internal/jobs` guarda el job (idempotente por `(system, external_key)`), confirma la transacción, lo registra en APScheduler y agenda **una ejecución inmediata y única**: la primera corrida, exenta de franja, que cuenta en el tope del día (D3). Responde `201 {job_id, next_run_at}` sin esperar a que esa corrida termine. Con la llave repetida responde `200` y no registra ni lanza nada.
+   - **Con `last_run_at`:** la próxima es el primer disparo del cron posterior a `last_run_at`. Si ese disparo ya pasó mientras la pieza estaba caída, se ejecuta **una** vez si todavía no llegó la siguiente hora programada y el tope del día lo permite (EV-19); las corridas perdidas no se acumulan (EV-25).
+3. **Alta del job (D12 de CU-03).** `POST /schedule/internal/jobs` guarda el job (idempotente por `(system, external_key)`), confirma la transacción, lo registra en APScheduler y agenda **una ejecución inmediata y única**: la primera corrida, que no espera la hora de inicio y cuenta en el tope del día (D3). Responde `201 {job_id, next_run_at}` sin esperar a que esa corrida termine. Con la llave repetida responde `200` y no registra ni lanza nada.
 4. **Al disparar,** en una sola transacción:
    1. bloquea la fila del job (`SELECT … FOR UPDATE`);
-   2. comprueba que siga activo, que el reloj esté dentro de una franja (salvo la primera corrida), que el día de Bogotá tenga menos de 2 corridas (`job_run.created_at`, R2) y que no haya ya una corrida en la franja actual (por `last_run_at`);
+   2. comprueba que siga activo, que el día de Bogotá tenga menos de 2 corridas (`job_run.created_at`, R2), que no haya ya una corrida para esa hora programada (por `last_run_at`) y que la corrida anterior haya terminado;
    3. si pasa, crea el `job_run` y sus `job_execution`, y guarda **`last_run_at` = hora del disparo** y `next_run_at` = el siguiente disparo del cron;
    4. si no pasa, no crea nada.
 
    Esta comprobación impide una corrida doble aunque, por error, corran dos procesos.
 5. **Un solo proceso.** `schedule` corre con un solo proceso de aplicación (una réplica, un worker de uvicorn) que contiene la API y APScheduler. Con varios procesos cada uno tendría su propio APScheduler: el punto 4 evita la corrida doble, pero no el trabajo repetido. Escalar a varias réplicas exige otra decisión (elección de líder o almacén compartido).
 6. **`last_run_at` es el dato que manda tras un reinicio.** `next_run_at` queda como dato informativo: lo devuelve `GET /schedule/internal/jobs/{job_id}` y sirve para observar, pero el motor no lo lee. Por eso se elimina el índice `IX_JOB_NEXT_RUN`: nadie toma jobs por ese índice, y el arranque lee todos los activos.
-7. **Lo demás sigue como cola en la base.** El envío de cada URL al scraper, sus reintentos y la entrega de resultados (`job_execution`, `job_callback_outbox`, ADR-0004, CU-04 y CU-05) siguen tomándose con `FOR UPDATE SKIP LOCKED`. Esas colas las revisa una **tarea periódica del mismo APScheduler**. 💡 Intervalo propuesto: 2 s, sin aprobar; se mide.
+7. **Lo demás sigue como cola en la base.** El envío de cada URL al scraper, sus reintentos y la entrega de resultados (`job_execution`, `job_callback_outbox`, ADR-0004, CU-04 y CU-05) siguen tomándose con `FOR UPDATE SKIP LOCKED`. Esas colas las revisa una **tarea periódica del mismo APScheduler**. Intervalo: `SCHEDULE_POLL_INTERVAL_SECONDS` = 2 (aprobado, sin medir).
 
 ```mermaid
 sequenceDiagram
@@ -53,8 +51,8 @@ sequenceDiagram
     API->>DB: INSERT job (idempotente) · COMMIT
     API->>AP: registra el cron + una ejecución inmediata
     API-->>CO: 201 {job_id, next_run_at}
-    Note over AP,DB: Cada disparo (inmediato o en franja)
-    AP->>DB: FOR UPDATE en job · franja, tope y corrida de la franja
+    Note over AP,DB: Cada disparo (inmediato o a su hora de inicio)
+    AP->>DB: FOR UPDATE en job · tope, hora programada y corrida anterior
     AP->>DB: INSERT job_run + job_execution · last_run_at, next_run_at · COMMIT
 ```
 
@@ -64,7 +62,7 @@ sequenceDiagram
 |-------------|------------|
 | D4: workers que revisan la tabla cada N s con `FOR UPDATE SKIP LOCKED` | Hay que definir el proceso y el intervalo, y consulta la tabla aunque no haya nada que disparar. El usuario prefirió APScheduler el 2026-11-26 |
 | APScheduler con su almacén en base de datos (SQLAlchemy) | Guarda los jobs serializados en una tabla propia: serían dos fuentes (la suya y `job`), y deserializa con `pickle`, un riesgo si alguien escribe en esa tabla |
-| Cron del sistema operativo o del contenedor | No conoce franjas, tope diario ni la primera corrida inmediata |
+| Cron del sistema operativo o del contenedor | No conoce el desfase por alerta, el tope diario ni la primera corrida inmediata |
 
 ## Consecuencias
 

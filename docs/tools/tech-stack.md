@@ -43,7 +43,7 @@
 | robots.txt + rate limit | **Protego** + **aiolimiter** *(proyecto; no implementado en el scraper v1.0.0)* | Respeta `robots.txt`/`Crawl-delay` y controla la tasa por dominio (SCR-5/6). El README del scraper lo declara como principio, sin verificación implementada. |
 | Parseo precio/moneda | **price-parser** + **Babel** | Extrae precio numérico y normaliza moneda por locale (PRO-1, multi-moneda). |
 | Cola / workers | ~~**Redis** + **Arq**~~ **No en el ejercicio** | Scraping en background escalonado; reintentos. **Decidido ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)):** `schedule` envía el trabajo al scraper por HTTP, sin cola; Redis + Arq queda como evolución futura — [pendientes](../00-context/pending.md) B2. |
-| Scheduler | **APScheduler** (repo `schedule`) | Encola corridas en ventanas horarias (04–06 / 18–20, env). |
+| Scheduler | **APScheduler** (repo `schedule`) | Encola corridas a las horas de inicio configuradas (04:00 y 18:00 por defecto, por entorno), con desfase por alerta (DEC-36). |
 | ORM relacional / migraciones | **SQLAlchemy 2 + Alembic** | Modelo versionado y migrable (PostgreSQL). |
 | Acceso MongoDB | **Motor** (async) / **Beanie** (ODM) | Cliente/ODM para las colecciones documentales. |
 | Plantillas email | **Jinja2** + **aiosmtplib** | Plantilla única de novedad; envío SMTP. |
@@ -113,7 +113,7 @@ graph LR
 | **frontend** | React PWA; consume `auth`/`core`/`schedule` vía el contrato **OpenAPI** de cada uno, todo detrás del Gateway. |
 | **auth** | FastAPI: login/JWT, RBAC, reset, gestión de usuarios, `system` (multi-proyecto). Publica su JWKS. |
 | **core** | FastAPI: alertas, suscripciones, adapters, normalizador, tasa de cambio, validador, motor de decisión. Ensambla el detalle del job a pedido de `schedule`. |
-| **schedule** | FastAPI + APScheduler: `schedule`/`run`, ventanas horarias, envía el trabajo al scraper y recibe su resultado por un callback. |
+| **schedule** | FastAPI + APScheduler: `schedule`/`run`, horas de inicio con desfase, envía el trabajo al scraper y recibe su resultado por un callback. |
 | **notify** | FastAPI: outbox transaccional (`notification`, movido desde `core` el 2026-09-30), plantillas (Jinja2), envío SMTP, `notification_log`. Reutilizable por otros proyectos. |
 | **scraper** | Sin FastAPI ni BD: expone solo un endpoint interno por el que `schedule` le envía el trabajo, ejecuta la cascada de extracción (httpx/Playwright) y responde por un callback configurable; en el ejercicio apunta a `schedule`, no a `core` (SCR-20). |
 

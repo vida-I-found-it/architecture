@@ -11,7 +11,7 @@
 
 ## Qué es el servicio
 
-`schedule` es el motor de disparo (APScheduler en memoria, cargado desde la tabla `job` al arrancar, en un solo proceso: [ADR-0007](../architecture/adr/0007-schedule-apscheduler-loaded-from-postgres.md)): guarda los jobs de captura de cada alerta, los dispara dentro de las franjas horarias con tope diario, envía cada URL al `scraper`, recoge sus resultados y los entrega a `core` con reintentos (outbox). También avisa el fin de cada corrida a `core` y, en EJ-6, envía el correo diario de errores al administrador a través de `notify`. La arquitectura y el ADR que lo explican: [`ADR-0004`](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md) y [`architecture.md`](../architecture/architecture.md#comunicación-entre-piezas). Aquí no se repiten.
+`schedule` es el motor de disparo (APScheduler en memoria, cargado desde la tabla `job` al arrancar, en un solo proceso: [ADR-0007](../architecture/adr/0007-schedule-apscheduler-loaded-from-postgres.md)): guarda los jobs de captura de cada alerta, los dispara a las horas de inicio configuradas, con desfase por alerta y tope diario, envía cada URL al `scraper`, recoge sus resultados y los entrega a `core` con reintentos (outbox). También avisa el fin de cada corrida a `core` y, en EJ-6, envía el correo diario de errores al administrador a través de `notify`. La arquitectura y el ADR que lo explican: [`ADR-0004`](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md) y [`architecture.md`](../architecture/architecture.md#comunicación-entre-piezas). Aquí no se repiten.
 
 ## Historias y criterios, en orden de implementación
 

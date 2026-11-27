@@ -27,7 +27,7 @@
 ## Principios de diseño
 
 - **Modular y desacoplado:** las piezas que cambiarán —proveedor de IA, tasa de cambio, estrategia de "mejor precio", canal de notificación— viven **tras una interfaz**, reemplazables sin tocar el core.
-- **Scraping en background, no en el request:** el trabajo pesado corre en el **scraper**; `schedule` se lo envía de forma asíncrona dentro de ventanas horarias y recibe el resultado por un callback ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)).
+- **Scraping en background, no en el request:** el trabajo pesado corre en el **scraper**; `schedule` se lo envía de forma asíncrona, en corridas que arrancan a las horas de inicio configuradas, y recibe el resultado por un callback ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)).
 - **Scraping que aprende:** lo que se descubre de un sitio se reutiliza en vez de repetir el trabajo. La cascada completa está en el [flujo de scraping](scraping-flow.md).
 - **Observable de punta a punta:** cada corrida lleva un `transactionId` que atraviesa los 5 servicios de backend y sus logs; máquina de estados granular por job.
 - **6 repos independientes, portables, sin lock-in** ([ADR-0001](adr/0001-repo-and-service-structure.md)): cada uno empaquetado en contenedores + config por entorno (12-factor). Las mismas imágenes corren local (docker-compose) y en producción (Cloudflare/GCP/Oracle).
