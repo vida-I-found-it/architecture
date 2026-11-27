@@ -4,82 +4,198 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Confirmar alerta</title>
+<!-- Mockup estático (CU-02, US-02-03). Segundo paso del alta. Mismo lenguaje visual que alert-board.html y create-alert.html. Datos sintéticos.
+     Atajos del mockup (no son del producto): «t» cambia el tema, «s» muestra el estado «Creando…» (US-02-03-AC3). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  .confirm { width: 460px; padding: 30px 32px 24px; }
-  .confirm .badge { width: 52px; height: 52px; border-radius: 16px; background: var(--amber-soft); color: var(--amber); display: grid; place-items: center; margin-bottom: 18px; }
-  .confirm .badge .ic { width: 26px; height: 26px; }
-  .confirm h2 { margin: 0 0 8px; font-size: 21px; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
-  .confirm .lead { margin: 0 0 22px; color: var(--muted); }
-  .resumen { list-style: none; margin: 0 0 26px; padding: 0; border-top: 1px solid var(--line); }
-  .resumen li { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--line); }
-  .resumen .ic { color: var(--muted); margin-top: 2px; }
-  .resumen b { display: block; font-weight: 500; }
-  .resumen small { color: var(--muted); font-size: 14px; }
-  /* El modal de alta queda de fondo, atenuado */
-  .detras { filter: brightness(0.78); }
-  .overlay.segundo { background: rgba(14, 26, 40, 0.45); }
+/* Tokens copiados de alert-board.html (a su vez de foundit-web-app/src/styles/index.css) */
+:root{
+  --bg:oklch(0.985 0.004 90);--surface:oklch(1 0 0);--fg:oklch(0.2 0.01 90);--muted:oklch(0.48 0.01 90);
+  --border:oklch(0.9 0.006 90);--accent:oklch(0.75 0.16 60);--accent-fg:oklch(0.2 0.03 60);--accent-text:oklch(0.5 0.14 50);
+  --warn:#b45309;--ok:#047857;
+  --font-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --font-sans:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:oklch(0.16 0.006 260);--surface:oklch(0.2 0.008 260);--fg:oklch(0.96 0.004 90);--muted:oklch(0.72 0.01 260);
+  --border:oklch(0.3 0.01 260);--accent:oklch(0.8 0.15 65);--accent-text:oklch(0.82 0.14 65);
+  --warn:#f59e0b;--ok:#34d399;color-scheme:dark;
+}
+*{box-sizing:border-box;border-radius:0}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:16px;line-height:1.5}
+h1,h2,h3{font-family:var(--font-display);margin:0;letter-spacing:-0.01em}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}
+.mono{font-family:var(--font-mono)}
+.ic{display:inline-flex;width:16px;height:16px;flex:none}
+.ic svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+
+/* Fondo: el board, igual que en alert-board.html y create-alert.html */
+header{border-bottom:1px solid color-mix(in oklch,var(--border) 60%,transparent)}
+.bar{display:flex;align-items:center;gap:24px;min-height:64px;padding:8px 64px 8px 28px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600}
+.brand i{display:grid;place-items:center;width:32px;height:32px;background:var(--accent);color:var(--accent-fg);font-style:normal}
+.btn{border:1px solid var(--border);background:var(--surface);padding:6px 12px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.theme-btn{margin-left:auto}
+.layout{padding:24px 64px 48px 28px}
+.crumb{font-size:14px;color:var(--muted)}
+.layout h1{font-size:28px;line-height:1.15;margin:4px 0 20px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpi,.card{border:1px solid var(--border);background:var(--surface);padding:14px 16px}
+.kpi .l{font-size:13px;color:var(--muted)}
+.kpi .v{font-family:var(--font-display);font-size:24px;font-weight:700}
+.card{margin-top:20px;height:420px;padding:20px}
+.card h2{font-size:18px}
+aside{position:fixed;top:0;right:0;bottom:0;width:40px;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 4px}
+aside .btn{width:30px;padding:4px 0;justify-content:center}
+.rail-count{writing-mode:vertical-rl;font-size:13px;color:var(--muted);margin-top:8px}
+
+/* Un solo diálogo a la vista: el de alta se oculta (sin perder datos) mientras se confirma,
+   así no hay modal sobre modal ni doble oscurecimiento */
+.overlay{position:fixed;inset:0;background:oklch(0 0 0 / .42);display:grid;overflow-y:auto;padding:24px 16px}
+.modal{margin:auto;width:min(540px,100%);max-height:calc(100dvh - 48px);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);box-shadow:0 24px 64px oklch(0 0 0 / .22)}
+.m-head{display:flex;align-items:baseline;gap:12px;padding:16px 24px;border-bottom:1px solid var(--border)}
+.m-head h2{flex:1;font-size:22px}
+.step{font-family:var(--font-mono);font-size:13px;color:var(--muted)}
+.m-body{padding:18px 24px 4px;overflow-y:auto;min-height:0}
+.m-foot{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:14px 24px;border-top:1px solid var(--border)}
+.m-foot .btn{padding:8px 16px;font-size:15px}
+
+/* Aviso de que es definitiva: mismo patrón .hint que create-alert, aquí más visible porque es el último paso */
+.hint{display:flex;gap:10px;align-items:flex-start;margin:0 0 18px;padding:12px 14px;background:color-mix(in srgb,var(--warn) 9%,var(--surface));border-left:3px solid var(--warn);font-size:15px}
+.hint .ic{color:var(--warn);margin-top:4px}
+.hint p{margin:0}
+.hint b{font-weight:600}
+
+/* Resumen por secciones: cada una con su «Cambiar», que vuelve al formulario con el foco en ese campo */
+.sec{padding:12px 0;border-top:1px solid var(--border)}
+.sec:last-child{border-bottom:1px solid var(--border)}
+.sec-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.sec-h h3{font-family:var(--font-sans);font-size:14px;font-weight:600;color:var(--muted);flex:1}
+.n{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.edit{border:0;background:none;padding:0 2px;color:var(--accent-text);font-weight:600;font-size:14px;cursor:pointer}
+.sec ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+/* URL: dominio resaltado y ruta atenuada, para leer de un vistazo en qué tiendas se vigila */
+.url{display:flex;gap:8px;align-items:center;font-family:var(--font-mono);font-size:14px;min-width:0}
+.url .ic{color:var(--muted)}
+.url span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.url .path{color:var(--muted)}
+.mail{display:flex;gap:10px;align-items:center;font-family:var(--font-mono);font-size:14px;min-width:0}
+.av{display:grid;place-items:center;width:24px;height:24px;flex:none;background:color-mix(in oklch,var(--accent) 22%,var(--surface));font-family:var(--font-display);font-weight:700;font-size:13px}
+.sub{display:block;color:var(--muted);font-size:13px;margin-top:6px}
+.sec p{margin:0;font-size:15px}
+
+/* Estado enviando (US-02-03-AC3): botones deshabilitados y una sola petición */
+.spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:r .8s linear infinite;display:none}
+@keyframes r{to{transform:rotate(1turn)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.sending .spin{display:inline-block}
+
+@media (max-width:820px){
+  .bar{padding:8px 16px}.layout{padding:20px 16px}aside{display:none}
+  .kpis{grid-template-columns:1fr 1fr}
+  .m-head,.m-body,.m-foot{padding-left:16px;padding-right:16px}
+  .m-foot .btn{flex:1;justify-content:center}
+}
 </style>
 </head>
 <body>
-  <header class="bar">
-    <span class="brand"><i data-i="tag"></i>I Found It</span>
-    <span class="spacer"></span>
-    <button class="btn primary" type="button"><i data-i="plus"></i>Crear alerta</button>
-  </header>
-
-  <main class="lista" aria-hidden="true">
-    <h1>Alertas</h1>
-    <div class="fila"><b>Audífonos inalámbricos con cancelación de ruido</b><span>3 sitios</span><span class="precio">$1.099.000</span></div>
-    <div class="fila"><b>Cafetera de cápsulas automática</b><span>2 sitios</span><span class="precio">$389.900</span></div>
-  </main>
-
-  <div class="overlay" aria-hidden="true">
-    <section class="modal alta detras">
-      <div class="head">
-        <span class="icon-badge"><i data-i="bell"></i></span>
-        <h2>Crear alerta</h2>
-        <button class="icon-btn" type="button" tabindex="-1"><i data-i="x"></i></button>
+  <!-- Todo lo de atrás queda inerte mientras la confirmación está abierta -->
+  <div inert aria-hidden="true">
+    <header>
+      <div class="bar">
+        <span class="brand"><i>⌕</i>I Found It</span>
+        <button class="btn theme-btn" type="button">◐ Tema</button>
       </div>
-      <p class="intro">Pega las páginas del producto que quieres vigilar. Revisamos el precio dos veces al día y te avisamos cuando baje.</p>
-      <div class="field">
-        <span class="label">Cómo quieres crearla</span>
-        <div class="segmented">
-          <button type="button" aria-pressed="true"><i data-i="link"></i>URL directa</button>
-          <button type="button" disabled><i data-i="search"></i>Palabra clave<span class="soon">Próximamente</span></button>
-        </div>
+    </header>
+    <main class="layout">
+      <div class="crumb">Alerta #12 · Audífonos X Pro</div>
+      <h1>Audífonos inalámbricos con cancelación de ruido</h1>
+      <div class="kpis">
+        <div class="kpi"><div class="l">Mejor precio hoy</div><div class="v">$ 1.126.000 COP</div></div>
+        <div class="kpi"><div class="l">Sitios seguidos</div><div class="v">3</div></div>
+        <div class="kpi"><div class="l">En seguimiento</div><div class="v">30 días</div></div>
+        <div class="kpi"><div class="l">Mínimo desde la creación</div><div class="v">$ 1.060.000 COP</div></div>
       </div>
-      <div class="field">
-        <div class="label-row"><span class="label">Páginas del producto</span><span class="count num">2 de 10</span></div>
-        <div class="input url-row"><i data-i="link"></i><input value="https://tienda-a.example/audifonos-xm5"></div>
-        <div class="input url-row"><i data-i="link"></i><input value="https://tienda-b.example/p/48213"></div>
-      </div>
-      <div class="field">
-        <span class="label">Correo para el aviso</span>
-        <div class="input"><i data-i="mail"></i><input value="ana@correo.com"></div>
-      </div>
-    </section>
+      <section class="card"><h2>Precio por sitio</h2></section>
+    </main>
+    <aside>
+      <button class="btn" type="button">⟨</button>
+      <button class="btn primary" type="button">＋</button>
+      <span class="rail-count">4 alertas</span>
+    </aside>
   </div>
 
-  <div class="overlay segundo">
-    <section class="modal confirm" role="alertdialog" aria-modal="true" aria-labelledby="t" aria-describedby="d">
-      <div class="badge"><i data-i="lock"></i></div>
-      <h2 id="t">¿Estás seguro de tu configuración?</h2>
-      <p class="lead" id="d">Es definitiva: después de crear la alerta no podrás editar las páginas ni el correo.</p>
-      <ul class="resumen">
-        <li><i data-i="link"></i><div><b>2 páginas del producto</b><small>tienda-a.example y tienda-b.example</small></div></li>
-        <li><i data-i="mail"></i><div><b>Aviso a a***@correo.com</b><small>Con un enlace para darte de baja</small></div></li>
-        <li><i data-i="clock"></i><div><b>Revisión dos veces al día</b><small>Una en la madrugada y otra al final de la tarde</small></div></li>
-      </ul>
-      <div class="actions">
-        <button class="btn ghost" type="button">Volver a editar</button>
-        <button class="btn primary" type="button">Crear alerta</button>
+  <div class="overlay">
+    <!-- alertdialog: el foco inicial va a «Volver a editar», la opción sin efecto (US-02-03-AC2) -->
+    <section class="modal" id="dlg" role="alertdialog" aria-modal="true" aria-labelledby="t" aria-describedby="d">
+      <div class="m-head">
+        <h2 id="t">¿Crear esta alerta?</h2>
+        <span class="step">Paso 2 de 2</span>
       </div>
+
+      <div class="m-body">
+        <div class="hint" id="d" role="note"><i data-i="lock"></i><p><b>Es definitiva:</b> después de crearla no podrás editarla ni borrarla. Revisa los datos y cambia lo que haga falta.</p></div>
+
+        <section class="sec" aria-labelledby="s1">
+          <div class="sec-h"><h3 id="s1">Páginas del producto</h3><span class="n">2</span><button class="edit" type="button" aria-label="Cambiar páginas del producto">Cambiar</button></div>
+          <ul>
+            <li class="url" title="https://tienda-a.example/audifonos-xm5"><i data-i="link"></i><span>tienda-a.example<span class="path">/audifonos-xm5</span></span></li>
+            <li class="url" title="https://tienda-b.example/p/48213"><i data-i="link"></i><span>tienda-b.example<span class="path">/p/48213</span></span></li>
+          </ul>
+        </section>
+
+        <section class="sec" aria-labelledby="s2">
+          <div class="sec-h"><h3 id="s2">Correos para el aviso</h3><span class="n">2</span><button class="edit" type="button" aria-label="Cambiar correos para el aviso">Cambiar</button></div>
+          <ul>
+            <li class="mail"><span class="av" aria-hidden="true">A</span>ana@correo.com</li>
+            <li class="mail"><span class="av" aria-hidden="true">L</span>luis@correo.com</li>
+          </ul>
+          <span class="sub">Después de crearla se mostrarán enmascarados (<span class="mono">a***@correo.com</span>).</span>
+        </section>
+
+        <section class="sec" aria-labelledby="s3">
+          <div class="sec-h"><h3 id="s3">Nota</h3><button class="edit" type="button" aria-label="Cambiar nota">Cambiar</button></div>
+          <p>Comprar antes de diciembre.</p>
+        </section>
+
+        <section class="sec" aria-labelledby="s4">
+          <div class="sec-h"><h3 id="s4">Revisión de precios</h3></div>
+          <p>Dos veces al día</p>
+          <span class="sub">La primera captura empieza en segundo plano al crearla; verás el resultado al recargar.</span>
+        </section>
+      </div>
+
+      <div class="m-foot">
+        <button class="btn" type="button" id="back" autofocus>Volver a editar</button>
+        <button class="btn primary" type="button" id="go"><span class="spin" aria-hidden="true"></span><span id="go-l">Sí, crear alerta</span></button>
+      </div>
+      <p class="sr" aria-live="polite" id="live" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"></p>
     </section>
   </div>
 <script src="icons.js"></script>
+<script>
+  // Foco inicial en la opción sin efecto; autofocus solo no basta si el diálogo se abre después de cargar
+  document.getElementById('back').focus();
+  document.addEventListener('keydown', e => {
+    const r = document.documentElement;
+    if (e.key === 't') r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark';
+    if (e.key === 's') {
+      // Estado «Creando…»: ambos botones deshabilitados para que no salga una segunda petición
+      const on = document.getElementById('dlg').classList.toggle('sending');
+      document.getElementById('go').disabled = on;
+      document.getElementById('back').disabled = on;
+      document.getElementById('go-l').textContent = on ? 'Creando…' : 'Sí, crear alerta';
+      document.getElementById('live').textContent = on ? 'Creando la alerta' : '';
+    }
+  });
+</script>
 </body>
 </html>

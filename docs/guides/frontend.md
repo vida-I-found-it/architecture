@@ -11,7 +11,7 @@
 
 ## Qué es el servicio
 
-Interfaz web de la versión: crear alertas, ver la lista y el dashboard de cada una, el histórico con gráfico, lanzar el análisis a mano y la página pública de baja. No tiene sesión ni usuarios: el usuario es fijo de la versión. No guarda datos; todo viene de `core`. El stack está en [`tech-stack.md`](../tools/tech-stack.md) (React, Vite, TypeScript, shadcn/ui, TanStack Query, Recharts, react-i18next, vitest). Los mockups están en [`design/mockups`](../design/mockups/alert-dashboard.html). Las decisiones de UI no se reabren aquí.
+Interfaz web de la versión: crear alertas, ver la lista y el dashboard de cada una, el histórico con gráfico, lanzar el análisis a mano y la página pública de baja. No tiene sesión ni usuarios: el usuario es fijo de la versión. No guarda datos; todo viene de `core`. El stack está en [`tech-stack.md`](../tools/tech-stack.md) (React, Vite, TypeScript, shadcn/ui, TanStack Query, Recharts, react-i18next, vitest). Los mockups están en [`design/mockups`](../design/mockups/alert-board.html). Las decisiones de UI no se reabren aquí.
 
 ## Historias y criterios, en orden de implementación
 
