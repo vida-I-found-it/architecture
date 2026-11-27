@@ -5,16 +5,16 @@ Un archivo por caso de uso, con la [plantilla](../../templates/user-story.md).
 | CU | Título | Historias | Criterios | Repos que toca | Archivo | Estado |
 |----|--------|-----------|-----------|----------------|---------|--------|
 | CU-02 | Registrar una alerta con URLs | 5 | 50 | frontend, core | [`CU-02.md`](CU-02.md) | Borrador |
-| CU-03 | Programar la captura | 5 | 49 | core, schedule, frontend | [`CU-03.md`](CU-03.md) | Borrador |
-| CU-04 | Capturar el precio de un sitio | 5 | 57 | schedule, scraper, core | [`CU-04.md`](CU-04.md) | Borrador |
-| CU-05 | Procesar y almacenar | 6 | 55 | core, schedule, scraper | [`CU-05.md`](CU-05.md) | Borrador |
-| CU-06 | Analizar el mejor precio | 5 | 43 | core, schedule, frontend | [`CU-06.md`](CU-06.md) | Borrador |
-| CU-07 | Ver el dashboard de una alerta | 6 | 63 | frontend, core | [`CU-07.md`](CU-07.md) | Borrador |
-| CU-08 | Ver histórico y comparar sitios | 4 | 32 | frontend, core | [`CU-08.md`](CU-08.md) | Borrador |
+| CU-03 | Programar la captura | 5 | 50 | core, schedule, frontend | [`CU-03.md`](CU-03.md) | Borrador |
+| CU-04 | Capturar el precio de un sitio | 6 | 84 | schedule, scraper, core | [`CU-04.md`](CU-04.md) | Borrador |
+| CU-05 | Procesar y almacenar | 6 | 58 | core, schedule, scraper | [`CU-05.md`](CU-05.md) | Borrador |
+| CU-06 | Analizar el mejor precio | 5 | 45 | core, schedule, frontend | [`CU-06.md`](CU-06.md) | Borrador |
+| CU-07 | Ver el dashboard de una alerta | 7 | 79 | frontend, core | [`CU-07.md`](CU-07.md) | Borrador |
+| CU-08 | Ver histórico y comparar sitios | 5 | 40 | frontend, core | [`CU-08.md`](CU-08.md) | Borrador |
 | CU-10 | Notificar a los correos registrados | 5 | 46 | core, notify, schedule, frontend | [`CU-10.md`](CU-10.md) | Borrador |
 | CU-11 | Darse de baja de una alerta | 4 | 31 | frontend, core | [`CU-11.md`](CU-11.md) | Borrador |
 
-Total: 9 historias de CU (CU-02 a CU-08, CU-10 y CU-11; no existe CU-09 en [`requirements.md`](../requirements.md)), 45 historias de usuario y 426 criterios (`US-NN-MM-ACn`). Todos los criterios están en estado borrador: sin aprobar. Las preguntas abiertas de cada CU, marcadas 💡 cuando son propuestas, bloquean o precisan los criterios y no son decisiones.
+Total: 9 historias de CU (CU-02 a CU-08, CU-10 y CU-11; no existe CU-09 en [`requirements.md`](../requirements.md)), 48 historias de usuario y 483 criterios (`US-NN-MM-ACn`). Todos los criterios están en estado borrador: sin aprobar. Las preguntas abiertas de cada CU, marcadas 💡 cuando son propuestas, bloquean o precisan los criterios y no son decisiones.
 
 ## Orden de implementación sugerido
 

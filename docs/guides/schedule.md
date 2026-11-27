@@ -19,10 +19,10 @@ Orden tomado de las secciones de dependencias de cada historia.
 
 | Orden | Historia | Criterios que toca `schedule` | Nota |
 |---|---|---|---|
-| 1 | [CU-03](../requirements/user-stories/CU-03.md) · US-03-03 | US-03-03-AC1 a AC12 | Tabla `job`, `POST /schedule/internal/jobs` (idempotente, lista blanca) y `GET /schedule/internal/jobs/{job_id}`. Hacer primero: lo usan `core` y el resto. |
-| 2 | [CU-03](../requirements/user-stories/CU-03.md) · US-03-04 | US-03-04-AC1 a AC10 | Motor de franjas, tope de 2 al día, reloj inyectable. |
-| 3 | [CU-04](../requirements/user-stories/CU-04.md) · US-04-01 | US-04-01-AC1 a AC12 | Ejecución por URL, envío secuencial al scraper, `POST /schedule/internal/results`, plazo por URL. |
-| 4 | [CU-04](../requirements/user-stories/CU-04.md) · US-04-04 | US-04-04-AC1 a AC9 | Reintentos de `error` (4 intentos en total). |
+| 1 | [CU-03](../requirements/user-stories/CU-03.md) · US-03-03 | US-03-03-AC1 a AC14 | Tabla `job`, `POST /schedule/internal/jobs` (idempotente, lista blanca) y `GET /schedule/internal/jobs/{job_id}`. Hacer primero: lo usan `core` y el resto. |
+| 2 | [CU-03](../requirements/user-stories/CU-03.md) · US-03-04 | US-03-04-AC1 a AC14 | Motor de horas de inicio y desfase, tope de 2 al día, reloj inyectable. |
+| 3 | [CU-04](../requirements/user-stories/CU-04.md) · US-04-01 | US-04-01-AC1 a AC21; US-04-06-AC9 | Ejecución por URL, envío secuencial al scraper, `POST /schedule/internal/results`, plazo por URL. |
+| 4 | [CU-04](../requirements/user-stories/CU-04.md) · US-04-04 | US-04-04-AC1 a AC10 | Reintentos de `error` (4 intentos en total). |
 | 5 | [CU-05](../requirements/user-stories/CU-05.md) · US-05-06 | US-05-06-AC1 a AC9 | Entrega a `core` con outbox y estado final por URL. |
 | 6 | [CU-06](../requirements/user-stories/CU-06.md) · US-06-02 | US-06-02-AC1, AC6 y AC7 (lado emisor) | Aviso «corrida terminada» a `core`. |
 | 7 | [CU-10](../requirements/user-stories/CU-10.md) · US-10-05 | US-10-05-AC1 a AC3 (lado emisor) y US-10-02-AC11 | Correo diario de errores. No envía nada si no hubo fallos. |
@@ -48,7 +48,7 @@ Ninguna ruta pública (SCH-11). Sin `PUT`, `PATCH` ni `DELETE` sobre jobs (US-03
 |---|---|---|---|
 | `core` | `POST /api/internal/prices` | US-05-06 | Cuerpo en [CU-05, D5-1](../requirements/user-stories/CU-05.md#preguntas-abiertas); `alert_id` sale de `job.payload`. |
 | `core` | `POST /api/internal/run-completed` | US-06-02 | Cuerpo `job_id`, `run_id`, `payload` (CU-03, D21). Respuesta pendiente. |
-| `scraper` | `POST /scraper/internal/jobs` | US-04-01-AC2 | Cuerpo `{"url", "callback_url"}` (solo esos dos campos). |
+| `scraper` | `POST /scraper/internal/jobs` | US-04-01-AC2 | Cuerpo `{"url", "callback_url", "clean": true}` (solo esos tres campos; CU-04 D12). |
 | `notify` | `POST /notify/notifications` | US-10-05 | Plantilla `admin-alert-email`. Códigos: pendiente ([CU-10, pregunta 2](../requirements/user-stories/CU-10.md#preguntas-abiertas)). |
 
 ## Tablas y colecciones que posee
@@ -66,8 +66,10 @@ Solo nombres que aparecen en la documentación. Ningún valor.
 
 | Variable | Uso | Fuente |
 |---|---|---|
-| `SCHEDULE_SCRAPE_WINDOWS` | Franjas de captura (2 disparos al día). | [ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md), [CU-03](../requirements/user-stories/CU-03.md) |
-| `SCHEDULE_MAX_ACTIVE_RUNS` | Corridas activas a la vez. | ADR-0004 |
+| `SCHEDULE_RUN_START_TIMES` | Horas de inicio (04:00 y 18:00; máximo 2, con el mismo minuto). | CU-03, D27 |
+| `SCHEDULE_STAGGER_INTERVAL_MINUTES`, `SCHEDULE_STAGGER_SPAN_MINUTES` | Desfase por orden de creación (2 y 120). | CU-03, D28 |
+| `SCHEDULE_MAX_IN_FLIGHT_URLS` | URLs en proceso a la vez; no supera la capacidad total del scraper. | CU-03, D26 |
+| `SCHEDULE_PUBLIC_URL` | Dirección propia para armar `callback_url` (nombre propuesto). | CU-04, D19 |
 | `SCHEDULE_CALLBACK_ALLOWLIST` | Orígenes permitidos para `callback_config` y `run_callback_config`. Solo `core`. | ADR-0004; [CU-03, D7](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24) |
 | `SCHEDULE_CALLBACK_DEADLINE_SECONDS` | Plazo por URL sin callback (120 por defecto). Debe ser mayor que el timeout del scraper más la entrega. | ADR-0004; [CU-04](../requirements/user-stories/CU-04.md) |
 | `SCHEDULE_DELIVERY_MAX_RETRIES`, `SCHEDULE_DELIVERY_BACKOFF_BASE_SECONDS`, `SCHEDULE_DELIVERY_BACKOFF_CAP_SECONDS` | Reintentos del envío al scraper (3; 60 s base). | ADR-0004 |
@@ -75,7 +77,7 @@ Solo nombres que aparecen en la documentación. Ningún valor.
 | `SCHEDULE_SWEEP_TIME` | Hora del barrido diario. | ADR-0004, [`scraping-flow.md`](../architecture/scraping-flow.md) |
 | `ADMIN_ALERT_EMAIL` | Destinatario del correo de administrador. | [`architecture.md`](../architecture/architecture.md#configuración) |
 
-Zona horaria: `SCHEDULE_TIMEZONE` (`America/Bogota` por defecto) para franjas y tope diario, todo en UTC en la base. `SCHEDULE_POLL_INTERVAL_SECONDS` (2): tarea periódica de las colas. La lista blanca valida origen y ruta y sale solo del entorno ([CU-03, D5, D20 y D24](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). 🔒 Antes de desplegar en proveedores distintos: HTTPS y autenticación entre servicios.
+Zona horaria: `SCHEDULE_TIMEZONE` (`America/Bogota` por defecto) para las horas de inicio y el tope diario, todo en UTC en la base. `SCHEDULE_POLL_INTERVAL_SECONDS` (2): tarea periódica de las colas. La lista blanca valida origen y ruta y sale solo del entorno ([CU-03, D5, D20 y D24](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). 🔒 Antes de desplegar en proveedores distintos: HTTPS y autenticación entre servicios.
 
 `SCHEDULE_ANALYSIS_TIMES` aparece en el ADR-0004 y en los requerimientos, pero DEC-33 hace que el análisis corra al terminar cada corrida. **No usar hasta resolver la contradicción** ([CU-08, pregunta 11](../requirements/user-stories/CU-08.md#preguntas-abiertas)).
 
@@ -87,7 +89,7 @@ Conexiones (PostgreSQL con el rol de `schedule` y MongoDB): la arquitectura las 
 |---|---|
 | Entrada de jobs desde `core` | Definida ([CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). El `payload` de `scrape` es un modelo propio en el `openapi.json` (D25). |
 | Lista blanca de callbacks | Regla definida: `schedule` solo acepta `core` ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md), [CU-03, D7](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
-| Envío al scraper | Cuerpo definido (`url`, `callback_url`); la respuesta `202 {scraper_id}` está en [US-04-03](../requirements/user-stories/CU-04.md). |
+| Envío al scraper | Cuerpo definido (`url`, `callback_url`, `clean: true`); la respuesta `202 {scraper_id}` está en [US-04-03](../requirements/user-stories/CU-04.md). |
 | Callback del scraper | Estados `ok`, `no_price`, `error` definidos; cuerpo sin formato de errores **pendiente** ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
 | Entrega a `core` | Política de reintento **pendiente** ([CU-05, pregunta 7](../requirements/user-stories/CU-05.md#preguntas-abiertas)). |
 | Correo del administrador | Plantilla `admin-alert-email` definida; nombre `admin_alert` de EJ-6 **contradice** la plantilla ([CU-10, pregunta 16](../requirements/user-stories/CU-10.md#preguntas-abiertas)). |

@@ -67,7 +67,7 @@ Fuente: [`data/scripts/core/schema.sql`](../data/scripts/core/schema.sql). Las h
 - Chequeos: `alert_snapshot` (particionada por `checked_at`; hoy solo existe `alert_snapshot_2026`, ver [CU-05, pregunta 3](../requirements/user-stories/CU-05.md#preguntas-abiertas)).
 - Análisis: `alert_analysis`, `price_anomaly`.
 - Vistas: `v_alert_url_last_check`, `v_alert_best_price`, `v_site_stats_daily`.
-- `alert_snapshot` no tiene columna `error_code`: pendiente de decidir ([CU-05, pregunta 4](../requirements/user-stories/CU-05.md#preguntas-abiertas)).
+- `alert_snapshot` guarda `error_code` ([CU-05, D5-4](../requirements/user-stories/CU-05.md#preguntas-abiertas)).
 - Hay también tablas de catálogo (`currency`, `tag`, `alert_tag`, `site_adapter`) que las historias no usan; no implementar sin una historia que las pida.
 
 Mongo: [`data/scripts/core/mongo-setup.js`](../data/scripts/core/mongo-setup.js). Las historias no nombran colecciones de `core`; `exchange_rate` aparece solo como fuera de alcance (US-05-01).
@@ -88,9 +88,8 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 | Contrato | Con quién | Estado |
 |---|---|---|
 | Crear job de captura | `schedule` | Definido en [CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24). Las pruebas validan el cuerpo contra la copia fijada del `openapi.json` de `schedule` (D25). |
-| Detalle del job para la captura | `schedule` → `core` | **Pendiente de decisión** ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
-| Resultado por URL | `schedule` → `core` | **Pendiente de decisión** ([CU-05, pregunta 1](../requirements/user-stories/CU-05.md#preguntas-abiertas)). |
-| Corrida terminada | `schedule` → `core` | Ruta y cuerpo (`job_id`, `run_id`) definidos; respuesta **pendiente** ([CU-06, pregunta 1](../requirements/user-stories/CU-06.md#preguntas-abiertas)). |
+| Resultado por URL | `schedule` → `core` | Definido en [CU-05, D5-1 y D5-14](../requirements/user-stories/CU-05.md#preguntas-abiertas), con `alert_id`. |
+| Corrida terminada | `schedule` → `core` | Cuerpo (`job_id`, `run_id`, `payload`) y respuesta definidos ([CU-06, D6-1](../requirements/user-stories/CU-06.md#preguntas-abiertas); CU-03 D21). |
 | Aviso de baja de precio | `core` → `notify` | Ruta definida; cuerpo y campos del `payload` **pendientes** ([CU-10, preguntas 2 y 4](../requirements/user-stories/CU-10.md#preguntas-abiertas)). |
 | Error de contrato | todos | Formato de error común **pendiente** (no hay formato único en la documentación). |
 
@@ -98,7 +97,6 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 
 Las que impiden cerrar un criterio sin inventar. Ver cada historia para el detalle.
 
-- **Contratos:** cuerpo de las rutas internas (CU-03 p. 1; CU-04 p. 1; CU-05 p. 1; CU-06 p. 1).
 - **Validación de datos del sitio:** formato del precio, moneda ausente, página de error (CU-05 pp. 8 a 10).
 - **Token de baja:** dependencia con el `id` al insertar (CU-11 p. 1) y respuesta uniforme (CU-11 p. 4).
 - **Mejor precio:** vista o último análisis (CU-07 p. 13). Pendiente de decisión antes del dashboard.
