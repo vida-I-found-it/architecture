@@ -98,7 +98,6 @@ graph TB
     PWA <-->|HTTPS| AUTH2
     PWA <-->|HTTPS| CORE2
     CORE2 -->|"CRUD de jobs (crea/pausa)<br/>interno, service-to-service"| SCHED2
-    SCHED2 -->|"pide detalle del job<br/>(URL, adapter)"| CORE2
     SCHED2 -->|"envía una URL + callback<br/>HTTP asíncrono"| SCR2
     SCR2 -->|"callback: entrega el resultado"| SCHED2
     SCHED2 -->|"callback: entrega el precio<br/>(api_call configurado al crear el job)"| CORE2
@@ -126,7 +125,6 @@ graph TB
         SUBS["📧 Suscripciones"]
         ADAPT["🧩 Registro de adapters<br/>+ constructor manual"]
         SCHEDPROXY[["🗓️ Admin de schedules<br/>proxy a schedule, SCH-4/5/8"]]
-        JOBBUILD[["📦 Ensamblado de job<br/>alert_url + adapter, a pedido de schedule"]]
         CALLBACK[["📩 Ingesta de precio<br/>recibe el callback de schedule, SCH-14"]]
         NORM["📐 Normalizador"]
         FXP["💱 Tasa de cambio<br/>parametrizable"]
@@ -136,7 +134,6 @@ graph TB
         HEALTH["🩺 Detalle del scraper · admin"]
 
         ALERT --> SUBS
-        JOBBUILD --> ADAPT
         CALLBACK --> NORM --> FXP
         NORM --> VALID --> DEC
     end
@@ -173,7 +170,6 @@ graph TB
     ALERT -->|"crea o pausa el job, con callback = CALLBACK<br/>ALE-8/9"| JOBAPI
     SCHEDPROXY -->|"CRUD: ver, editar, lanzar"| JOBAPI
     HEALTH -->|"consulta corridas, D8"| JOBAPI
-    RUNAPI -->|"pide detalle: URL, adapter"| JOBBUILD
     ENGINE -->|"envía una URL + callback<br/>ADR-0004"| CASC
     JOBS -->|"callback con ok, no_price o error"| RUNAPI
     ACTION -->|"api_call: entrega el precio<br/>a la URL configurada"| CALLBACK
@@ -185,7 +181,7 @@ graph TB
 >
 > **El scraper recibe el trabajo y un callback configurable** ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md), 2026-11-11; antes hacía *pull*): `schedule` le envía **una URL a la vez**, el scraper responde «recibido» y, al terminar, ejecuta el callback con `ok`, `no_price` o `error`. El scraping y el **análisis** (mejor precio y avisos) son procesos separados a horas distintas (revisión del 2026-11-12); los diagramas del motor de decisión de este documento aún no se han re-revisado para reflejarlo. El destino del callback es configuración; en el ejercicio apunta a `schedule`, así que **el scraper no llama a `core`** (SCR-20). Al completarse, `schedule` dispara la acción `api_call` configurada — que es la que finalmente llama a `CALLBACK` en `core`. `schedule` nunca tiene el dato de «cómo llamar a core» *hardcodeado*: viaja como configuración del job (SCH-14).
 >
-> **Cuatro llamadas entre servicios que antes eran una sola tabla** ([ADR-0001](adr/0001-repo-and-service-structure.md)): `ALERT → JOBAPI` (crea/pausa el job, ALE-8/9), `RUNAPI → JOBBUILD` (pide el detalle antes de enviar el trabajo), `ACTION → CALLBACK` (entrega el precio, resuelve cómo `core` se entera) y `HEALTH → JOBAPI` (consulta corridas, D8).
+> **Tres llamadas entre servicios que antes eran una sola tabla** ([ADR-0001](adr/0001-repo-and-service-structure.md)): `ALERT → JOBAPI` (crea/pausa el job, ALE-8/9), `ACTION → CALLBACK` (entrega el precio, resuelve cómo `core` se entera) y `HEALTH → JOBAPI` (consulta corridas, D8).
 >
 > **`notify` tiene dos pasos, no uno** (2026-09-30): `INTAKE` (Recepción) es quien recibe la llamada de `DEC` y crea la fila `NOTIFICATION` — es **la notificación que se debe enviar**. `SEND` es quien la toma, arma el mensaje con la plantilla de su canal y lo entrega (SMTP en Fase 1). Antes el diagrama los mezclaba en un solo nodo ("Envío"), lo que escondía que nadie tenía modelado el paso de creación. El nodo se llamaba `OUTBOX`; se renombró porque en el [modelo de datos](../data/data-model.md#d-notify-notificaciones) `notification_outbox` es otra cosa: la cola de reintento.
 >
@@ -204,10 +200,9 @@ graph TB
 | `core` | **Servicio de Alertas** | Crear (URL, 1..N) **inmutables** con `estado`; consultar todas (lectura); pausar/reactivar. |
 | `core` | **Suscripciones** | Persona↔alerta por email; unsubscribe por enlace. |
 | `core` | **Registro de adapters** | Guarda adapters por dominio; constructor manual del admin; reutilización. |
-| `core` | **Ensamblado de job** | A pedido de `schedule`, arma el detalle del job (URL, dominio, adapter) para un `alert_id` dado. |
 | `core` | **Ingesta de precio (callback)** | Recibe la llamada `api_call` que `schedule` dispara al completar un *run* (SCH-14); es la única puerta de entrada del precio hacia el Normalizador. |
 | `schedule` | **Scheduling** | Motor de jobs **genérico**, reutilizable por cualquier `system`: cada `job` lleva su cron, su `execution_type` (catálogo abierto), un `payload` opaco y un callback. `core` crea el job de scraping de cada alerta (2×/día por defecto); admin ve/edita/lanza y ve progreso; dueño de `job`, `job_script` y `job_execution`. |
-| `schedule` | **API de jobs (CRUD) y de resultados** | `core` la usa para crear, pausar y consultar jobs (SCH-12). Al disparar un job, `schedule` le pide el detalle a `core`, **envía el trabajo al scraper** con su callback y recibe el resultado por esa misma API (SCR-20); si no logra entregar el trabajo, reintenta con backoff exponencial y avisa al administrador llamando a `notify`. |
+| `schedule` | **API de jobs (CRUD) y de resultados** | `core` la usa para crear, pausar y consultar jobs (SCH-12). Al disparar un job, `schedule` usa las URLs guardadas en él, **envía el trabajo al scraper** con su callback y recibe el resultado por esa misma API (SCR-20); si no logra entregar el trabajo, reintenta con backoff exponencial y avisa al administrador llamando a `notify`. |
 | `schedule` | **Motor de acciones (Strategy)** | Al completar un *run*, dispara la acción configurada al crear el job (`api_call`/`python_script`); nunca conoce el dominio de negocio de quien la configuró (SCH-13/14). |
 | `core` | **Normalizador** | Formato canónico: precio, moneda, stock, título, metadata. |
 | `core` | **Tasa de cambio** | Tarea liviana; convierte USD→COP; guarda tasa+fecha en su propia NoSQL (~1 doc/día); parametrizable. |
@@ -322,8 +317,6 @@ graph TB
     SCHED -->|"barrido diario de errores<br/>(service-to-service)"| GW
     CORE -->|"CRUD de jobs: crea/pausa/consulta<br/>(service-to-service, ALE-8/9, SCH-4/5/8/9)"| GW
     GW -->|"/schedule/internal/jobs"| SCHED
-    SCHED -->|"pide detalle del job (service-to-service)"| GW
-    GW -->|"/api/internal/job-detail"| CORE
 
     SCHED -->|"envía una URL + callback<br/>acceso restringido a schedule"| SCR
     SCR -->|"callback: entrega el resultado"| GW
@@ -439,7 +432,6 @@ graph TB
 | Origen | Destino | Qué comunica | Ruta | Protocolo | Tecnología / Auth |
 |---|---|---|---|---|---|
 | `core` | `schedule` | CRUD de jobs: crea/pausa/consulta (ALE-8/9, SCH-4/5/8/9/12, D8) — la consulta incluye la **etapa actual** del *run* en curso, nunca un tiempo estimado¹ | `/schedule/internal/jobs` | REST/HTTPS+JSON | JWT de servicio (`aud=system`) |
-| `schedule` | `core` | Pide el detalle del job (URL, adapter) antes de enviar el trabajo al scraper | `/api/internal/job-detail` | REST/HTTPS+JSON | JWT de servicio |
 | `schedule` | `scraper` | Envía **una URL** con su callback, de forma asíncrona y una tras otra; el scraper responde «recibido» (ADR-0004) | `/scraper/internal/jobs` | REST/HTTPS+JSON | JWT de servicio |
 | `scraper` | `schedule` | Callback: entrega el resultado de la URL (`ok`, `no_price` o `error`, SCR-20). Destino configurable, de lista blanca | `/schedule/internal/results` | REST/HTTPS+JSON | JWT de servicio |
 | `schedule` | `core` | Callback: entrega el resultado de cada URL de inmediato, en la URL de `api_call` configurada al crear el job (SCH-14). Solo guarda el chequeo; no avisa | `/api/internal/prices` | REST/HTTPS+JSON | JWT de servicio |

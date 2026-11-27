@@ -34,7 +34,7 @@ flowchart LR
     CO -->|crea y consulta jobs| SC[schedule]
     SC -->|envía una URL con su callback| SR[scraper]
     SR -->|callback con el resultado| SC
-    SC -->|detalle del job, resultado por URL y lanza el análisis| CO
+    SC -->|resultado por URL y lanza el análisis| CO
     CO -->|pide el aviso| NT[notify]
     SC -->|barrido diario de errores| NT
     NT -->|SMTP| MX[Servidor de correo]
@@ -69,13 +69,12 @@ sequenceDiagram
 
     rect rgba(60, 170, 120, 0.14)
         Note over CO,SC: CU-03 · Programar la captura
-        CO->>SC: crea el job con su callback
-        SC->>SC: dispara el job a su hora
+        CO->>SC: crea el job con las URLs y sus callbacks (en segundo plano)
+        SC->>SC: lanza la primera corrida y luego dispara el job en las franjas
     end
 
     rect rgba(70, 130, 220, 0.14)
         Note over SC,SR: CU-04 · Capturar el precio
-        SC->>CO: pide el detalle del job (las URLs de la alerta)
         SC->>SR: envía una URL con su callback (asíncrono, una tras otra)
         SR-->>SC: recibido
         SR->>SR: descarga la URL (anti-SSRF) y prueba estrategias hasta obtener el precio
@@ -92,7 +91,7 @@ sequenceDiagram
 
     rect rgba(70, 130, 220, 0.14)
         Note over CO,PG: CU-06 · Analizar el mejor precio (al terminar la corrida, DEC-33)
-        SC->>CO: corrida terminada (job_id, run_id), o la interfaz lo pide para una alerta
+        SC->>CO: corrida terminada (job_id, run_id, payload), o la interfaz lo pide para una alerta
         CO->>PG: calcula el mejor precio, lo compara con el anterior y marca anomalías
     end
 
@@ -134,7 +133,6 @@ sequenceDiagram
 | `core` → `schedule` | `GET /schedule/internal/jobs/{job_id}` | Consultar un job |
 | `schedule` → `scraper` | `POST /scraper/internal/jobs` | Enviar una URL con su callback |
 | `scraper` → `schedule` | `POST /schedule/internal/results` | Callback: entregar el resultado (en el ejercicio, el destino configurado) |
-| `schedule` → `core` | `GET /api/internal/job-detail` | Obtener las URLs de la alerta |
 | `schedule` → `core` | `POST /api/internal/prices` | Entregar el resultado de una URL (`ok`, `no_price` o `error`) |
 | `core` → `notify` | `POST /notify/notifications` | Pedir el aviso por correo |
 | `schedule` → `notify` | `POST /notify/notifications` | Barrido diario: un solo correo al administrador con los errores del día (mismo endpoint que el de `core`) |

@@ -11,6 +11,8 @@
 
 > **Enmienda (2026-11-22, DEC-29):** `price_snapshot` (por cambio) se reemplazó por `alert_snapshot`, una fila por chequeo con su estado; el último precio, el mejor precio y las estadísticas por sitio ya no se materializan, son vistas. Donde este ADR dice «snapshot», léase «chequeo `ok`». Ver [modelo de datos](../../data/data-model.md).
 
+> **Enmienda (2026-11-26, [CU-03 D15 a D21](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** reemplaza la parte del punto 1 en la que `schedule` pide el detalle a `core`. Al crear el job, `core` envía las URLs en `payload.items`; `schedule` las guarda y, al disparar, crea una ejecución por elemento **sin llamar a `core`**. `GET /api/internal/job-detail` deja de existir. Además, la lista blanca de callbacks valida **origen y ruta exacta**, sale solo de variables de entorno y, antes de desplegar en proveedores distintos, son obligatorios HTTPS y autenticación entre servicios.
+
 ## Contexto
 
 Hasta ahora el scraper hacía *pull*: preguntaba a `schedule` si había trabajo y le entregaba el resultado en la misma llamada. Eso lo dejaba sin puertos entrantes, pero tenía un costo: nadie sabía si estaba vivo y, si caía, no había una forma natural de detectarlo ni de reintentar el trabajo. Las tareas de scraping son asíncronas y el objetivo final del flujo es el scraper, así que conviene que quien las dispara (`schedule`) sea quien lo invoque.

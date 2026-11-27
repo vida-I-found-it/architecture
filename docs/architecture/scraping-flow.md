@@ -20,9 +20,9 @@
 
 | Pieza | Papel |
 |-------|-------|
-| `schedule` | Dispara el job a su hora, pide a `core` el detalle (la lista de URLs), crea una ejecución por URL y las **envía al scraper una tras otra**, esperando el callback de cada una. Recibe `ok`, `no_price` o `error`: entrega `ok` y `no_price` a `core` de inmediato y **reinyecta** el `error` (hasta 3 veces, 10–15 min). Administra también los reintentos del envío (backoff exponencial) y corre el **barrido diario de errores**, que pide a `notify` un correo al administrador ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)) |
+| `schedule` | Dispara el job a su hora, crea una ejecución por cada URL guardada en `job.payload.items`, sin pedir nada a `core`, y las **envía al scraper una tras otra**, esperando el callback de cada una. Recibe `ok`, `no_price` o `error`: entrega `ok` y `no_price` a `core` de inmediato y **reinyecta** el `error` (hasta 3 veces, 10–15 min). Administra también los reintentos del envío (backoff exponencial) y corre el **barrido diario de errores**, que pide a `notify` un correo al administrador ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md)) |
 | `scraper` | Sin estado y sin base de datos. Recibe **una URL** (responde «recibido» y sigue en segundo plano), descarga, extrae el precio **en una sola pasada (sin reintentos ni esperas propios)** y **ejecuta el callback** con `ok`, `no_price` o `error`. El destino del callback es configuración (lista blanca); en el ejercicio es `schedule`, así que no llama a `core` (SCR-20) |
-| `core` | Da el detalle del job (las URLs). Al recibir un resultado lo sanea, normaliza y valida y **guarda el chequeo** en `alert_snapshot`, sea cual sea el resultado (CU-05). Aparte, el **análisis** (CU-06 y CU-10) calcula el mejor precio y decide los avisos |
+| `core` | Envía las URLs al crear el job (CU-03, D15). Al recibir un resultado lo sanea, normaliza y valida y **guarda el chequeo** en `alert_snapshot`, sea cual sea el resultado (CU-05). Aparte, el **análisis** (CU-06 y CU-10) calcula el mejor precio y decide los avisos |
 | `notify` | Crea la notificación, arma el email y reintenta el envío si falla. Envía los avisos de precio que pide `core` y el correo del barrido diario que pide `schedule` |
 
 ## Diagrama de secuencia
@@ -40,9 +40,7 @@ sequenceDiagram
     participant WEB as 🌍 Sitios
 
     SC->>SC: dispara el job a su hora (franja y escalonado)
-    SC->>CO: pide el detalle del job
-    CO-->>SC: lista de URLs de la alerta
-    SC->>SC: crea una ejecución por URL (un transaction_id cada una, solo de schedule)
+    SC->>SC: crea una ejecución por cada URL de job.payload.items (un transaction_id cada una, solo de schedule)
     loop una URL a la vez, en secuencia
         SC->>SR: envía { url, callback_url } (HTTP, asíncrono)
         SR-->>SC: 202 { scraper_id } (schedule lo guarda para correlacionar)
@@ -71,7 +69,7 @@ sequenceDiagram
     participant NT as 📣 notify
 
     alt al terminar la corrida
-        SC->>CO: POST /api/internal/run-completed (job_id, run_id)
+        SC->>CO: POST /api/internal/run-completed (job_id, run_id, payload)
         CO->>CO: busca la alerta por alert.schedule_job_id
     else manual
         UI->>CO: POST /api/alerts/{alert_id}/analysis
@@ -315,7 +313,7 @@ Qué ocurre cuando algo se sale del camino feliz. Cada evento tiene un ID (`EV-N
 | EV-17 | **El scraper está en pie, pero un sitio lo rompe** por un error técnico (por ejemplo, se cuelga o lanza una excepción al procesarlo). No es lo mismo que EV-05: aquí falla el propio scraper, no solo la respuesta del sitio | No llega el callback dentro del plazo (por URL) o llega `error`. Se trata como `error` de esa URL: `schedule` la reinyecta hasta 3 veces. Agotados, la ejecución queda `failed` y entra en el **barrido diario de errores**, que pide **un solo correo** al administrador (`schedule` llama a `notify`). La idempotencia del chequeo evita duplicar datos (R7) | ✅ decisión del equipo · ADR-0004 |
 | EV-18 | El scraper termina pero **no logra ejecutar el callback** (el destino no responde) | El scraper no tiene estado: si no puede entregar, el resultado se pierde. Desde `schedule` se ve como un callback que no llega (EV-17). Si el scraper reintenta el callback antes de rendirse **no está definido** | ❓ |
 | EV-19 | `schedule` cae y no dispara jobs a su hora | No se pierde nada: las alertas viven en `core`. La infraestructura lo reinicia y, al volver, `schedule` **toma el trabajo que no hizo**: carga los jobs de la tabla `job` y calcula la próxima ejecución de cada uno desde su `last_run_at` ([ADR-0007](adr/0007-schedule-apscheduler-loaded-from-postgres.md)). El tope de 2 corridas al día (R2) sigue vigente | ✅ decisión del equipo |
-| EV-20 | `core` no responde cuando `schedule` pide el detalle del job | El job no se pierde: queda pendiente y se retoma cuando `core` vuelve. Cómo se espera (reintentos o reinicio de la infraestructura) y si se avisa al administrador no está decidido | 💡 pendiente de confirmar |
+| EV-20 | `core` no responde cuando `schedule` dispara el job | La corrida no depende de `core`: las URLs ya están en `job.payload`, así que se envían igual. Solo las entregas a `core` quedan pendientes y se reintentan ([ADR-0004](adr/0004-schedule-dispatches-work-to-scraper.md), enmienda del 2026-11-26) | ✅ CU-03, D15 |
 | EV-21 | `core` no responde al callback con los precios | El outbox de `schedule` reintenta la entrega; el estado del callback es independiente del estado del trabajo | ✅ `job_callback_outbox` |
 | EV-22 | La corrida o el callback llegan dos veces | No se duplica nada: el reenvío trae el mismo `checked_at` y choca con la PK de `alert_snapshot` | ✅ R7, SCR-7 |
 | EV-23 | Falla crear el job en `schedule` después de guardar la alerta | La alerta queda creada con `schedule_job_id` nulo («sin schedule»); `core` reintenta al arrancar y al inicio de cualquier análisis con la misma llave, sin duplicar | ✅ criterio CU-03 · DEC-15 ✅ |

@@ -59,7 +59,7 @@ CREATE TABLE JOB (
     NAME            text NOT NULL,            -- etiqueta legible, p.ej. 'Limpieza semanal de snapshots'
     EXTERNAL_KEY    text,                     -- llave de idempotencia que manda quien crea el job, p.ej. 'alert-17' (DEC-15)
     EXECUTION_TYPE  text NOT NULL REFERENCES EXECUTION_TYPE(CODE), -- FK real, misma esquema
-    PAYLOAD         jsonb NOT NULL DEFAULT '{}'::jsonb, -- entrada específica del execution_type; opaca aquí
+    PAYLOAD         jsonb NOT NULL DEFAULT '{}'::jsonb, -- entrada específica del execution_type; opaca aquí; en un `scrape` trae {alert_id, items:[{alert_url_id,url}]} (CU-03, D15): se crea una ejecución por item. Puede llevar URLs con tokens: no escribirlo en logs
     SCHEDULE_CRON   text NOT NULL,            -- expresión cron estándar; la interpreta el disparador cron de APScheduler en America/Bogota (ADR-0007)
     IS_ACTIVE       boolean NOT NULL DEFAULT true,
     CALLBACK_TYPE   text CHECK (CALLBACK_TYPE IN ('api_call', 'python_script', 'topic_message')), -- SCH-13; NULL = sin callback por ejecución (p.ej. error_sweep, DEC-33)

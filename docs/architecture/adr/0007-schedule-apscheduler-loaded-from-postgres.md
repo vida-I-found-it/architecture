@@ -4,6 +4,8 @@
 - **Fecha:** 2026-11-26
 - **Requerimientos / casos de uso afectados:** SCH-1, SCH-2, SCH-3, SCH-6, SCH-7, SCH-12 · CU-03 (US-03-03, US-03-04), CU-04 (copia de D4) · EV-19, EV-24, EV-25 · QS-12
 
+> **Ampliación (2026-11-26, [CU-03 D14, D15, D19 y D24](../../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)):** `schedule` **calcula** `schedule_cron` (el minuto sale de un hash estable de `external_key`) y no lo recibe de `core`. Las URLs ya están en `job.payload`, así que un disparo no depende de `core`. `SCHEDULE_TIMEZONE` es configurable (`America/Bogota`) y la tarea periódica de las colas usa `SCHEDULE_POLL_INTERVAL_SECONDS` = 2, **aprobado** (reemplaza la propuesta del punto 7). Para la memoria, el `payload` (hasta 32 KB) no se carga en APScheduler: solo el id y el cron; se lee de la base al disparar.
+
 ## Contexto
 
 D4 (2026-11-24) dejó `next_run_at` en PostgreSQL y unos workers que, cada cierto tiempo, toman lo vencido con `FOR UPDATE SKIP LOCKED`. Quedaban sin definir en qué proceso corre ese bucle y cada cuánto revisa la tabla. El stack del proyecto ya nombraba APScheduler para `schedule` ([`tech-stack.md`](../../tools/tech-stack.md)).

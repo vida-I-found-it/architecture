@@ -84,7 +84,7 @@ Catálogo de los endpoints que resuelven los requerimientos de backend, con su o
 | 8 | `GET /schedule/internal/jobs/{job_id}` | `core` → `schedule` | CU-03 | *API de jobs* |
 | 9 | `POST /scraper/internal/jobs` | `schedule` → `scraper` | CU-04 | *Cola de trabajos y workers* |
 | 10 | `POST /schedule/internal/results` | `scraper` → `schedule` | CU-04 | *El scraper entrega a schedule* |
-| 11 | `GET /api/internal/job-detail` | `schedule` → `core` | CU-04 | *El scraper entrega a schedule* |
+| 11 | ~~`GET /api/internal/job-detail`~~ eliminado: las URLs viajan al crear el job ([CU-03, D15](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)) | `schedule` → `core` | CU-04 | *El scraper entrega a schedule* |
 | 12 | `POST /api/internal/prices` | `schedule` → `core` | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes* |
 | 13 | `POST /notify/notifications` | `core` → `notify` · `schedule` → `notify` | CU-10 | *Aviso al bajar el mejor precio* · barrido diario de errores al administrador (EJ-6) |
 | 14 | `GET /api/health` | docker-compose → `core` | Transversal | *Salud de cada pieza* (EJ-4) |
@@ -127,11 +127,10 @@ FastAPI y PostgreSQL. Es el dueño del negocio.
 | **Modos de creación**<br>`AlertSource` | Permite cambiar la forma de crear una alerta sin tocar el resto. Hoy solo funciona «URL directa»; «palabra clave con LLM» llegará después | CU-02 | *Selector de modo de creación* |
 | **Política de URLs**<br>`UrlPolicy` | Al crear la alerta, rechaza direcciones peligrosas (por ejemplo, redes internas) para que el sistema nunca las visite | CU-02 | *Protección anti-SSRF* |
 | **Suscripciones**<br>`SubscriptionService` | Guarda si cada correo está activo o dado de baja y procesa la baja con el enlace del email | CU-11 | *Suscripción al correo*, *Baja por enlace* |
-| **Detalle del job**<br>`JobDetailService` | Le dice a `schedule` qué URLs tiene que visitar cada alerta | CU-04 | *El scraper entrega a schedule* |
 | **Ingesta de precios**<br>`PriceIngestService` | Recibe el precio capturado, lo limpia y lo convierte a número, descarta lo inválido (precio cero o página de error), marca las caídas sospechosas y guarda el precio solo si cambió. Procesa juntas todas las URLs de una alerta: si una es inválida, las demás se guardan igual | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes*, *Saneamiento de datos* |
 | **Análisis de precio**<br>`BestPriceStrategy` | En el análisis (al terminar la corrida de la alerta), calcula cuál es el mejor precio vigente entre todas las URLs de la alerta, lo compara con el anterior y decide si hay que avisar | CU-06 | *Motor de mejor precio* |
 | **Consulta de precios**<br>`PriceHistoryService` | Entrega el historial de cada URL y los datos del gráfico comparador | CU-08 | *Histórico de precios*, *Comparador entre sitios* |
-| **Cliente de agendamiento**<br>`SchedulerClient` | Le pide a `schedule` que programe las corridas de la alerta | CU-03 | *Programar la captura al crear la alerta*, *API de jobs* |
+| **Cliente de agendamiento**<br>`SchedulerClient` | Le pide a `schedule` que programe las corridas de la alerta, enviándole sus URLs | CU-03 | *Programar la captura al crear la alerta*, *API de jobs* |
 | **Cliente de notificación**<br>`NotifierClient` | Le pide a `notify` que envíe el aviso. Si no responde, reintenta unas pocas veces con el mismo identificador de transacción | CU-10 | *Aviso al bajar el mejor precio* |
 
 #### `schedule` · agendamiento y ejecución
@@ -143,7 +142,7 @@ FastAPI y APScheduler: los jobs viven en PostgreSQL y, al arrancar, se cargan en
 | **Gestión de jobs**<br>`JobService` | Crea y consulta los jobs (tareas programadas): cuándo corren, qué hacen y a quién entregan el resultado | CU-03 | *API de jobs*, *Acción del job*, *Callback del job* |
 | **Agendamiento**<br>`SchedulerEngine` | Decide cuándo corre cada job: 2 veces al día, dentro de las franjas horarias y repartidas para no saturar | CU-03 | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Franjas horarias* |
 | **Ejecución de corridas**<br>`ExecutionService` | Dispara el job a su hora y registra cada corrida con su estado y su identificador de transacción | CU-03, CU-04 | *Ejecución en segundo plano* |
-| **Entrega de trabajo**<br>`ScraperDispatcher` | Al disparar el job, pide a `core` el detalle y envía las URLs al scraper **una a la vez**, cada una con su callback; si el envío falla, reintenta con backoff exponencial. Recibe `ok`, `no_price` o `error` y **administra los reintentos del scraper**: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min). Lo agotado queda `failed` y lo avisa el barrido diario | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
+| **Entrega de trabajo**<br>`ScraperDispatcher` | Al disparar el job, envía al scraper las URLs guardadas en él **una a la vez**, cada una con su callback; si el envío falla, reintenta con backoff exponencial. Recibe `ok`, `no_price` o `error` y **administra los reintentos del scraper**: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min). Lo agotado queda `failed` y lo avisa el barrido diario | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
 | **Entrega del resultado**<br>`CallbackService` | Envía el resultado a `core`. Si falla, lo reintenta desde su propia cola de reintentos. Hoy solo soporta la acción «llamar a un endpoint» | CU-05 | *Acción del job*, *Callback del job* |
 
 #### `scraper` · captura del precio
