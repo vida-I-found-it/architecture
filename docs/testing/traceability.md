@@ -442,12 +442,12 @@
 ## Pendiente
 
 - CU-03 a CU-08, CU-10 y CU-11: **sin casos de prueba** (no hay `TC-NN-NN` asignados). El nivel de cada fila sale de la tabla de pruebas y de la línea «Tests» de la guía de cada historia. Donde la historia no dice qué nivel cubre el criterio, la fila dice «por definir»: lo debe completar la historia, no esta matriz.
-- CU-02: faltan filas para US-02-01-AC10 a AC14 (ver la verificación de abajo).
+- CU-02: faltan filas para US-02-01-AC10 a AC28, US-02-02-AC6 y AC7, US-02-03-AC5 a AC7, US-02-04-AC5 y US-02-05-AC3 (ver la verificación de abajo).
 
 ## Verificación de cobertura
 
-- Criterios de CU-02: **29** (US-02-01 a 14; US-02-02 a 5; US-02-03 a 4; US-02-04 a 4; US-02-05 a 2) · Casos de prueba: **24** · Criterios sin caso: **5** (US-02-01-AC10 a AC14). La versión anterior decía 24 criterios y 0 sin caso, lo que no coincidía con la historia.
-- Preguntas abiertas que condicionan casos: 1 (AC8), 2 (AC5), 3 (US-02-05-AC1), ver [user-stories/CU-02.md](../requirements/user-stories/CU-02.md#preguntas-abiertas).
+- Criterios de CU-02: **50** (US-02-01 a 28; US-02-02 a 7; US-02-03 a 7; US-02-04 a 5; US-02-05 a 3) · Casos de prueba: **24** · Criterios sin caso: **26** (US-02-01-AC10 a AC28, US-02-02-AC6 y AC7, US-02-03-AC5 a AC7, US-02-04-AC5 y US-02-05-AC3; los AC15 a AC26, US-02-02-AC6 y AC7, US-02-03-AC5, US-02-04-AC5 y US-02-05-AC3 se añadieron el 2026-11-26 con las decisiones del 2026-11-24 y del 2026-11-26). La versión anterior decía 24 criterios y 0 sin caso, lo que no coincidía con la historia.
+- Preguntas de CU-02 que condicionaban casos, decididas el 2026-11-24: 1 (AC8), 2 (AC5), 3 (US-02-05-AC1), ver [user-stories/CU-02.md](../requirements/user-stories/CU-02.md#preguntas-abiertas).
 
 | CU | Criterios | Con nivel | Nivel «por definir» |
 |---|---|---|---|
