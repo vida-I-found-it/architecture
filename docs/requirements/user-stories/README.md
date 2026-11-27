@@ -4,7 +4,7 @@ Un archivo por caso de uso, con la [plantilla](../../templates/user-story.md).
 
 | CU | Título | Historias | Criterios | Repos que toca | Archivo | Estado |
 |----|--------|-----------|-----------|----------------|---------|--------|
-| CU-02 | Registrar una alerta con URLs | 5 | 29 | frontend, core | [`CU-02.md`](CU-02.md) | Borrador |
+| CU-02 | Registrar una alerta con URLs | 5 | 50 | frontend, core | [`CU-02.md`](CU-02.md) | Borrador |
 | CU-03 | Programar la captura | 5 | 42 | core, schedule, frontend | [`CU-03.md`](CU-03.md) | Borrador |
 | CU-04 | Capturar el precio de un sitio | 5 | 57 | schedule, scraper, core | [`CU-04.md`](CU-04.md) | Borrador |
 | CU-05 | Procesar y almacenar | 6 | 54 | core, schedule, scraper | [`CU-05.md`](CU-05.md) | Borrador |
@@ -14,7 +14,7 @@ Un archivo por caso de uso, con la [plantilla](../../templates/user-story.md).
 | CU-10 | Notificar a los correos registrados | 5 | 46 | core, notify, schedule, frontend | [`CU-10.md`](CU-10.md) | Borrador |
 | CU-11 | Darse de baja de una alerta | 4 | 31 | frontend, core | [`CU-11.md`](CU-11.md) | Borrador |
 
-Total: 9 historias de CU (CU-02 a CU-08, CU-10 y CU-11; no existe CU-09 en [`requirements.md`](../requirements.md)), 45 historias de usuario y 397 criterios (`US-NN-MM-ACn`). Todos los criterios están en estado borrador: sin aprobar. Las preguntas abiertas de cada CU, marcadas 💡 cuando son propuestas, bloquean o precisan los criterios y no son decisiones.
+Total: 9 historias de CU (CU-02 a CU-08, CU-10 y CU-11; no existe CU-09 en [`requirements.md`](../requirements.md)), 45 historias de usuario y 418 criterios (`US-NN-MM-ACn`). Todos los criterios están en estado borrador: sin aprobar. Las preguntas abiertas de cada CU, marcadas 💡 cuando son propuestas, bloquean o precisan los criterios y no son decisiones.
 
 ## Orden de implementación sugerido
 

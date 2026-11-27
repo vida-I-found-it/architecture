@@ -19,7 +19,7 @@ El orden sigue las dependencias de cada historia (ver [`README`](../requirements
 
 | Orden | Historia | Criterios que toca `core` | Nota |
 |---|---|---|---|
-| 1 | [CU-02](../requirements/user-stories/CU-02.md) · alta de alerta | US-02-01-AC1 a AC14; US-02-02-AC1 a AC5; US-02-03-AC4; US-02-04-AC2 a AC4 y AC4 de `GET /api/alert-modes`; US-02-05-AC2 | Base de datos y `POST /api/alerts`. Ver [pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas) (cuerpo de la respuesta). |
+| 1 | [CU-02](../requirements/user-stories/CU-02.md) · alta de alerta | US-02-01-AC1 a AC19, AC21 a AC23, AC25 a AC28; US-02-02-AC1 a AC7; US-02-03-AC4; US-02-04-AC2 a AC5 (AC4 es `GET /api/alert-modes`); US-02-05-AC2 | Base de datos y `POST /api/alerts`. Respuesta `201` decidida en la [pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas). |
 | 2 | [CU-03](../requirements/user-stories/CU-03.md) · programar la captura | US-03-01-AC1 a AC9; US-03-02-AC1 a AC6 | Cliente de `schedule` tras una interfaz, fuera de la transacción del alta. |
 | 3 | [CU-04](../requirements/user-stories/CU-04.md) · `job-detail` | US-04-01-AC1 (lado de `core`) | Endpoint que pide `schedule` para saber qué URLs capturar. Cuerpo sin definir. |
 | 4 | [CU-05](../requirements/user-stories/CU-05.md) · procesar y almacenar | US-05-01-AC1 a AC12; US-05-02-AC1 a AC9; US-05-03-AC1 a AC8; US-05-04-AC1 a AC5; US-05-05-AC1 a AC10 | Normalizador y validador como funciones puras. `POST /api/internal/prices`. |
@@ -37,7 +37,7 @@ Los criterios de presentación (la mayoría de `US-07-*`, `US-08-*`, `US-11-01`)
 
 | Método y ruta | Historia | Estado |
 |---|---|---|
-| `POST /api/alerts` | US-02-01, US-02-02, US-02-04 | Ruta según la historia; cuerpo y respuesta pendientes ([CU-02, pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas)). |
+| `POST /api/alerts` | US-02-01, US-02-02, US-02-04 | Ruta según la historia. Respuesta `201 Created` con `{id, status, urls[], created_at}` ([CU-02, pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas)); el OpenAPI se genera de los modelos pydantic ([ADR-0006](../architecture/adr/0006-openapi-generated-from-code.md)), con las reglas de [DEC-34](../requirements/requirements.md). |
 | `GET /api/alert-modes` | US-02-04-AC4 | Responde los modos y marca solo `url`. Formato pendiente. |
 | `GET /api/alerts` | US-07-01 | Lista. Cuerpo y paginación pendientes ([CU-07, preguntas 1 y 2](../requirements/user-stories/CU-07.md#preguntas-abiertas)). |
 | `GET /api/alerts/{alert_id}` | US-07-02, US-07-03, US-07-04, US-07-06 | Detalle. Cuerpo pendiente (CU-07, pregunta 1). |
@@ -79,7 +79,7 @@ Solo nombres que aparecen en la documentación. Ningún valor.
 
 | Variable | Uso | Fuente |
 |---|---|---|
-| `ALERT_CREATION_MODES` | Modos de alta; por defecto `url`. Valor desconocido o `keyword`: pendiente. | [CU-02, pregunta 7](../requirements/user-stories/CU-02.md#preguntas-abiertas) |
+| `ALERT_CREATION_MODES` | Modos de alta; por defecto `url`. Valor desconocido: `core` no arranca; `keyword`: `422 mode_not_available`. | [CU-02, pregunta 7](../requirements/user-stories/CU-02.md#preguntas-abiertas) |
 | `ANOMALY_STRATEGY` | Estrategia de anomalía activa; nombre desconocido debe fallar al arrancar (propuesta). | [ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md), [CU-06, pregunta 7](../requirements/user-stories/CU-06.md#preguntas-abiertas) |
 
 Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y `system` del proyecto (INF-3), URL de `notify`, orígenes permitidos (CORS), secreto HMAC del enlace de baja (solo aquí, DEC-13). Ver [`architecture.md`, Configuración](../architecture/architecture.md#configuración) y [CU-10, pregunta 19](../requirements/user-stories/CU-10.md#preguntas-abiertas).
@@ -99,14 +99,14 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 
 Las que impiden cerrar un criterio sin inventar. Ver cada historia para el detalle.
 
-- **Contratos:** cuerpos de `POST /api/alerts` y de las rutas internas (CU-02 p. 4; CU-03 p. 1; CU-04 p. 1; CU-05 p. 1; CU-06 p. 1).
+- **Contratos:** cuerpo de las rutas internas (CU-03 p. 1; CU-04 p. 1; CU-05 p. 1; CU-06 p. 1).
 - **Carrera** entre el alta y el disparo del job (CU-03 p. 2 y CU-04 p. 2). Propuesta: `alert_id` en el `payload`.
 - **Primera corrida fuera de franja** y su cuenta en el tope de 2 (CU-03 p. 3).
 - **Zona horaria y minuto del cron** (CU-03 pp. 7 y 8): `core` calcula el cron.
 - **Validación de datos del sitio:** formato del precio, moneda ausente, página de error (CU-05 pp. 8 a 10).
 - **Token de baja:** dependencia con el `id` al insertar (CU-11 p. 1) y respuesta uniforme (CU-11 p. 4).
 - **Mejor precio:** vista o último análisis (CU-07 p. 13). Pendiente de decisión antes del dashboard.
-- **Formato del correo enmascarado** (CU-02 p. 3 y CU-07 p. 5).
+- **Formato del correo enmascarado:** `a***@dominio.com`, decidido en CU-02 p. 3; CU-07 p. 5 y p. 22 siguen abiertas (parte local de 1 carácter, unicode).
 - **Token de baja en el `payload` de `notify`** (CU-10 p. 1, 🔒): contradice SUB-3; hay que decidir antes de implementar el aviso.
 
 ## Seguridad

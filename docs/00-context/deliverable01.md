@@ -54,7 +54,7 @@ Frontend en **React + Vite + TypeScript** con shadcn/ui, `react-hook-form` + `zo
 
 ![Modal para crear una alerta](../design/mockups/create-alert.png)
 
-**Confirmar la alerta (CU-02).** Al pulsar «Guardar alerta» se abre una confirmación con el resumen: las páginas, el correo enmascarado y la frecuencia de revisión. Es definitiva: después no se pueden editar las páginas ni el correo.
+**Confirmar la alerta (CU-02).** Al pulsar «Crear alerta» se abre una confirmación con el resumen: las páginas, el correo enmascarado y la frecuencia de revisión. Es definitiva: después no se pueden editar las páginas ni el correo.
 
 ![Confirmación antes de crear la alerta](../design/mockups/confirm-alert.png)
 
@@ -123,7 +123,7 @@ FastAPI y PostgreSQL. Es el dueño del negocio.
 
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
-| **Alertas**<br>`AlertService` | Crea la alerta con sus URLs y sus correos (1 a 5); si algo falla, no se guarda nada. Después la alerta no se puede cambiar. También la consulta y la lista | CU-02, CU-07 | *Modelo de alerta*, *Crear alerta por URL*, *Alerta inmutable*, *Consultar alertas*, *Suscripción al correo*, *Suscribirse a una alerta*, *Detalle de la alerta* |
+| **Alertas**<br>`AlertService` | Crea la alerta con sus URLs y sus correos (1 a 10); si algo falla, no se guarda nada. Después la alerta no se puede cambiar. También la consulta y la lista | CU-02, CU-07 | *Modelo de alerta*, *Crear alerta por URL*, *Alerta inmutable*, *Consultar alertas*, *Suscripción al correo*, *Suscribirse a una alerta*, *Detalle de la alerta* |
 | **Modos de creación**<br>`AlertSource` | Permite cambiar la forma de crear una alerta sin tocar el resto. Hoy solo funciona «URL directa»; «palabra clave con LLM» llegará después | CU-02 | *Selector de modo de creación* |
 | **Política de URLs**<br>`UrlPolicy` | Al crear la alerta, rechaza direcciones peligrosas (por ejemplo, redes internas) para que el sistema nunca las visite | CU-02 | *Protección anti-SSRF* |
 | **Suscripciones**<br>`SubscriptionService` | Guarda si cada correo está activo o dado de baja y procesa la baja con el enlace del email | CU-11 | *Suscripción al correo*, *Baja por enlace* |
@@ -535,8 +535,8 @@ Las piezas no comparten claves foráneas: se enlazan solo por identificadores.
 
 | Qué se valida | Frontend | Backend |
 |---|---|---|
-| URLs de la alerta (CU-02) | De 1 a 10; formato `http://` o `https://`; avisa si hay repetidas | De 1 a 10; se normalizan y se eliminan las repetidas |
-| URL peligrosa (CU-02) | — | Solo `http` o `https`, puerto 80 o 443 y sin credenciales; rechaza las IP privadas o reservadas. Si una falla, 422 y no se guarda nada |
+| URLs de la alerta (CU-02) | De 1 a 10; formato `http://` o `https://`; normaliza con las mismas reglas que el backend y no envía repetidas | De 1 a 10, contadas después de normalizar y eliminar las repetidas; una vacía es 422 |
+| URL peligrosa (CU-02) | — | Solo `http` en el puerto 80 o `https` en el 443, sin credenciales y con un host que resuelva en DNS en 2 s; rechaza las IP privadas o reservadas. Si una falla, 422 y no se guarda nada |
 | Correo (CU-02) | Obligatorio, formato válido, hasta 254 caracteres | El mismo formato; se normaliza (minúsculas, Unicode NFC) |
 | Modo y campos de más (CU-02) | «Palabra clave» deshabilitada | Solo `url` (si no, 422 `mode_not_available`); rechaza campos fuera del contrato, como `created_by` |
 | Envío (CU-02) | Modal de confirmación; botón deshabilitado mientras envía | Todo o nada: alerta, URLs y suscripción en una transacción |
