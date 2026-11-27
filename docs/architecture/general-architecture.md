@@ -142,8 +142,8 @@ graph TB
     end
 
     subgraph SVC_SCHED["🗓️ schedule — interno, sin ruta pública (SCH-11)"]
-        JOBAPI[["🛠️ API CRUD de jobs<br/>crear·consultar·actualizar·eliminar en memoria — SCH-12"]]
-        ENGINE["⏱️ Motor de jobs en memoria<br/>tipo APScheduler"]
+        JOBAPI[["🛠️ API de jobs<br/>crear·consultar — SCH-12"]]
+        ENGINE["⏱️ Motor APScheduler en memoria<br/>se carga desde la tabla job al arrancar · ADR-0007"]
         ACTION{{"🎯 Acción al disparar · Strategy<br/>api_call · python_script — Fase 1<br/>topic_message — Fase 2 o 3, SCH-13"}}
         RUNAPI[["📥 API de resultados<br/>recibe el callback del scraper"]]
 

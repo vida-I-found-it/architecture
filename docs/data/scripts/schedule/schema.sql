@@ -60,7 +60,7 @@ CREATE TABLE JOB (
     EXTERNAL_KEY    text,                     -- llave de idempotencia que manda quien crea el job, p.ej. 'alert-17' (DEC-15)
     EXECUTION_TYPE  text NOT NULL REFERENCES EXECUTION_TYPE(CODE), -- FK real, misma esquema
     PAYLOAD         jsonb NOT NULL DEFAULT '{}'::jsonb, -- entrada específica del execution_type; opaca aquí
-    SCHEDULE_CRON   text NOT NULL,            -- expresión cron estándar (soportada nativa por APScheduler)
+    SCHEDULE_CRON   text NOT NULL,            -- expresión cron estándar; la interpreta el disparador cron de APScheduler en America/Bogota (ADR-0007)
     IS_ACTIVE       boolean NOT NULL DEFAULT true,
     CALLBACK_TYPE   text CHECK (CALLBACK_TYPE IN ('api_call', 'python_script', 'topic_message')), -- SCH-13; NULL = sin callback por ejecución (p.ej. error_sweep, DEC-33)
     CALLBACK_CONFIG jsonb NOT NULL DEFAULT '{}'::jsonb, -- p.ej. {"url": "..."} si CALLBACK_TYPE='api_call'
@@ -69,13 +69,12 @@ CREATE TABLE JOB (
     -- sus callbacks también. Genérico: lleva job_id y run_id. NULL = sin aviso.
     -- Destino validado contra la misma lista blanca de SCH-14.
     RUN_CALLBACK_CONFIG jsonb,                -- p.ej. {"url": ".../api/internal/run-completed"}
-    NEXT_RUN_AT     timestamptz,
-    LAST_RUN_AT     timestamptz,
+    NEXT_RUN_AT     timestamptz,              -- siguiente disparo del cron; informativo, el motor no lo lee (ADR-0007)
+    LAST_RUN_AT     timestamptz,              -- hora del último disparo; se escribe en la misma transacción que crea el JOB_RUN y es lo que usa el arranque para calcular la próxima ejecución (ADR-0007)
     CREATED_AT      timestamptz NOT NULL DEFAULT now(),
     UPDATED_AT      timestamptz NOT NULL DEFAULT now()
 );
--- El scheduler toma lo vencido con FOR UPDATE SKIP LOCKED sobre este índice.
-CREATE INDEX IX_JOB_NEXT_RUN ON JOB(NEXT_RUN_AT) WHERE IS_ACTIVE;
+-- Sin índice sobre NEXT_RUN_AT: los jobs los dispara APScheduler en memoria y el arranque lee todos los activos (ADR-0007).
 -- La misma llave nunca crea dos jobs: repetir la creación devuelve el existente.
 CREATE UNIQUE INDEX UX_JOB_EXTERNAL_KEY ON JOB(SYSTEM, EXTERNAL_KEY) WHERE EXTERNAL_KEY IS NOT NULL;
 CREATE INDEX IX_JOB_SYSTEM ON JOB(SYSTEM); -- toda consulta multi-proyecto filtra primero por system

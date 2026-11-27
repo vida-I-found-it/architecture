@@ -187,7 +187,7 @@ flowchart LR
 |---|---|---|---|---|
 | `frontend` | Archivos estáticos de React + Vite (build), servidos por un servidor web mínimo | `web` | 💡 `127.0.0.1:5173` | — (el navegador llama a `core`) |
 | `core` | FastAPI | `backend` y `web` | 💡 `127.0.0.1:8000` | PostgreSQL, `schedule`, `notify` |
-| `schedule` | FastAPI + planificador | `backend` y `scraping` | ninguno | PostgreSQL, MongoDB |
+| `schedule` | FastAPI + APScheduler en un solo proceso ([ADR-0007](adr/0007-schedule-apscheduler-loaded-from-postgres.md)) | `backend` y `scraping` | ninguno | PostgreSQL, MongoDB |
 | `notify` | FastAPI + worker del outbox | `backend` | ninguno | PostgreSQL, SMTP de prueba |
 | `scraper` | FastAPI + httpx + Playwright (Chromium). Escucha en `0.0.0.0:8001` dentro del contenedor, sin publicar; **imagen Docker aún pendiente** (README del scraper) | `scraping` y `egress` | ninguno | — |
 | PostgreSQL | **1 instancia, `postgres:16`**, esquemas `core`, `schedule` y `notify` (más `auth`, sin uso en el ejercicio) | `backend` | ninguno | — |

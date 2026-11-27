@@ -136,7 +136,7 @@ FastAPI y PostgreSQL. Es el dueño del negocio.
 
 #### `schedule` · agendamiento y ejecución
 
-FastAPI y APScheduler. Es un motor de tareas programadas **genérico**: no conoce el negocio de las alertas y no tiene ninguna ruta pública.
+FastAPI y APScheduler: los jobs viven en PostgreSQL y, al arrancar, se cargan en la memoria de APScheduler con su próxima ejecución calculada desde la última (`last_run_at`), en un solo proceso ([ADR-0007](../architecture/adr/0007-schedule-apscheduler-loaded-from-postgres.md)). Es un motor de tareas programadas **genérico**: no conoce el negocio de las alertas y no tiene ninguna ruta pública.
 
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
@@ -254,7 +254,7 @@ Dentro de esas transacciones, el aislamiento es el de PostgreSQL por defecto (`R
 | Dónde | Bloqueo | Para qué |
 |---|---|---|
 | Procesar un callback de precios (CU-05) y analizar el mejor precio (CU-06) | `SELECT … FOR UPDATE` sobre la fila de `alert` y luego sobre sus `alert_url`, siempre en ese orden y por id | Una alerta se procesa de a una corrida a la vez: dos corridas o reintentos simultáneos no se pisan. El orden fijo evita bloqueos mutuos (deadlocks) |
-| Tomar trabajo pendiente de una cola: jobs vencidos en `schedule`, envíos en `notification_outbox`, entregas en `job_callback_outbox` | `SELECT … FOR UPDATE SKIP LOCKED` | Varios trabajadores toman tareas sin repetirlas ni esperarse |
+| Tomar trabajo pendiente de una cola: ejecuciones vencidas en `schedule` (los jobs los dispara APScheduler, ADR-0007), envíos en `notification_outbox`, entregas en `job_callback_outbox` | `SELECT … FOR UPDATE SKIP LOCKED` | Varios trabajadores toman tareas sin repetirlas ni esperarse |
 | Insertar un chequeo, una notificación, una corrida o un resultado | Ninguno: restricciones únicas e `INSERT … ON CONFLICT DO NOTHING` | Idempotencia natural. Claves: `(alert_url_id, checked_at)` en `alert_snapshot`; `(transaction_id, app_user_id, channel)` en `notification`; `transaction_id` en `job_execution`; `_id` = `transaction_id` en MongoDB |
 | Dar de baja una suscripción | `UPDATE … WHERE status = 'active'` (bloqueo de fila implícito) | Repetir la baja no cambia nada |
 
