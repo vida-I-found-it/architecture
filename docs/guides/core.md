@@ -56,7 +56,7 @@ Health: la arquitectura pide `GET /<prefijo>/health` en cada pieza, pero ninguna
 
 | Destino | Ruta | Historia | Estado |
 |---|---|---|---|
-| `schedule` | `POST /schedule/internal/jobs` | US-03-01, US-03-02 | Ruta definida en las historias; cuerpo pendiente ([CU-03, pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
+| `schedule` | `POST /schedule/internal/jobs` | US-03-01, US-03-02 | Cuerpo y respuesta `201 {job_id, next_run_at}` en [CU-03, D1](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24); falta conciliarlo con US-03-01-AC2 ([pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
 | `schedule` | `GET /schedule/internal/jobs/{job_id}` | US-03-03-AC8 | Qué consulta `core` con él: pendiente (CU-03, pregunta 1). |
 | `notify` | `POST /notify/notifications` | US-10-01 | Cuerpo y códigos pendientes ([CU-10, preguntas 2 y 4](../requirements/user-stories/CU-10.md#preguntas-abiertas)). |
 
@@ -88,7 +88,7 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 
 | Contrato | Con quién | Estado |
 |---|---|---|
-| Crear job de captura | `schedule` | Ruta y códigos definidos en criterios (201/200, 400, 5xx); cuerpo **pendiente de decisión** ([CU-03, pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
+| Crear job de captura | `schedule` | Ruta y códigos definidos en criterios (201/200, 400, 5xx); cuerpo decidido en [CU-03, D1](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24), pendiente de conciliar con US-03-01-AC2 ([pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
 | Detalle del job para la captura | `schedule` → `core` | **Pendiente de decisión** ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
 | Resultado por URL | `schedule` → `core` | **Pendiente de decisión** ([CU-05, pregunta 1](../requirements/user-stories/CU-05.md#preguntas-abiertas)). |
 | Corrida terminada | `schedule` → `core` | Ruta y cuerpo (`job_id`, `run_id`) definidos; respuesta **pendiente** ([CU-06, pregunta 1](../requirements/user-stories/CU-06.md#preguntas-abiertas)). |
@@ -100,9 +100,9 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 Las que impiden cerrar un criterio sin inventar. Ver cada historia para el detalle.
 
 - **Contratos:** cuerpo de las rutas internas (CU-03 p. 1; CU-04 p. 1; CU-05 p. 1; CU-06 p. 1).
-- **Carrera** entre el alta y el disparo del job (CU-03 p. 2 y CU-04 p. 2). Propuesta: `alert_id` en el `payload`.
-- **Primera corrida fuera de franja** y su cuenta en el tope de 2 (CU-03 p. 3).
-- **Zona horaria y minuto del cron** (CU-03 pp. 7 y 8): `core` calcula el cron.
+- **Carrera** entre el alta y el disparo del job: resuelta por D2 de CU-03 (`alert_id` en el `payload`, `core` busca por él). Falta decidir si `run-completed` incluye `alert_id` (CU-03 p. 2).
+- **Tope diario:** la primera corrida sale de inmediato y cuenta en el tope (D3 de CU-03); faltan las reglas de cómputo del tope (CU-03 p. 3).
+- **Zona horaria y minuto del cron:** `America/Bogota` (D5) y un hash determinista del `alert_id` (D6); faltan la fórmula exacta y si la zona es configurable (CU-03 pp. 7 y 8). `core` calcula el cron.
 - **Validación de datos del sitio:** formato del precio, moneda ausente, página de error (CU-05 pp. 8 a 10).
 - **Token de baja:** dependencia con el `id` al insertar (CU-11 p. 1) y respuesta uniforme (CU-11 p. 4).
 - **Mejor precio:** vista o último análisis (CU-07 p. 13). Pendiente de decisión antes del dashboard.

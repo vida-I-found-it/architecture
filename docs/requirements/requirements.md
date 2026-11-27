@@ -207,7 +207,7 @@ Restricciones ya conocidas para cuando se active (no se implementan ahora):
 - Al crear la alerta, la interfaz avisa que la primera captura corre en segundo plano y que el resultado aparecerá al recargar; no se muestra progreso en vivo (SCH-9 y D11 quedan fuera, DEC-31).
 - Ninguna alerta corre más de 2 veces al día.
 - Las pruebas controlan el reloj o la ventana (inyectados) en vez de esperar al horario real.
-- El callback de un job solo puede apuntar a un backend **registrado en la lista blanca** (configuración de entorno, no el cuerpo de la petición); un destino que no esté en la lista se rechaza con 400. En el ejercicio la lista tiene `core` (callback de `schedule`) y `schedule` (callback del scraper).
+- El callback de un job solo puede apuntar a un backend **registrado en la lista blanca** (configuración de entorno, no el cuerpo de la petición); un destino que no esté en la lista se rechaza con 400. En el ejercicio hay una lista por servicio ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md), decisión D7 de [CU-03](user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)): la de `schedule` solo tiene `core`, y la del scraper solo tiene `schedule`.
 - `schedule` no tiene ninguna ruta pública.
 
 ---
