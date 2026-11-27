@@ -17,7 +17,7 @@ Calidad estática: `ruff`, `mypy`, `eslint` (INF-6, fuera de esta versión pero 
 - **Contenedores desechables** para PostgreSQL, MongoDB, SMTP de prueba y navegadores: imagen oficial con **versión fijada** (la del entorno objetivo, p. ej. `postgres:16`), `--rm`, puertos solo en `127.0.0.1`, datos en `tmpfs`, credenciales de prueba generadas al vuelo.
 - **Sin red real:** fixtures HTML guardados, uno por estrategia de extracción y uno que las haga fallar todas, servidos por un servidor local.
 - **Correos:** solo a un SMTP de prueba local; nunca a internet.
-- **Reloj inyectable** para probar las ventanas horarias sin esperar al horario real.
+- **Reloj inyectable** para probar las horas de inicio y el desfase sin esperar al horario real.
 
 ## Cobertura por criterio
 

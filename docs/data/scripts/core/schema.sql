@@ -32,7 +32,7 @@ CREATE TABLE ALERT (
     ID                      int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     TITLE                   text NOT NULL,
     PRODUCT_NAME            text NOT NULL,
-    NOTES                   text CHECK (char_length(NOTES) <= 500), -- opcional, la escribe el usuario al crear (DEC-28)
+    NOTES                   text CHECK (char_length(NOTES) <= 1000), -- opcional, la escribe el usuario al crear (DEC-28)
     STATUS                  text NOT NULL DEFAULT 'active' CHECK (STATUS IN ('active', 'inactive')),
     CREATED_BY              uuid NOT NULL,        -- id de auth.app_user, sin FK
     CREATED_AT              timestamptz NOT NULL DEFAULT now(),
@@ -209,6 +209,21 @@ SELECT DISTINCT ON (l.ALERT_ID)
 FROM V_ALERT_URL_LAST_CHECK l
 WHERE l.IS_ACTIVE AND l.LAST_PRICE_COP IS NOT NULL
 ORDER BY l.ALERT_ID, l.LAST_PRICE_COP, l.ALERT_URL_ID;
+
+-- Mejor precio del día de cada URL (CU-05, D5-16): el menor `ok` no anómalo por día
+-- de Bogotá; empate: el chequeo más antiguo. No reescribe nada (DEC-29). Un chequeo
+-- se excluye si algún veredicto suyo en PRICE_ANOMALY es anómalo. Probada en PostgreSQL 16.15 con datos sintéticos; sin medir rendimiento.
+CREATE VIEW V_ALERT_URL_DAILY_BEST AS
+SELECT DISTINCT ON (c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date)
+       c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date AS DAY,
+       c.PRICE_COP AS BEST_PRICE_COP, c.CHECKED_AT AS BEST_PRICE_AT
+FROM ALERT_SNAPSHOT c
+WHERE c.STATUS = 'ok'
+  AND NOT EXISTS (SELECT 1 FROM PRICE_ANOMALY a
+                  WHERE a.ALERT_URL_ID = c.ALERT_URL_ID AND a.CHECKED_AT = c.CHECKED_AT
+                    AND a.IS_ANOMALOUS)
+ORDER BY c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date,
+         c.PRICE_COP, c.CHECKED_AT;
 
 -- Estadísticas por sitio y día (antes la tabla SITE_STATS_DAILY).
 CREATE VIEW V_SITE_STATS_DAILY AS

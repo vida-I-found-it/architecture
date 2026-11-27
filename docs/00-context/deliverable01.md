@@ -29,7 +29,7 @@ El ejemplo es la construcción de un «sistema» que hace **scraping** sobre cie
 
 La funcionalidad priorizada es **el recorrido completo de una alerta**: desde que el usuario la crea hasta que ve el resultado en el dashboard. Se agrupa en cuatro bloques.
 
-**1 · Crear la alerta (CU-02, CU-03).** El usuario elige el modo de creación (hoy solo «URL directa»; «Palabra clave» con LLM queda preparado pero deshabilitado), pega de 1 a 10 URLs, escribe el correo al que se le avisará y confirma en un modal que advierte que la acción es definitiva. La alerta es inmutable. Al guardarse, el sistema crea por debajo su agendamiento: **2 veces al día**, dentro de las ventanas 04:00–06:00 y 18:00–20:00. La primera corrida es inmediata, cuenta dentro de esas 2 y puede quedar fuera de las ventanas. El usuario no vuelve a intervenir.
+**1 · Crear la alerta (CU-02, CU-03).** El usuario elige el modo de creación (hoy solo «URL directa»; «Palabra clave» con LLM queda preparado pero deshabilitado), pega de 1 a 10 URLs, escribe el correo al que se le avisará y confirma en un modal que advierte que la acción es definitiva. La alerta es inmutable. Al guardarse, el sistema crea por debajo su agendamiento: **2 veces al día**, a las horas de inicio configuradas (04:00 y 18:00 por defecto, hora de Bogotá) más un desfase por alerta. La primera corrida es inmediata y cuenta dentro de esas 2. El usuario no vuelve a intervenir.
 
 **2 · Capturar con el scraper y guardar (CU-04, CU-05).** `schedule` envía las URLs al scraper **una a la vez**. El scraper valida la URL contra SSRF, la descarga y prueba una **cascada de estrategias** hasta obtener un precio: JSON-LD u `og:price`, luego microdata o regex, luego Playwright y por último la interceptación del XHR interno. Entrega a `schedule` (nunca a `core`) uno de tres estados: `ok`, `no_price` (definitivo) o `error` (el único que `schedule` reintenta, hasta 3 veces). `schedule` reenvía cada resultado a `core` de inmediato, y `core` sanea, normaliza, descarta lo inválido y guarda **un chequeo por resultado** en PostgreSQL (`alert_snapshot`), sea `ok`, `no_price` o `error` (DEC-29). No calcula el mejor precio ni avisa.
 
@@ -54,7 +54,7 @@ Frontend en **React + Vite + TypeScript** con shadcn/ui, `react-hook-form` + `zo
 
 ![Modal para crear una alerta](../design/mockups/create-alert.png)
 
-**Confirmar la alerta (CU-02).** Al pulsar «Guardar alerta» se abre una confirmación con el resumen: las páginas, el correo enmascarado y la frecuencia de revisión. Es definitiva: después no se pueden editar las páginas ni el correo.
+**Confirmar la alerta (CU-02).** Al pulsar «Crear alerta» se abre una confirmación con el resumen: las páginas, el correo enmascarado y la frecuencia de revisión. Es definitiva: después no se pueden editar las páginas ni el correo.
 
 ![Confirmación antes de crear la alerta](../design/mockups/confirm-alert.png)
 
@@ -84,7 +84,7 @@ Catálogo de los endpoints que resuelven los requerimientos de backend, con su o
 | 8 | `GET /schedule/internal/jobs/{job_id}` | `core` → `schedule` | CU-03 | *API de jobs* |
 | 9 | `POST /scraper/internal/jobs` | `schedule` → `scraper` | CU-04 | *Cola de trabajos y workers* |
 | 10 | `POST /schedule/internal/results` | `scraper` → `schedule` | CU-04 | *El scraper entrega a schedule* |
-| 11 | `GET /api/internal/job-detail` | `schedule` → `core` | CU-04 | *El scraper entrega a schedule* |
+| 11 | ~~`GET /api/internal/job-detail`~~ eliminado: las URLs viajan al crear el job ([CU-03, D15](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)) | `schedule` → `core` | CU-04 | *El scraper entrega a schedule* |
 | 12 | `POST /api/internal/prices` | `schedule` → `core` | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes* |
 | 13 | `POST /notify/notifications` | `core` → `notify` · `schedule` → `notify` | CU-10 | *Aviso al bajar el mejor precio* · barrido diario de errores al administrador (EJ-6) |
 | 14 | `GET /api/health` | docker-compose → `core` | Transversal | *Salud de cada pieza* (EJ-4) |
@@ -100,7 +100,7 @@ Reglas del catálogo:
 
   | Qué hace por dentro | Requerimientos | Pieza |
   |---|---|---|
-  | Programar las corridas: 2 al día, franjas horarias, reparto entre alertas y ejecución en segundo plano | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Franjas horarias* | `schedule` |
+  | Programar las corridas: 2 al día, horas de inicio, reparto entre alertas y ejecución en segundo plano | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Horas de inicio* | `schedule` |
   | Extraer el precio de la página: las 4 estrategias en cadena y los reintentos | *Descarga HTTP*, *Extractor genérico*, *Extracción con navegador*, *Reintentos controlados*, *Extracción por microdata y regex*, *Interceptar la llamada interna*, *Cascada de estrategias de extracción* | `scraper` |
   | Calcular el mejor precio | *Motor de mejor precio* | `core` |
   | Enviar el email: SMTP, plantilla y advertencia de caída anómala | *Envío de email*, *Plantilla de aviso*, *Advertencia de caída anómala* | `notify` |
@@ -123,27 +123,26 @@ FastAPI y PostgreSQL. Es el dueño del negocio.
 
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
-| **Alertas**<br>`AlertService` | Crea la alerta con sus URLs y sus correos (1 a 5); si algo falla, no se guarda nada. Después la alerta no se puede cambiar. También la consulta y la lista | CU-02, CU-07 | *Modelo de alerta*, *Crear alerta por URL*, *Alerta inmutable*, *Consultar alertas*, *Suscripción al correo*, *Suscribirse a una alerta*, *Detalle de la alerta* |
+| **Alertas**<br>`AlertService` | Crea la alerta con sus URLs y sus correos (1 a 10); si algo falla, no se guarda nada. Después la alerta no se puede cambiar. También la consulta y la lista | CU-02, CU-07 | *Modelo de alerta*, *Crear alerta por URL*, *Alerta inmutable*, *Consultar alertas*, *Suscripción al correo*, *Suscribirse a una alerta*, *Detalle de la alerta* |
 | **Modos de creación**<br>`AlertSource` | Permite cambiar la forma de crear una alerta sin tocar el resto. Hoy solo funciona «URL directa»; «palabra clave con LLM» llegará después | CU-02 | *Selector de modo de creación* |
 | **Política de URLs**<br>`UrlPolicy` | Al crear la alerta, rechaza direcciones peligrosas (por ejemplo, redes internas) para que el sistema nunca las visite | CU-02 | *Protección anti-SSRF* |
 | **Suscripciones**<br>`SubscriptionService` | Guarda si cada correo está activo o dado de baja y procesa la baja con el enlace del email | CU-11 | *Suscripción al correo*, *Baja por enlace* |
-| **Detalle del job**<br>`JobDetailService` | Le dice a `schedule` qué URLs tiene que visitar cada alerta | CU-04 | *El scraper entrega a schedule* |
 | **Ingesta de precios**<br>`PriceIngestService` | Recibe el precio capturado, lo limpia y lo convierte a número, descarta lo inválido (precio cero o página de error), marca las caídas sospechosas y guarda el precio solo si cambió. Procesa juntas todas las URLs de una alerta: si una es inválida, las demás se guardan igual | CU-05 | *Normalizador de precio*, *Historial de precios*, *Validador de precio*, *Reintentos idempotentes*, *Saneamiento de datos* |
 | **Análisis de precio**<br>`BestPriceStrategy` | En el análisis (al terminar la corrida de la alerta), calcula cuál es el mejor precio vigente entre todas las URLs de la alerta, lo compara con el anterior y decide si hay que avisar | CU-06 | *Motor de mejor precio* |
 | **Consulta de precios**<br>`PriceHistoryService` | Entrega el historial de cada URL y los datos del gráfico comparador | CU-08 | *Histórico de precios*, *Comparador entre sitios* |
-| **Cliente de agendamiento**<br>`SchedulerClient` | Le pide a `schedule` que programe las corridas de la alerta | CU-03 | *Programar la captura al crear la alerta*, *API de jobs* |
+| **Cliente de agendamiento**<br>`SchedulerClient` | Le pide a `schedule` que programe las corridas de la alerta, enviándole sus URLs | CU-03 | *Programar la captura al crear la alerta*, *API de jobs* |
 | **Cliente de notificación**<br>`NotifierClient` | Le pide a `notify` que envíe el aviso. Si no responde, reintenta unas pocas veces con el mismo identificador de transacción | CU-10 | *Aviso al bajar el mejor precio* |
 
 #### `schedule` · agendamiento y ejecución
 
-FastAPI y APScheduler. Es un motor de tareas programadas **genérico**: no conoce el negocio de las alertas y no tiene ninguna ruta pública.
+FastAPI y APScheduler: los jobs viven en PostgreSQL y, al arrancar, se cargan en la memoria de APScheduler con su próxima ejecución calculada desde la última (`last_run_at`), en un solo proceso ([ADR-0007](../architecture/adr/0007-schedule-apscheduler-loaded-from-postgres.md)). Es un motor de tareas programadas **genérico**: no conoce el negocio de las alertas y no tiene ninguna ruta pública.
 
 | Servicio | Qué hace | CU | Requerimientos |
 |---|---|---|---|
 | **Gestión de jobs**<br>`JobService` | Crea y consulta los jobs (tareas programadas): cuándo corren, qué hacen y a quién entregan el resultado | CU-03 | *API de jobs*, *Acción del job*, *Callback del job* |
-| **Agendamiento**<br>`SchedulerEngine` | Decide cuándo corre cada job: 2 veces al día, dentro de las franjas horarias y repartidas para no saturar | CU-03 | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Franjas horarias* |
+| **Agendamiento**<br>`SchedulerEngine` | Decide cuándo corre cada job: 2 veces al día, a las horas de inicio configuradas y con un desfase por alerta para no saturar | CU-03 | *Programación por alerta*, *Ejecución en segundo plano*, *Ejecución escalonada*, *Máximo de corridas al día*, *Horas de inicio* |
 | **Ejecución de corridas**<br>`ExecutionService` | Dispara el job a su hora y registra cada corrida con su estado y su identificador de transacción | CU-03, CU-04 | *Ejecución en segundo plano* |
-| **Entrega de trabajo**<br>`ScraperDispatcher` | Al disparar el job, pide a `core` el detalle y envía las URLs al scraper **una a la vez**, cada una con su callback; si el envío falla, reintenta con backoff exponencial. Recibe `ok`, `no_price` o `error` y **administra los reintentos del scraper**: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min). Lo agotado queda `failed` y lo avisa el barrido diario | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
+| **Entrega de trabajo**<br>`ScraperDispatcher` | Al disparar el job, envía al scraper las URLs guardadas en él **una a la vez**, cada una con su callback; si el envío falla, reintenta con backoff exponencial. Recibe `ok`, `no_price` o `error` y **administra los reintentos del scraper**: reinyecta solo las URLs con `error` (hasta 3 veces, 10–15 min). Lo agotado queda `failed` y lo avisa el barrido diario | CU-04 | *Cola de trabajos y workers*, *El scraper entrega a schedule* |
 | **Entrega del resultado**<br>`CallbackService` | Envía el resultado a `core`. Si falla, lo reintenta desde su propia cola de reintentos. Hoy solo soporta la acción «llamar a un endpoint» | CU-05 | *Acción del job*, *Callback del job* |
 
 #### `scraper` · captura del precio
@@ -185,7 +184,7 @@ El «elemento concreto» es un producto vigilado por una alerta, que tiene de 1 
 | ID | Regla | Requerimientos |
 |---|---|---|
 | R1 | La unidad de captura es la **URL**. Una alerta con N URLs genera N capturas independientes: si una falla, las demás continúan | *El scraper entrega a schedule* |
-| R2 | Cada alerta se captura **hasta 2 veces al día**, dentro de las franjas horarias configuradas | *Programación por alerta*, *Máximo de corridas al día*, *Franjas horarias* |
+| R2 | Cada alerta se captura **hasta 2 veces al día**, a las horas de inicio configuradas | *Programación por alerta*, *Máximo de corridas al día*, *Horas de inicio* |
 | R3 | Una URL peligrosa (red interna, esquema no permitido, credenciales embebidas) se rechaza al crear la alerta y **de nuevo en cada descarga y redirección** | *Protección anti-SSRF* |
 | R4 | El precio se busca con estrategias en orden, de la más simple a la más pesada; **gana la primera** que devuelve un precio válido. Si ninguna funciona tras 3 reintentos (los administra `schedule`), la URL queda «sin precio hoy» y **no se guarda nada** | *Extractor genérico*, *Extracción por microdata y regex*, *Extracción con navegador*, *Interceptar la llamada interna*, *Reintentos controlados*, *Cascada de estrategias de extracción* |
 
@@ -254,7 +253,7 @@ Dentro de esas transacciones, el aislamiento es el de PostgreSQL por defecto (`R
 | Dónde | Bloqueo | Para qué |
 |---|---|---|
 | Procesar un callback de precios (CU-05) y analizar el mejor precio (CU-06) | `SELECT … FOR UPDATE` sobre la fila de `alert` y luego sobre sus `alert_url`, siempre en ese orden y por id | Una alerta se procesa de a una corrida a la vez: dos corridas o reintentos simultáneos no se pisan. El orden fijo evita bloqueos mutuos (deadlocks) |
-| Tomar trabajo pendiente de una cola: jobs vencidos en `schedule`, envíos en `notification_outbox`, entregas en `job_callback_outbox` | `SELECT … FOR UPDATE SKIP LOCKED` | Varios trabajadores toman tareas sin repetirlas ni esperarse |
+| Tomar trabajo pendiente de una cola: ejecuciones vencidas en `schedule` (los jobs los dispara APScheduler, ADR-0007), envíos en `notification_outbox`, entregas en `job_callback_outbox` | `SELECT … FOR UPDATE SKIP LOCKED` | Varios trabajadores toman tareas sin repetirlas ni esperarse |
 | Insertar un chequeo, una notificación, una corrida o un resultado | Ninguno: restricciones únicas e `INSERT … ON CONFLICT DO NOTHING` | Idempotencia natural. Claves: `(alert_url_id, checked_at)` en `alert_snapshot`; `(transaction_id, app_user_id, channel)` en `notification`; `transaction_id` en `job_execution`; `_id` = `transaction_id` en MongoDB |
 | Dar de baja una suscripción | `UPDATE … WHERE status = 'active'` (bloqueo de fila implícito) | Repetir la baja no cambia nada |
 
@@ -535,8 +534,8 @@ Las piezas no comparten claves foráneas: se enlazan solo por identificadores.
 
 | Qué se valida | Frontend | Backend |
 |---|---|---|
-| URLs de la alerta (CU-02) | De 1 a 10; formato `http://` o `https://`; avisa si hay repetidas | De 1 a 10; se normalizan y se eliminan las repetidas |
-| URL peligrosa (CU-02) | — | Solo `http` o `https`, puerto 80 o 443 y sin credenciales; rechaza las IP privadas o reservadas. Si una falla, 422 y no se guarda nada |
+| URLs de la alerta (CU-02) | De 1 a 10; formato `http://` o `https://`; normaliza con las mismas reglas que el backend y no envía repetidas | De 1 a 10, contadas después de normalizar y eliminar las repetidas; una vacía es 422 |
+| URL peligrosa (CU-02) | — | Solo `http` en el puerto 80 o `https` en el 443, sin credenciales y con un host que resuelva en DNS en 2 s; rechaza las IP privadas o reservadas. Si una falla, 422 y no se guarda nada |
 | Correo (CU-02) | Obligatorio, formato válido, hasta 254 caracteres | El mismo formato; se normaliza (minúsculas, Unicode NFC) |
 | Modo y campos de más (CU-02) | «Palabra clave» deshabilitada | Solo `url` (si no, 422 `mode_not_available`); rechaza campos fuera del contrato, como `created_by` |
 | Envío (CU-02) | Modal de confirmación; botón deshabilitado mientras envía | Todo o nada: alerta, URLs y suscripción en una transacción |

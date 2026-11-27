@@ -458,13 +458,13 @@ erDiagram
         string external_key "Llave de idempotencia de quien crea el job, única por system (DEC-15)"
         string execution_type FK "FK real a execution_type (misma esquema)"
         jsonb payload "Entrada específica del execution_type — OPACA para schedule"
-        string schedule_cron "Expresión cron estándar (soportada nativa por APScheduler)"
+        string schedule_cron "Expresión cron estándar; la interpreta APScheduler en America/Bogota (ADR-0007)"
         bool is_active "Programación activa"
         string callback_type "api_call | python_script | topic_message (CHECK, SCH-13); null = sin callback por ejecución"
         jsonb callback_config "Config del callback, ej. {url} si es api_call"
         jsonb run_callback_config "Aviso de corrida terminada, ej. {url}; null = sin aviso (DEC-33)"
-        datetime next_run_at "Próxima corrida (UTC)"
-        datetime last_run_at "Última corrida (UTC)"
+        datetime next_run_at "Siguiente disparo del cron (UTC); informativo (ADR-0007)"
+        datetime last_run_at "Hora del último disparo (UTC); base para calcular la próxima ejecución al arrancar (ADR-0007)"
         datetime created_at "Fecha de creación (UTC)"
         datetime updated_at "Última actualización (UTC)"
     }
@@ -663,6 +663,7 @@ erDiagram
 | **Persona vs Usuario** | `person` (PII) separado de `user` (cuenta), relación 1:1 |
 | **PK de person/user** | **UUID** generado |
 | **Mejor precio** | **No se guarda** (DEC-29): vista `v_alert_best_price` sobre `alert_snapshot`. Medido: ~5 ms para una alerta con 1.000 URLs y 200.000 chequeos (sintético) |
+| **Mejor precio del día** | **No se guarda** (DEC-36): vista `v_alert_url_daily_best`, el menor precio `ok` no anómalo por URL y día de Bogotá. No reescribe chequeos; probada en PostgreSQL 16.15 con datos sintéticos; sin medir rendimiento |
 | **Último estado por sitio** | **No se guarda** (DEC-29): vista `v_alert_url_last_check` (último chequeo y último precio `ok`) |
 | **Registro del análisis** | `alert_analysis` (DEC-30): una fila por alerta en cada análisis, append-only, con el resultado (`first`, `dropped`, `not_lower`, `no_data`) y una FK al chequeo ganador, sin copiar el precio. El «mejor precio anterior» es la última fila con ganador; no se recalcula porque `alert_url.is_active` no se historiza. Medido: ~153 B por fila (~1,1 GB/año con 10.000 alertas × 2 análisis/día, supuesto) |
 | **Seguimiento** | `alert_snapshot`: **una fila por chequeo**, PK natural `(alert_url_id, checked_at)`, partición anual; idempotencia por la PK (el reenvío del callback trae el mismo `checked_at`) |
@@ -693,7 +694,7 @@ erDiagram
 - `alert_analysis`: la PK `(alert_id, analyzed_at)` da el último análisis de una alerta con un *index scan backward* (verificado con `EXPLAIN`) y `UNIQUE (transaction_id)`.
 - `price_anomaly`: solo la PK `(alert_url_id, checked_at, strategy, strategy_version)`; el análisis busca los chequeos `ok` sin veredicto de la estrategia activa con un anti-join sobre ella.
 - `alert_url (alert_id)` y `alert_url (domain)` — lookup de adapter · `alert_url (alert_id, url)` único (DEC-20).
-- `job (system, external_key)` único parcial (DEC-15) · `job (next_run_at) WHERE is_active` (parcial) — el scheduler toma lo vencido con `FOR UPDATE SKIP LOCKED` (sin doble encolado con varias instancias) · `job (system)`.
+- `job (system, external_key)` único parcial (DEC-15) · sin índice en `job (next_run_at)`: los jobs los dispara APScheduler en memoria y el arranque lee todos los activos ([ADR-0007](../architecture/adr/0007-schedule-apscheduler-loaded-from-postgres.md)) · `job (system)`.
 - `job_callback_outbox (next_retry_at)` — mismo patrón que `notification_outbox`; sin `WHERE`, la tabla ya solo contiene lo que está activamente en reintento.
 - `job_execution (id) WHERE callback_status = 'failed'` (parcial) — panel de salud, D8.
 - `notification (app_user_id)` · `notification (system)` · `notification (id) WHERE status = 'failed'` (parcial) — ver notificaciones fallidas sin escanear todo · `template (code) WHERE is_active` (parcial) — lookup de la versión vigente · `notification_outbox (next_retry_at)` — el worker de reintento toma lo vencido con `FOR UPDATE SKIP LOCKED`; sin `WHERE`, mismo motivo que en `job_callback_outbox`.

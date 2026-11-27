@@ -8,7 +8,7 @@
 **Tipo:** *Regla* si el requerimiento es una restricción o política (un tope, un valor de configuración, un criterio de descarte) y no una función con pantalla, endpoint o proceso propio; enlaza a su regla en la [sección 6 del entregable](../00-context/deliverable01.md#6--regla-de-negocio-principal). *Funcionalidad* en los demás.
 
 **Capa** (emoji junto al nombre del requerimiento): 🖥️ backend · 🎨 frontend · 🎨🖥️ ambos, según el *Track* del documento original; en los requerimientos nuevos (`EJ-`) la asigno yo.
-**API:** 🔌 marca los requerimientos que se resuelven con un endpoint, con su operación y ruta. Las rutas base (`/api/*`, `/api/internal/*`, `/schedule/internal/*`, `/scraper/internal/*`, `/notify/*`) y los endpoints `prices`, `job-detail`, `results` y `jobs` vienen de la [arquitectura](../architecture/general-architecture.md); el resto del path es propuesta 🆕. En esta versión los endpoints públicos no exigen sesión (CU-01 omitido).
+**API:** 🔌 marca los requerimientos que se resuelven con un endpoint, con su operación y ruta. Las rutas base (`/api/*`, `/api/internal/*`, `/schedule/internal/*`, `/scraper/internal/*`, `/notify/*`) y los endpoints `prices`, `results` y `jobs` vienen de la [arquitectura](../architecture/general-architecture.md); el resto del path es propuesta 🆕. En esta versión los endpoints públicos no exigen sesión (CU-01 omitido).
 
 ## Tabla de contenido
 
@@ -78,13 +78,12 @@ sequenceDiagram
 
     rect rgba(60, 170, 120, 0.14)
         Note over CO,SC: CU-03 · Programar la captura
-        CO->>SC: crea el job con su callback
-        SC->>SC: dispara el job a su hora
+        CO->>SC: crea el job con las URLs y sus callbacks (en segundo plano)
+        SC->>SC: lanza la primera corrida y luego dispara el job a sus horas de inicio
     end
 
     rect rgba(70, 130, 220, 0.14)
         Note over SC,SR: CU-04 · Capturar el precio
-        SC->>CO: pide el detalle del job (las URLs de la alerta)
         SC->>SR: envía una URL con su callback (asíncrono, una tras otra)
         SR-->>SC: recibido
         SR->>SR: descarga la URL (anti-SSRF) y prueba estrategias hasta obtener el precio
@@ -101,7 +100,7 @@ sequenceDiagram
 
     rect rgba(70, 130, 220, 0.14)
         Note over CO,PG: CU-06 · Analizar el mejor precio (al terminar la corrida, DEC-33)
-        SC->>CO: corrida terminada (job_id, run_id), o la interfaz lo pide para una alerta
+        SC->>CO: corrida terminada (job_id, run_id, payload), o la interfaz lo pide para una alerta
         CO->>PG: calcula el mejor precio, lo compara con el anterior y marca anomalías
     end
 
@@ -135,14 +134,14 @@ sequenceDiagram
 
 ### CU-02 · Registrar una alerta con URLs
 
-**Descripción.** El usuario elige el modo de creación, pega **una o varias URLs** (1..N, máximo 10), escribe **uno o varios correos** (máximo 5) a los que se les avisará, puede añadir una nota y confirma. El sistema guarda la alerta (inmutable), sus URLs y una suscripción por correo.
+**Descripción.** El usuario elige el modo de creación, pega **una o varias URLs** (1..N, máximo 10), escribe **uno o varios correos** (máximo 10) a los que se les avisará, puede añadir una nota y confirma. El sistema guarda la alerta (inmutable), sus URLs y una suscripción por correo.
 
 | ID | Requerimiento original (resumen) | Qué hace | ¿Entra? | Tipo | API (operación y ruta) | Ajuste en esta versión |
 |----|----------------------------------|----------|:-------:|:----:|------------------------|------------------------|
 | ALE-1 | 🖥️ Modelo de alerta | Define los datos de una alerta: título, producto, estado y quién la creó. | 🔧 | Funcionalidad | — | `title` y `product_name` **siguen obligatorios en la base** (decisión cerrada). Como el formulario solo pide URLs y correo, los completa el sistema con el dominio de la primera URL. El nombre real del producto se lee del sitio (`alert_url.last_title`) y se muestra en el dashboard. Sin cambio de esquema |
 | ALE-2 | 🎨🖥️ Crear alerta por URL | El usuario crea la alerta pegando una o varias URLs. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` | Campo repetible, **mínimo 1, máximo 10**. Sin duplicados tras normalizar. Cada URL se valida contra SCR-18 |
 | ALE-4 | 🎨🖥️ Alerta inmutable | Tras crearla, la alerta no se edita; antes de guardar se pide confirmar. | ✅ | Regla [R13](../00-context/deliverable01.md#6--regla-de-negocio-principal) | Sin rutas `PUT` / `PATCH` / `DELETE` | El modal advierte que la acción es definitiva |
-| SUB-1 | 🖥️ Suscripción al correo | Guarda el correo que recibirá los avisos de la alerta. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` (mismo cuerpo) | Los correos (1 a 5, 💡 tope mío) se escriben **en el mismo formulario** y crean una `subscription` por correo junto con la alerta, en una sola transacción. `created_by` = usuario fijo. `unsubscribe_token_hash` se genera al crear (lo usa CU-10) |
+| SUB-1 | 🖥️ Suscripción al correo | Guarda el correo que recibirá los avisos de la alerta. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` (mismo cuerpo) | Los correos (1 a 10, aprobado 2026-11-26) se escriben **en el mismo formulario** y crean una `subscription` por correo junto con la alerta, en una sola transacción. `created_by` = usuario fijo. `unsubscribe_token_hash` se genera al crear (lo usa CU-10) |
 | SUB-2 | 🎨🖥️ Suscribirse a una alerta | Permite indicar ese correo al crear la alerta. | 🔧 | Funcionalidad | 🔌 `POST /api/alerts` (mismo cuerpo) | No hay módulo aparte: los correos van en el alta, sin precarga de cuenta |
 | SCR-18 | 🖥️ Protección anti-SSRF | Rechaza URLs peligrosas (redes internas, esquemas raros) antes de guardarlas. | 🔧 | Regla [R3](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (se valida dentro de `POST /api/alerts`) | Aquí solo la validación **al crear**; la autoridad está en el fetcher (CU-04) |
 | FE-1 | 🎨 App base React + Vite + TS + shadcn/ui | Base de la aplicación web que usa el usuario. | ✅ | Funcionalidad | — | |
@@ -153,11 +152,11 @@ sequenceDiagram
 | **EJ-1** 🆕 | 🎨🖥️ **Selector de modo de creación** | Selector de modo: URL directa hoy, palabra clave con LLM más adelante. | 🆕 | Funcionalidad | 🔌 `POST /api/alerts` (campo `mode`) · `GET /api/alert-modes` | `url` activo; `keyword` (palabra clave + LLM) preparado pero deshabilitado. Detalle abajo |
 
 **Criterios de aceptación** 🆕
-- Con 1 a 10 URLs válidas y 1 a 5 correos válidos se crea la alerta (`active`), sus URLs y una suscripción por correo, **o nada**.
-- Correos repetidos tras normalizar se deduplican; más de 5 → rechazado.
-- La nota es opcional, de hasta 500 caracteres y saneada; se guarda con la alerta y se muestra en su detalle como texto, sin interpretar HTML (DEC-28).
+- Con 1 a 10 URLs válidas y 1 a 10 correos válidos se crea la alerta (`active`), sus URLs y una suscripción por correo, **o nada**.
+- Correos repetidos tras normalizar se deduplican; más de 10 → rechazado.
+- La nota es opcional, de hasta 1000 caracteres y saneada; se guarda con la alerta y se muestra en su detalle como texto, sin interpretar HTML (DEC-28).
 - La alerta se guarda con `title` y `product_name` no vacíos.
-- Una URL con esquema distinto de `http`/`https`, con un puerto distinto de 80 o 443, con credenciales o que resuelve a una IP privada o reservada → 422 con el índice de la URL fallida; ninguna se guarda.
+- Una URL con esquema distinto de `http`/`https`, con un puerto distinto de 80 (`http`) o 443 (`https`), que no resuelve en DNS en 2 s, con credenciales o que resuelve a una IP privada o reservada → 422 con el índice de la URL fallida; ninguna se guarda.
 - 0 URLs o más de 10 → rechazado. URLs repetidas tras normalizar → se deduplican.
 - Lista de correos vacía, o algún correo con formato inválido o enorme → rechazado.
 - El modal de confirmación aparece antes de enviar; cancelar no crea nada; el botón se deshabilita mientras se envía.
@@ -168,7 +167,7 @@ sequenceDiagram
 
 | Aspecto | Especificación |
 |---------|----------------|
-| Interfaz | Selector «Modo» **siempre visible**: **URL directa** (activo) y **Palabra clave** (deshabilitado, rótulo «Próximamente») |
+| Interfaz | Selector «Cómo quieres crearla» **siempre visible**: **URL directa** (activo) y **Palabra clave** (deshabilitado, rótulo «Próximamente») |
 | API | Campo `mode`, por defecto `url`. Con `keyword` responde 422 `mode_not_available` |
 | Disponibilidad | Se decide por configuración (`ALERT_CREATION_MODES`, por defecto `url`), no por código |
 | Diseño | `AlertSource` (Strategy): `UrlAlertSource` hoy; `KeywordLlmAlertSource` después. El proveedor de IA va detrás de **otra** interfaz (RNF-1) |
@@ -193,7 +192,7 @@ Restricciones ya conocidas para cuando se active (no se implementan ahora):
 | SCH-2 | 🖥️ Ejecución en segundo plano | Ejecuta las corridas solas, en segundo plano. | ✅ | Funcionalidad | — | |
 | SCH-3 | 🖥️ Ejecución escalonada | Reparte las corridas en horas distintas para no sobrecargar. | ✅ | Funcionalidad | — | Con pocas alertas casi no se nota, pero se conserva |
 | SCH-6 | 🖥️ Máximo de corridas al día | Impide que una alerta corra más de 2 veces al día. | ✅ | Regla [R2](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | Tope duro. La corrida inicial al crear la alerta (ALE-8) cuenta dentro del tope 🆕 |
-| SCH-7 | 🖥️ Franjas horarias | Define las franjas horarias en que pueden correr los jobs (por defecto 04:00–06:00 y 18:00–20:00). | ✅ | Regla [R2](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | Por variables de entorno |
+| SCH-7 | 🖥️ Horas de inicio | Define las horas de inicio de las corridas (por defecto 04:00 y 18:00), con desfase por alerta; no hay hora de cierre (DEC-36). | ✅ | Regla [R2](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | Por variables de entorno |
 | SCH-11 | 🖥️ `schedule` solo interno | Mantiene `schedule` accesible solo para otros servicios. | ✅ | Funcionalidad | — (regla: sin ruta pública) | Sin ruta pública |
 | SCH-12 | 🖥️ API de jobs | Permite a `core` crear y consultar jobs en `schedule`. | 🔧 | Funcionalidad | 🔌 `POST /schedule/internal/jobs` · `GET /schedule/internal/jobs/{job_id}` | Solo **crear y consultar**; actualizar y eliminar quedan fuera (no hay pausar, ALE-9) |
 | SCH-13 | 🖥️ Acción del job | Define qué hace un job al dispararse (llamar a un endpoint). | 🔧 | Funcionalidad | — | Solo `api_call`; `python_script` y `topic_message` fuera |
@@ -203,18 +202,18 @@ Restricciones ya conocidas para cuando se active (no se implementan ahora):
 - Al crear la alerta existe **un job por alerta** con su callback configurado y su `job_id` guardado en `alert.schedule_job_id`.
 - Si falla la creación del job, la alerta queda creada con `schedule_job_id` nulo («sin schedule») y el usuario no ve un error; `core` reintenta al arrancar y al inicio de cualquier análisis (DEC-15, DEC-33).
 - Repetir la creación del job con la misma llave no crea un segundo job: `schedule` devuelve el existente con 200.
-- La captura corre sola, sin botón, dentro de las ventanas configuradas.
+- La captura corre sola, sin botón, a las horas de inicio configuradas (SCH-7, DEC-36), sin hora de cierre.
 - Al crear la alerta, la interfaz avisa que la primera captura corre en segundo plano y que el resultado aparecerá al recargar; no se muestra progreso en vivo (SCH-9 y D11 quedan fuera, DEC-31).
 - Ninguna alerta corre más de 2 veces al día.
-- Las pruebas controlan el reloj o la ventana (inyectados) en vez de esperar al horario real.
-- El callback de un job solo puede apuntar a un backend **registrado en la lista blanca** (configuración de entorno, no el cuerpo de la petición); un destino que no esté en la lista se rechaza con 400. En el ejercicio la lista tiene `core` (callback de `schedule`) y `schedule` (callback del scraper).
+- Las pruebas controlan el reloj o las horas de inicio (inyectados) en vez de esperar al horario real.
+- El callback de un job solo puede apuntar a un backend **registrado en la lista blanca** (configuración de entorno, no el cuerpo de la petición); un destino que no esté en la lista se rechaza con 400. En el ejercicio hay una lista por servicio ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md), decisión D7 de [CU-03](user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)): la de `schedule` solo tiene `core`, y la del scraper solo tiene `schedule`.
 - `schedule` no tiene ninguna ruta pública.
 
 ---
 
 ### CU-04 · Capturar el precio de un sitio
 
-**Descripción.** `schedule` envía al scraper **una URL a la vez** con un callback configurable y espera su resultado antes de enviar la siguiente. El scraper responde «recibido» y, para esa URL, la valida de nuevo contra SSRF, la descarga y aplica una **cascada de estrategias de extracción**: prueba la primera y, si no aplica a ese sitio, pasa a la siguiente, hasta obtener un precio válido. Cada estrategia es una adaptación de una forma de hacer scraping. Al terminar ejecuta el callback con uno de tres estados: `ok`, `no_price` (definitivo) o `error` (se reintenta). El callback, en el ejercicio, apunta a `schedule`, nunca a `core`. **El contrato del scraper (petición `{url, callback_url}`, respuesta `202 {scraper_id}`, callback con `status`, `strategy`, `error_code` y `data`) lo define el README de `scraper-service`** (DEC-27); `schedule` correlaciona por `scraper_id`.
+**Descripción.** `schedule` envía al scraper **una URL a la vez** con un callback configurable y espera su resultado antes de enviar la siguiente. El scraper responde «recibido» y, para esa URL, la valida de nuevo contra SSRF, la descarga y aplica una **cascada de estrategias de extracción**: prueba la primera y, si no aplica a ese sitio, pasa a la siguiente, hasta obtener un precio válido. Cada estrategia es una adaptación de una forma de hacer scraping. Al terminar ejecuta el callback con uno de tres estados: `ok`, `no_price` (definitivo) o `error` (se reintenta). El callback, en el ejercicio, apunta a `schedule`, nunca a `core`. **El contrato del scraper (petición `{url, callback_url, clean}`, donde `schedule` envía `clean: true` (CU-04 D12), respuesta `202 {scraper_id}`, callback con `status`, `strategy`, `error_code` y `data`) lo define el README de `scraper-service`** (DEC-27); `schedule` correlaciona por `scraper_id`.
 
 ```mermaid
 graph LR
@@ -240,7 +239,7 @@ graph LR
 | **EJ-2** 🆕 | 🖥️ **Cascada de estrategias de extracción** | Prueba las estrategias en orden hasta obtener un precio. | 🆕 | Funcionalidad | — | Detalle abajo |
 | SCR-8 | 🖥️ Reintentos controlados | Reintenta hasta 3 veces un sitio que falló. | 🔧 | Regla [R4](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | **Los administra `schedule`, no el scraper** ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)). El scraper hace una sola pasada por URL y devuelve `ok`, `no_price` o `error`. **Solo `error`** (sin respuesta fiable: *timeout*, red, 5xx, excepción) se reintenta: `schedule` reinyecta esa URL hasta 3 veces (parametrizable) con espera de 10–15 min. `no_price` (la página respondió bien y las 4 estrategias no hallaron precio) es **definitivo** y no se reintenta. Al agotarse un `error`: se entrega `error` a `core` + log con `transactionId` y la ejecución queda `failed`. **No hay email al admin por adapter roto** (SCR-13 fuera); los errores agotados se avisan en el **barrido diario** (EJ-6) |
 | SCR-18 | 🖥️ Protección anti-SSRF | Vuelve a validar la URL en cada descarga y en cada redirección. | ✅ | Regla [R3](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (el fetcher valida en cada descarga) | Es la **autoridad**. También en el navegador de Playwright: se bloquea toda request a destinos no permitidos |
-| SCR-20 | 🖥️ El scraper entrega a schedule | Entrega el resultado por un callback; en el ejercicio apunta a `schedule`, nunca directamente a `core`. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/results` · `GET /api/internal/job-detail` | El scraper recibe el trabajo y un callback configurable ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)); al terminar entrega el resultado de **esa URL** (`ok`, `no_price` o `error`). El destino del callback es una lista blanca (en el ejercicio, solo `schedule`) |
+| SCR-20 | 🖥️ El scraper entrega a schedule | Entrega el resultado por un callback; en el ejercicio apunta a `schedule`, nunca directamente a `core`. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/results` | El scraper recibe el trabajo y un callback configurable ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)); al terminar entrega el resultado de **esa URL** (`ok`, `no_price` o `error`). El destino del callback es una lista blanca (en el ejercicio, solo `schedule`) |
 
 **EJ-2 · Cascada de estrategias** 🆕
 
@@ -463,7 +462,7 @@ graph LR
 | DEC-8 | Frecuencia del agendamiento | Cada alerta corre **2 veces al día** (SCH-1, SCH-6, SCH-7). La corrida inicial al crear la alerta cuenta dentro de ese tope 🆕 |
 | DEC-9 | Selector del modo | **Visible**, con «Palabra clave» deshabilitado; la disponibilidad la define `ALERT_CREATION_MODES` |
 | DEC-10 | Comunicación `core` → `notify` (D12, el transporte) | **Llamada REST** que crea la notificación; el envío del email es asíncrono dentro de `notify`. Contrato en CU-10 |
-| DEC-11 | Correo como destino (D16) y varios correos por alerta | **Una alerta se notifica a uno o varios correos** (1 a 5). Cada suscripción lleva su correo como `destination` y genera **una notificación por destino**: una fila de `notification` es un destinatario × un canal × un destino. Para que el mismo usuario pueda tener varios destinos en la misma transacción, la llave pasa a `UNIQUE (transaction_id, app_user_id, channel, destination)` en `notify` (aprobada 2026-11-19; el tope de 5 es un valor de partida mío, sin medición) |
+| DEC-11 | Correo como destino (D16) y varios correos por alerta | **Una alerta se notifica a uno o varios correos** (1 a 10; tope aprobado 2026-11-26, antes 5). Cada suscripción lleva su correo como `destination` y genera **una notificación por destino**: una fila de `notification` es un destinatario × un canal × un destino. Para que el mismo usuario pueda tener varios destinos en la misma transacción, la llave pasa a `UNIQUE (transaction_id, app_user_id, channel, destination)` en `notify` (aprobada 2026-11-19; el tope inicial de 5 era un valor de partida mío, sin medición; el vigente es 10) |
 | DEC-12 | Fallo de la llamada REST (resto de D12) | **Cada pieza reintenta lo suyo con su outbox:** `notify` reintenta el envío del email (`notification_outbox`); `core` **no** crea outbox. `core` reintenta la llamada de forma acotada, **siempre con el mismo `transaction_id`**. **Limitación declarada:** si se agota, el aviso se pierde y queda en el log con ese `transactionId` |
 | DEC-13 | Enlace de baja con solo el hash guardado | **Token = HMAC(secreto del entorno, id de la suscripción)**; la base guarda su SHA-256. El requerimiento que cubre la baja es SUB-3 (CU-11) |
 | DEC-14 | Doble confirmación del correo antes de activar la suscripción | **No en esta versión; queda como mejora.** Mitigación actual: solo correos de prueba mientras D21 siga pendiente, y cada aviso trae su enlace de baja (DEC-13). Antes de abrir el sistema a correos reales hará falta un estado `pending` en `subscription.status`, un token con caducidad, el correo de confirmación y su endpoint (aprobada 2026-11-19) |
@@ -472,7 +471,7 @@ graph LR
 | DEC-17 | Cómo muestra el dashboard un sitio «sin precio» | **Se deriva del seguimiento (modificada por DEC-29, 2026-11-22):** el estado `no_price`/`error` queda en `alert_snapshot` como cualquier chequeo. La UI muestra el último estado y la fecha del último chequeo `ok`, y marca «sin datos recientes» si pasaron más de 24 h desde ese chequeo (aprobada 2026-11-18) |
 | DEC-18 | Umbral de la «caída anómala» (PRO-5) | **Sin umbral fijo ni variable de entorno.** La caída se compara con los cambios de otros productos (mediana y MAD; anómala si el *modified z-score* ≤ −3,5, sobre 30 días y mínimo 30 cambios de comparación; valores de partida míos, sin medición). El algoritmo es una **estrategia intercambiable** (`AnomalyStrategy`) y el veredicto se guarda aparte en `price_anomaly`, así que cambiar de método no toca los datos. Ver [ADR-0005](../architecture/adr/0005-anomaly-detection-as-strategy.md) (aprobada 2026-11-19) |
 | DEC-19 | Forma del resultado del scrape en `job_execution_result` | Un documento por ejecución (una URL): `alert_url_id`, estado (`ok`, `no_price` o `error`), estrategia ganadora, `price_raw`, moneda, stock, título, metadatos y error Los intentos van en el array `attempts` y `data` es del intento final (DEC-32) |
-| DEC-20 | Hallazgos de modelo de datos | `alert_url` gana `UNIQUE (alert_id, url)` y `CHECK` de largo de URL (**≤ 2048**); `subscription.email` gana `CHECK` de largo (**≤ 254**, igual que `auth`). Los largos son valores de partida míos, sin medición. El agendamiento: `core` fija hora y minuto dentro de las franjas horarias (04–06 y 18–20, por entorno) y la primera corrida se dispara con `next_run_at = ahora` (aprobada 2026-11-18; largos de `title`, `product_name` y `notes` quedan pendientes) |
+| DEC-20 | Hallazgos de modelo de datos | `alert_url` gana `UNIQUE (alert_id, url)` y `CHECK` de largo de URL (**≤ 2048**); `subscription.email` gana `CHECK` de largo (**≤ 254**, igual que `auth`). Los largos son valores de partida míos, sin medición. El agendamiento: `core` fija hora y minuto dentro de las franjas horarias (04–06 y 18–20, por entorno) y la primera corrida se dispara con `next_run_at = ahora` (aprobada 2026-11-18; largos de `title`, `product_name` y `notes` quedan pendientes). **Modificada por DEC-36 (2026-11-27)** en el agendamiento: ya no hay franjas horarias sino horas de inicio sin hora de cierre, con desfase por orden de creación, y el cron lo calcula `schedule`, no `core` (DEC-35). La primera corrida inmediata se mantiene |
 | DEC-21 | Stock desconocido | **Se guarda nulo**, sin asumir «disponible»: `alert_snapshot.in_stock` admite nulo. En Mongo el dato se guarda tal como llegue. Como el análisis no usa el stock (DEC-22), no hace falta un valor por defecto (aprobada 2026-11-19) |
 | DEC-22 | ¿El stock cuenta para el mejor precio? | **No, por ahora.** El análisis ignora el stock: una URL sin stock sigue contando. El stock se sigue guardando, así que retomarlo es cambiar una regla. Modifica la decisión inicial («una URL sin stock no cuenta»); aprobada 2026-11-19. Riesgo aceptado: un aviso puede basarse en el precio de una URL agotada |
 | DEC-23 | Moneda distinta de COP | **Se descarta** y no se guarda: la versión solo trabaja en COP |
@@ -480,12 +479,16 @@ graph LR
 | DEC-25 | Scraping y análisis | **Modificada por DEC-33 (2026-11-22):** el scraping guarda datos y el análisis decide los avisos, pero el análisis ya no corre a horas propias: arranca al terminar la corrida de cada alerta, o a mano desde la interfaz. Por defecto 2 capturas al día, parametrizables (puede ser 1) |
 | DEC-26 | Aviso de errores al administrador | **Barrido diario** agendado en `schedule` que pide un solo correo a `notify`, en vez de un correo por ejecución fallida |
 | DEC-27 | Quién manda sobre el contrato del scraper | El **README de `scraper-service`** manda sobre el contrato y el comportamiento del scraper (petición, callback, códigos de motivo, estrategias, variables `SCRAPER_*`); los docs de este repo lo siguen. Consecuencia: el scraper no recibe `transaction_id` ni `item`, y `schedule` correlaciona por `scraper_id`. Un 403 o captcha es `no_price` (definitivo) y `robots.txt` es principio sin verificación implementada | ✅ 2026-11-17 |
-| DEC-28 | Notas y etiquetas de la alerta | **Entran las notas:** campo opcional de hasta 500 caracteres, saneado, que se guarda y se muestra como texto. **Las etiquetas quedan para la siguiente fase o el proyecto completo**; el modelo (`tag`, `alert_tag`) ya las tiene (aprobada 2026-11-19; el largo de 500 es un valor mío, sin medición) |
+| DEC-28 | Notas y etiquetas de la alerta | **Entran las notas:** campo opcional de hasta 1000 caracteres, saneado, que se guarda y se muestra como texto. **Las etiquetas quedan para la siguiente fase o el proyecto completo**; el modelo (`tag`, `alert_tag`) ya las tiene (aprobada 2026-11-19; largo de 1000 aprobado el 2026-11-26, antes 500) |
 | DEC-29 | Seguimiento de precios sin datos repetidos | **Una fila por chequeo** en `core.alert_snapshot` (`ok`, `no_price` o `error`), única fuente del histórico de la alerta; el resultado completo sigue en la Mongo de `schedule` (TTL 90 días). **Nada derivable se guarda:** último estado, mejor precio (DEC-16) y estadísticas por sitio son vistas. Reemplaza a `price_snapshot` por cambio, a los `last_*` de precio de `alert_url`, a `alert.best_price_*` y a `site_stats_daily`; modifica R7 y DEC-17. Medido con datos sintéticos: ~173 B por fila (~3,8 GB/año con el supuesto de 22 M chequeos) y ~5 ms el mejor precio de una alerta con 1.000 URLs (aprobada 2026-11-22) |
 | DEC-30 | ¿Contra qué se compara el mejor precio para avisar? | **Contra el último análisis registrado.** `core.alert_analysis` guarda una fila por alerta en cada análisis (append-only) con su resultado (`first`, `dropped`, `not_lower`, `no_data`), el `transaction_id` y una FK al chequeo ganador, sin copiar el precio. No se recalcula desde `alert_snapshot` porque `alert_url.is_active` no se historiza y el recálculo podría diferir de lo que se decidió. Medido con datos sintéticos: ~153 B por fila (~1,1 GB/año con el supuesto de 10.000 alertas × 2 análisis/día) (aprobada 2026-11-22) |
 | DEC-31 | ¿Progreso en tiempo real (SCH-9, D11)? | **No en el ejercicio.** El dashboard muestra el último estado guardado al cargar o recargar, y una URL sin chequeos aparece «pendiente de primera captura». Al crear la alerta se avisa que la primera captura corre en segundo plano. SCH-9 ya estaba fuera (§4, Supervisión); D11 se retoma en el proyecto completo junto con D15 (aprobada 2026-11-22) |
 | DEC-32 | Resultado, intentos y barrido en `schedule` | **El PostgreSQL de `schedule` no repite el resultado:** `job_execution` solo guarda `completed`/`failed`; el `ok`/`no_price`/`error` y el `error_code` viven en Mongo y lo consultable en `core.alert_snapshot`. El documento de `job_execution_result` lleva `attempts` (un elemento por intento, máximo 4) y los `data` del intento final. El barrido diario es un job `error_sweep` (tipo nuevo del catálogo) que `schedule` crea al arrancar con `external_key = error-sweep`; reúne las ejecuciones `failed` y los callbacks a `core` agotados desde su última corrida, con índice parcial `(finished_at) WHERE status = 'failed'` (aprobada 2026-11-22) |
 | DEC-33 | ¿Cómo se lanza el análisis? | **Por alerta, sin job de análisis.** `POST /api/alerts/{alert_id}/analysis` (interfaz) y `POST /api/internal/run-completed` (`schedule` → `core`), **sin idempotencia**: cada llamada analiza de nuevo. `schedule` avisa «corrida terminada» (genérico: `job_id`, `run_id`) cuando todas las ejecuciones de la corrida y sus callbacks quedaron resueltos; lo lleva `job_run` con su propio reintento. Se analiza al final de la corrida y no por URL, para que la primera corrida no avise y una corrida no mande varios correos. Dos análisis de una alerta se serializan con `FOR UPDATE` sobre `alert`. Sale `SCHEDULE_ANALYSIS_TIMES`; `job.callback_type` pasa a ser opcional (lo usa `error_sweep`). Semillas de `notify`: `price-drop-email` y `admin-alert-email` en `notify/seed.sql` (aprobada 2026-11-22) |
+| DEC-34 | Reglas del alta de alerta (CU-02) | **Topes:** 1 a 10 URLs y 1 a 10 correos, contados después de normalizar y deduplicar; nota de hasta 1000 caracteres (texto plano, HTML escapado al mostrar). **Normalización de URL:** esquema y host en minúsculas, host IDN a punycode, path no ASCII codificado en porcentaje, sin fragmento, sin `/` final ni puerto por defecto; se conservan los parámetros. El frontend aplica las mismas reglas y `core` deduplica igual. **Correo:** ASCII antes de la `@`. **SSRF al crear:** solo `http:80` y `https:443`, DNS en 2 s o 422. **Respuesta:** `201` con `{id, status, urls[], created_at}`; errores 422 `validation_error` con todos los motivos en `details`, sin repetir el valor enviado; `PUT`/`PATCH`/`DELETE` dan 405. Detalle y fechas en [CU-02, preguntas 1 a 23](user-stories/CU-02.md#preguntas-abiertas) (aprobada 2026-11-24 y 2026-11-26) |
+| DEC-35 | Reglas del job de captura (CU-03) | Al crear la alerta, `core` responde `201` y crea el job en segundo plano con la llave `alert-<id>`, enviando solo lo mínimo, **incluidas las URLs** (`payload.items`, ≤ 32 KB). `schedule` calcula el cron, lanza la primera corrida de inmediato, aplica el tope de 2 corridas por día de Bogotá y no vuelve a consultar a `core` al disparar: **`job-detail` deja de existir**. Lista blanca por origen y ruta, solo por variables de entorno. 🔒 Antes de desplegar en proveedores distintos: HTTPS y autenticación entre servicios. Detalle: [CU-03, D13 a D24](user-stories/CU-03.md#decisiones-aprobadas-2026-11-24) | ✅ aprobado 2026-11-26 |
+| DEC-36 | Agendamiento, concurrencia y captura (CU-03, CU-04, CU-05) | **Hora de inicio** configurable (04:00 y 18:00) en lugar de franjas, con **desfase por orden de creación** (cada 2 min, vuelve a empezar a los 120). Se limitan las **URLs en proceso** y todo envío comprueba antes un lugar libre; el scraper procesa hasta N en paralelo. Sin límite por sitio (🔒 riesgo aceptado). **Mejor precio del día** por vista, sin reescribir chequeos; los avisos usan el último precio. Modifica SCH-3, SCH-7 y las reglas de franja de R2. Detalle: [CU-03, D26 a D29](user-stories/CU-03.md#decisiones-aprobadas-2026-11-24), [CU-04, D13 a D26](user-stories/CU-04.md#decisiones-aprobadas-2026-11-24) y CU-05, D5-16 | ✅ aprobado 2026-11-27 |
+| DEC-37 | Fuente de verdad frente al código del scraper y autenticación | La arquitectura manda sobre `scraper-service` (modifica DEC-27 en lo de que manda su README). La autenticación entre servicios se trabaja al final y sigue siendo condición para desplegar en proveedores distintos. Detalle: [CU-04, D28 y D29](user-stories/CU-04.md#decisiones-aprobadas-2026-11-24) | ✅ aprobado 2026-11-27 |
 
 **Abiertas**
 

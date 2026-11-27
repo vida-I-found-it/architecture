@@ -39,7 +39,7 @@ Desde `infra/local/`:
    docker compose down
    ```
 
-**Para probar una captura ahora**, sin esperar las franjas (04:00–06:00 y 18:00–20:00, hora de Bogotá), amplía `SCHEDULE_SCRAPE_WINDOWS` en `.env` y vuelve a levantar.
+**Para probar una captura ahora:** la primera corrida sale al crear la alerta. Para probar una corrida programada, pon en `SCHEDULE_RUN_START_TIMES` una hora cercana (hora de Bogotá) y recuerda que se suma el desfase del job y que el máximo es de 2 corridas al día (DEC-36).
 
 ## Qué levanta
 

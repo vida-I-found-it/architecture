@@ -19,7 +19,7 @@ Solo los criterios de presentación. El orden sigue las dependencias de las hist
 
 | Orden | Historia | Criterios de frontend | Nota |
 |---|---|---|---|
-| 1 | [CU-02](../requirements/user-stories/CU-02.md) · alta | US-02-01-AC1, AC2, AC13, AC14 (validación visible); US-02-03-AC1 a AC3 (modal); US-02-04-AC1 (selector «Modo»); US-02-05-AC1 (correo enmascarado) | Primera pantalla. El modal es de frontend. |
+| 1 | [CU-02](../requirements/user-stories/CU-02.md) · alta | US-02-01-AC1, AC2, AC13, AC14 (validación visible); US-02-01-AC20 (filas vacías) y AC24 (sin repetidas); US-02-03-AC1 a AC3, AC6 y AC7 (modal y errores) y AC5 (ir al detalle); US-02-04-AC1 (selector «Cómo quieres crearla»); US-02-05-AC1 y AC3 (correo enmascarado y en claro antes de guardar) | Primera pantalla. El modal es de frontend. |
 | 2 | [CU-03](../requirements/user-stories/CU-03.md) · aviso | US-03-05-AC1 a AC5 | Aviso tras crear. Sin *polling*. |
 | 3 | [CU-07](../requirements/user-stories/CU-07.md) · lista y dashboard | US-07-01-AC1 a AC6; US-07-02-AC1, AC3, AC6, AC8, AC9, AC12, AC13; US-07-03-AC1 a AC7; US-07-04-AC1 a AC3, AC6; US-07-05-AC1; US-07-06-AC15 a AC24 (vista de detalle por número, prototipo) | Estados vacío, carga, error y marcas. |
 | 4 | [CU-06](../requirements/user-stories/CU-06.md) · análisis manual | US-06-03-AC1 a AC4, AC6 | Botón «Analizar ahora» (rótulo propuesto, sin aprobar). |
@@ -40,7 +40,7 @@ Solo los criterios de presentación. El orden sigue las dependencias de las hist
 
 | Método y ruta | Historia | Estado |
 |---|---|---|
-| `POST /api/alerts` | US-02-01 | Cuerpo y respuesta pendientes ([CU-02, pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas)). |
+| `POST /api/alerts` | US-02-01 | Respuesta `201 Created` con `{id, status, urls[], created_at}` ([CU-02, pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas)); el cliente TypeScript se genera del OpenAPI de `core` ([ADR-0006](../architecture/adr/0006-openapi-generated-from-code.md)). |
 | `GET /api/alert-modes` | US-02-04-AC4 | Formato pendiente. |
 | `GET /api/alerts` | US-07-01 | Cuerpo pendiente ([CU-07, pregunta 1](../requirements/user-stories/CU-07.md#preguntas-abiertas)). |
 | `GET /api/alerts/{alert_id}` | US-07-02 a US-07-05; US-07-06 (prototipo) | Cuerpo pendiente (CU-07, pregunta 1). |
@@ -70,7 +70,7 @@ Ninguna. El frontend no tiene base de datos.
 | Lectura de alertas, detalle, histórico y análisis (`core`) | Rutas definidas; cuerpos **pendientes**. Propuesta: acordar primero el OpenAPI de `core` (D4) y trabajar contra un servidor simulado. |
 | Mejor precio | Fuente **pendiente**: vista `v_alert_best_price` o último `alert_analysis` ([CU-07, pregunta 13](../requirements/user-stories/CU-07.md#preguntas-abiertas)). |
 | Mejor precio por sitio | **Sin definir** ([CU-07, pregunta 17](../requirements/user-stories/CU-07.md#preguntas-abiertas)). |
-| Formato del correo enmascarado | **Pendiente** ([CU-02, pregunta 3](../requirements/user-stories/CU-02.md#preguntas-abiertas)). |
+| Formato del correo enmascarado | `a***@dominio.com` ([CU-02, pregunta 3](../requirements/user-stories/CU-02.md#preguntas-abiertas)); casos de parte local de 1 carácter y unicode abiertos ([CU-07, pregunta 22](../requirements/user-stories/CU-07.md#preguntas-abiertas)). |
 | Mockups | El del dashboard contradice DEC-22 en la fila «Agotado» ([CU-07, pregunta 16](../requirements/user-stories/CU-07.md#preguntas-abiertas)) y no muestra el botón de análisis ([CU-06, pregunta 14](../requirements/user-stories/CU-06.md#preguntas-abiertas)). No modificar el mockup desde aquí. |
 
 ## Preguntas abiertas que bloquean este repositorio
