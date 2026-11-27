@@ -212,7 +212,7 @@ ORDER BY l.ALERT_ID, l.LAST_PRICE_COP, l.ALERT_URL_ID;
 
 -- Mejor precio del día de cada URL (CU-05, D5-16): el menor `ok` no anómalo por día
 -- de Bogotá; empate: el chequeo más antiguo. No reescribe nada (DEC-29). Un chequeo
--- se excluye si algún veredicto suyo en PRICE_ANOMALY es anómalo. Sin probar en una BD.
+-- se excluye si algún veredicto suyo en PRICE_ANOMALY es anómalo. Probada en PostgreSQL 16.15 con datos sintéticos; sin medir rendimiento.
 CREATE VIEW V_ALERT_URL_DAILY_BEST AS
 SELECT DISTINCT ON (c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date)
        c.ALERT_URL_ID, (c.CHECKED_AT AT TIME ZONE 'America/Bogota')::date AS DAY,

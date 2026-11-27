@@ -663,7 +663,7 @@ erDiagram
 | **Persona vs Usuario** | `person` (PII) separado de `user` (cuenta), relación 1:1 |
 | **PK de person/user** | **UUID** generado |
 | **Mejor precio** | **No se guarda** (DEC-29): vista `v_alert_best_price` sobre `alert_snapshot`. Medido: ~5 ms para una alerta con 1.000 URLs y 200.000 chequeos (sintético) |
-| **Mejor precio del día** | **No se guarda** (DEC-36): vista `v_alert_url_daily_best`, el menor precio `ok` no anómalo por URL y día de Bogotá. No reescribe chequeos; sin medir ni probar en una base de datos |
+| **Mejor precio del día** | **No se guarda** (DEC-36): vista `v_alert_url_daily_best`, el menor precio `ok` no anómalo por URL y día de Bogotá. No reescribe chequeos; probada en PostgreSQL 16.15 con datos sintéticos; sin medir rendimiento |
 | **Último estado por sitio** | **No se guarda** (DEC-29): vista `v_alert_url_last_check` (último chequeo y último precio `ok`) |
 | **Registro del análisis** | `alert_analysis` (DEC-30): una fila por alerta en cada análisis, append-only, con el resultado (`first`, `dropped`, `not_lower`, `no_data`) y una FK al chequeo ganador, sin copiar el precio. El «mejor precio anterior» es la última fila con ganador; no se recalcula porque `alert_url.is_active` no se historiza. Medido: ~153 B por fila (~1,1 GB/año con 10.000 alertas × 2 análisis/día, supuesto) |
 | **Seguimiento** | `alert_snapshot`: **una fila por chequeo**, PK natural `(alert_url_id, checked_at)`, partición anual; idempotencia por la PK (el reenvío del callback trae el mismo `checked_at`) |
