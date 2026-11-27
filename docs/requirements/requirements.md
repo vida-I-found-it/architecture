@@ -8,7 +8,7 @@
 **Tipo:** *Regla* si el requerimiento es una restricción o política (un tope, un valor de configuración, un criterio de descarte) y no una función con pantalla, endpoint o proceso propio; enlaza a su regla en la [sección 6 del entregable](../00-context/deliverable01.md#6--regla-de-negocio-principal). *Funcionalidad* en los demás.
 
 **Capa** (emoji junto al nombre del requerimiento): 🖥️ backend · 🎨 frontend · 🎨🖥️ ambos, según el *Track* del documento original; en los requerimientos nuevos (`EJ-`) la asigno yo.
-**API:** 🔌 marca los requerimientos que se resuelven con un endpoint, con su operación y ruta. Las rutas base (`/api/*`, `/api/internal/*`, `/schedule/internal/*`, `/scraper/internal/*`, `/notify/*`) y los endpoints `prices`, `job-detail`, `results` y `jobs` vienen de la [arquitectura](../architecture/general-architecture.md); el resto del path es propuesta 🆕. En esta versión los endpoints públicos no exigen sesión (CU-01 omitido).
+**API:** 🔌 marca los requerimientos que se resuelven con un endpoint, con su operación y ruta. Las rutas base (`/api/*`, `/api/internal/*`, `/schedule/internal/*`, `/scraper/internal/*`, `/notify/*`) y los endpoints `prices`, `results` y `jobs` vienen de la [arquitectura](../architecture/general-architecture.md); el resto del path es propuesta 🆕. En esta versión los endpoints públicos no exigen sesión (CU-01 omitido).
 
 ## Tabla de contenido
 
@@ -78,13 +78,12 @@ sequenceDiagram
 
     rect rgba(60, 170, 120, 0.14)
         Note over CO,SC: CU-03 · Programar la captura
-        CO->>SC: crea el job con su callback
-        SC->>SC: dispara el job a su hora
+        CO->>SC: crea el job con las URLs y sus callbacks (en segundo plano)
+        SC->>SC: lanza la primera corrida y luego dispara el job en las franjas
     end
 
     rect rgba(70, 130, 220, 0.14)
         Note over SC,SR: CU-04 · Capturar el precio
-        SC->>CO: pide el detalle del job (las URLs de la alerta)
         SC->>SR: envía una URL con su callback (asíncrono, una tras otra)
         SR-->>SC: recibido
         SR->>SR: descarga la URL (anti-SSRF) y prueba estrategias hasta obtener el precio
@@ -101,7 +100,7 @@ sequenceDiagram
 
     rect rgba(70, 130, 220, 0.14)
         Note over CO,PG: CU-06 · Analizar el mejor precio (al terminar la corrida, DEC-33)
-        SC->>CO: corrida terminada (job_id, run_id), o la interfaz lo pide para una alerta
+        SC->>CO: corrida terminada (job_id, run_id, payload), o la interfaz lo pide para una alerta
         CO->>PG: calcula el mejor precio, lo compara con el anterior y marca anomalías
     end
 
@@ -240,7 +239,7 @@ graph LR
 | **EJ-2** 🆕 | 🖥️ **Cascada de estrategias de extracción** | Prueba las estrategias en orden hasta obtener un precio. | 🆕 | Funcionalidad | — | Detalle abajo |
 | SCR-8 | 🖥️ Reintentos controlados | Reintenta hasta 3 veces un sitio que falló. | 🔧 | Regla [R4](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — | **Los administra `schedule`, no el scraper** ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)). El scraper hace una sola pasada por URL y devuelve `ok`, `no_price` o `error`. **Solo `error`** (sin respuesta fiable: *timeout*, red, 5xx, excepción) se reintenta: `schedule` reinyecta esa URL hasta 3 veces (parametrizable) con espera de 10–15 min. `no_price` (la página respondió bien y las 4 estrategias no hallaron precio) es **definitivo** y no se reintenta. Al agotarse un `error`: se entrega `error` a `core` + log con `transactionId` y la ejecución queda `failed`. **No hay email al admin por adapter roto** (SCR-13 fuera); los errores agotados se avisan en el **barrido diario** (EJ-6) |
 | SCR-18 | 🖥️ Protección anti-SSRF | Vuelve a validar la URL en cada descarga y en cada redirección. | ✅ | Regla [R3](../00-context/deliverable01.md#6--regla-de-negocio-principal) | — (el fetcher valida en cada descarga) | Es la **autoridad**. También en el navegador de Playwright: se bloquea toda request a destinos no permitidos |
-| SCR-20 | 🖥️ El scraper entrega a schedule | Entrega el resultado por un callback; en el ejercicio apunta a `schedule`, nunca directamente a `core`. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/results` · `GET /api/internal/job-detail` | El scraper recibe el trabajo y un callback configurable ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)); al terminar entrega el resultado de **esa URL** (`ok`, `no_price` o `error`). El destino del callback es una lista blanca (en el ejercicio, solo `schedule`) |
+| SCR-20 | 🖥️ El scraper entrega a schedule | Entrega el resultado por un callback; en el ejercicio apunta a `schedule`, nunca directamente a `core`. | ✅ | Funcionalidad | 🔌 `POST /schedule/internal/results` | El scraper recibe el trabajo y un callback configurable ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md)); al terminar entrega el resultado de **esa URL** (`ok`, `no_price` o `error`). El destino del callback es una lista blanca (en el ejercicio, solo `schedule`) |
 
 **EJ-2 · Cascada de estrategias** 🆕
 
@@ -487,6 +486,7 @@ graph LR
 | DEC-32 | Resultado, intentos y barrido en `schedule` | **El PostgreSQL de `schedule` no repite el resultado:** `job_execution` solo guarda `completed`/`failed`; el `ok`/`no_price`/`error` y el `error_code` viven en Mongo y lo consultable en `core.alert_snapshot`. El documento de `job_execution_result` lleva `attempts` (un elemento por intento, máximo 4) y los `data` del intento final. El barrido diario es un job `error_sweep` (tipo nuevo del catálogo) que `schedule` crea al arrancar con `external_key = error-sweep`; reúne las ejecuciones `failed` y los callbacks a `core` agotados desde su última corrida, con índice parcial `(finished_at) WHERE status = 'failed'` (aprobada 2026-11-22) |
 | DEC-33 | ¿Cómo se lanza el análisis? | **Por alerta, sin job de análisis.** `POST /api/alerts/{alert_id}/analysis` (interfaz) y `POST /api/internal/run-completed` (`schedule` → `core`), **sin idempotencia**: cada llamada analiza de nuevo. `schedule` avisa «corrida terminada» (genérico: `job_id`, `run_id`) cuando todas las ejecuciones de la corrida y sus callbacks quedaron resueltos; lo lleva `job_run` con su propio reintento. Se analiza al final de la corrida y no por URL, para que la primera corrida no avise y una corrida no mande varios correos. Dos análisis de una alerta se serializan con `FOR UPDATE` sobre `alert`. Sale `SCHEDULE_ANALYSIS_TIMES`; `job.callback_type` pasa a ser opcional (lo usa `error_sweep`). Semillas de `notify`: `price-drop-email` y `admin-alert-email` en `notify/seed.sql` (aprobada 2026-11-22) |
 | DEC-34 | Reglas del alta de alerta (CU-02) | **Topes:** 1 a 10 URLs y 1 a 10 correos, contados después de normalizar y deduplicar; nota de hasta 1000 caracteres (texto plano, HTML escapado al mostrar). **Normalización de URL:** esquema y host en minúsculas, host IDN a punycode, path no ASCII codificado en porcentaje, sin fragmento, sin `/` final ni puerto por defecto; se conservan los parámetros. El frontend aplica las mismas reglas y `core` deduplica igual. **Correo:** ASCII antes de la `@`. **SSRF al crear:** solo `http:80` y `https:443`, DNS en 2 s o 422. **Respuesta:** `201` con `{id, status, urls[], created_at}`; errores 422 `validation_error` con todos los motivos en `details`, sin repetir el valor enviado; `PUT`/`PATCH`/`DELETE` dan 405. Detalle y fechas en [CU-02, preguntas 1 a 23](user-stories/CU-02.md#preguntas-abiertas) (aprobada 2026-11-24 y 2026-11-26) |
+| DEC-35 | Reglas del job de captura (CU-03) | Al crear la alerta, `core` responde `201` y crea el job en segundo plano con la llave `alert-<id>`, enviando solo lo mínimo, **incluidas las URLs** (`payload.items`, ≤ 32 KB). `schedule` calcula el cron, lanza la primera corrida de inmediato, aplica el tope de 2 corridas por día de Bogotá y no vuelve a consultar a `core` al disparar: **`job-detail` deja de existir**. Lista blanca por origen y ruta, solo por variables de entorno. 🔒 Antes de desplegar en proveedores distintos: HTTPS y autenticación entre servicios. Detalle: [CU-03, D13 a D24](user-stories/CU-03.md#decisiones-aprobadas-2026-11-24) | ✅ aprobado 2026-11-26 |
 
 **Abiertas**
 

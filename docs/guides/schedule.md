@@ -35,8 +35,8 @@ Para el paso 1 también aplica el orden de [CU-03](../requirements/user-stories/
 
 | Método y ruta | Historia | Estado |
 |---|---|---|
-| `POST /schedule/internal/jobs` | US-03-03 | Ruta definida. Registra el job **y lanza su primera corrida de inmediato** en la misma llamada, sin bloquear la respuesta ([CU-03, D12](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). Cuerpo y respuesta `201 {job_id, next_run_at}`: [CU-03, D1](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24); falta conciliarlo con US-03-01-AC2 ([pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). Códigos 201/200, 400 y 422: definidos en criterios para algunos casos; el de cuerpo mal formado es pendiente (pregunta 9). |
-| `GET /schedule/internal/jobs/{job_id}` | US-03-03-AC8, AC9 | Ruta definida. Formato de error decidido (D1: `{error: {code, message, details[]}}`); cuerpo y códigos, pendientes ([preguntas 1 y 9](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
+| `POST /schedule/internal/jobs` | US-03-03 | Cuerpo mínimo con las URLs en `payload.items`; `schedule` calcula el cron y lanza la primera corrida sin bloquear la respuesta. Códigos 201, 200, 400, 422 ([CU-03, D12 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
+| `GET /schedule/internal/jobs/{job_id}` | US-03-03-AC8, AC9 | Devuelve el job sin `payload` ni *callbacks*; 404 si no existe (CU-03, D16 y D21). |
 | `POST /schedule/internal/results` | US-04-01-AC5 a AC8 | Recibe el callback del `scraper`. Respuesta (200/204/503) y cuerpo: pendiente ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
 | `GET /schedule/health` | [CU-03](../requirements/user-stories/CU-03.md) US-03-03-AC11 | Ruta del prefijo mencionada en un criterio; el resto de rutas deben colgar de `/schedule/internal/*` o `/schedule/health`. |
 
@@ -46,9 +46,8 @@ Ninguna ruta pública (SCH-11). Sin `PUT`, `PATCH` ni `DELETE` sobre jobs (US-03
 
 | Destino | Ruta | Historia | Estado |
 |---|---|---|---|
-| `core` | `GET /api/internal/job-detail` | US-04-01-AC1 | Parámetros y cuerpo pendientes ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). Cómo conoce `schedule` la URL: por una variable de entorno ([CU-03, D9](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)); nombre pendiente. |
-| `core` | `POST /api/internal/prices` | US-05-06 | Cuerpo pendiente ([CU-05, pregunta 1](../requirements/user-stories/CU-05.md#preguntas-abiertas)). |
-| `core` | `POST /api/internal/run-completed` | US-06-02 | Cuerpo `job_id`, `run_id`. Respuesta pendiente. |
+| `core` | `POST /api/internal/prices` | US-05-06 | Cuerpo en [CU-05, D5-1](../requirements/user-stories/CU-05.md#preguntas-abiertas); `alert_id` sale de `job.payload`. |
+| `core` | `POST /api/internal/run-completed` | US-06-02 | Cuerpo `job_id`, `run_id`, `payload` (CU-03, D21). Respuesta pendiente. |
 | `scraper` | `POST /scraper/internal/jobs` | US-04-01-AC2 | Cuerpo `{"url", "callback_url"}` (solo esos dos campos). |
 | `notify` | `POST /notify/notifications` | US-10-05 | Plantilla `admin-alert-email`. Códigos: pendiente ([CU-10, pregunta 2](../requirements/user-stories/CU-10.md#preguntas-abiertas)). |
 
@@ -76,7 +75,7 @@ Solo nombres que aparecen en la documentación. Ningún valor.
 | `SCHEDULE_SWEEP_TIME` | Hora del barrido diario. | ADR-0004, [`scraping-flow.md`](../architecture/scraping-flow.md) |
 | `ADMIN_ALERT_EMAIL` | Destinatario del correo de administrador. | [`architecture.md`](../architecture/architecture.md#configuración) |
 
-Zona horaria: `America/Bogota` para franjas y tope diario, todo en UTC en la base ([CU-03, D5](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)); si es configurable con `SCHEDULE_TIMEZONE` sigue abierto ([pregunta 8](../requirements/user-stories/CU-03.md#preguntas-abiertas)). La URL de `job-detail` llega por variable de entorno (D9); su nombre (¿`CORE_BASE_URL`?) sigue abierto ([pregunta 15](../requirements/user-stories/CU-03.md#preguntas-abiertas)).
+Zona horaria: `SCHEDULE_TIMEZONE` (`America/Bogota` por defecto) para franjas y tope diario, todo en UTC en la base. `SCHEDULE_POLL_INTERVAL_SECONDS` (2): tarea periódica de las colas. La lista blanca valida origen y ruta y sale solo del entorno ([CU-03, D5, D20 y D24](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). 🔒 Antes de desplegar en proveedores distintos: HTTPS y autenticación entre servicios.
 
 `SCHEDULE_ANALYSIS_TIMES` aparece en el ADR-0004 y en los requerimientos, pero DEC-33 hace que el análisis corra al terminar cada corrida. **No usar hasta resolver la contradicción** ([CU-08, pregunta 11](../requirements/user-stories/CU-08.md#preguntas-abiertas)).
 
@@ -86,7 +85,7 @@ Conexiones (PostgreSQL con el rol de `schedule` y MongoDB): la arquitectura las 
 
 | Contrato | Estado |
 |---|---|
-| Entrada de jobs desde `core` | Ruta y reglas definidas; cuerpo decidido en [CU-03, D1](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24), pendiente de conciliar con US-03-01-AC2 ([pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
+| Entrada de jobs desde `core` | Definida ([CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
 | Lista blanca de callbacks | Regla definida: `schedule` solo acepta `core` ([ADR-0004](../architecture/adr/0004-schedule-dispatches-work-to-scraper.md), [CU-03, D7](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
 | Envío al scraper | Cuerpo definido (`url`, `callback_url`); la respuesta `202 {scraper_id}` está en [US-04-03](../requirements/user-stories/CU-04.md). |
 | Callback del scraper | Estados `ok`, `no_price`, `error` definidos; cuerpo sin formato de errores **pendiente** ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
@@ -95,15 +94,8 @@ Conexiones (PostgreSQL con el rol de `schedule` y MongoDB): la arquitectura las 
 
 ## Preguntas abiertas que bloquean este repositorio
 
-- Intervalo de la tarea periódica de APScheduler que revisa las colas de ejecuciones y entregas (ADR-0007; 💡 2 s, sin aprobar).
-- Conciliar el cuerpo de D1 con US-03-01-AC2, el `GET …/jobs/{job_id}` y los códigos de error (CU-03 p. 1, 9 y 11).
-- Qué pasa con `core` caído al pedir el detalle (CU-03 p. 13; EV-20 pendiente de confirmar).
-- Reglas de cómputo del tope diario; la primera corrida inmediata ya está decidida (CU-03 p. 3, D3).
-- Origen y puerto de cada servicio en la lista blanca (CU-03 p. 6; qué servicio va en cada lista lo decidió D7).
-- Nombre de la variable con la URL de `job-detail` de `core` (CU-03 p. 15; D9 decidió que es una variable).
 - Reintentos de `core` ante 4xx y política de entrega (CU-05 p. 7 y CU-06).
 - Reintentos del envío agotado frente a «el trabajo queda bloqueado» y `failed` (CU-04 p. 10).
-- Límites de `payload` y de `external_key` (CU-03 p. 11).
 
 ## Seguridad
 

@@ -21,8 +21,8 @@ El orden sigue las dependencias de cada historia (ver [`README`](../requirements
 |---|---|---|---|
 | 1 | [CU-02](../requirements/user-stories/CU-02.md) · alta de alerta | US-02-01-AC1 a AC19, AC21 a AC23, AC25 a AC28; US-02-02-AC1 a AC7; US-02-03-AC4; US-02-04-AC2 a AC5 (AC4 es `GET /api/alert-modes`); US-02-05-AC2 | Base de datos y `POST /api/alerts`. Respuesta `201` decidida en la [pregunta 4](../requirements/user-stories/CU-02.md#preguntas-abiertas). |
 | 2 | [CU-03](../requirements/user-stories/CU-03.md) · programar la captura | US-03-01-AC1 a AC9; US-03-02-AC1 a AC6 | Cliente de `schedule` tras una interfaz, fuera de la transacción del alta. |
-| 3 | [CU-04](../requirements/user-stories/CU-04.md) · `job-detail` | US-04-01-AC1 (lado de `core`) | Endpoint que pide `schedule` para saber qué URLs capturar. Cuerpo sin definir. |
-| 4 | [CU-05](../requirements/user-stories/CU-05.md) · procesar y almacenar | US-05-01-AC1 a AC12; US-05-02-AC1 a AC9; US-05-03-AC1 a AC8; US-05-04-AC1 a AC5; US-05-05-AC1 a AC10 | Normalizador y validador como funciones puras. `POST /api/internal/prices`. |
+| 3 | [CU-04](../requirements/user-stories/CU-04.md) · captura | — | Sin trabajo propio en `core`: las URLs viajan en `payload.items` al crear el job ([CU-03, D15](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
+| 4 | [CU-05](../requirements/user-stories/CU-05.md) · procesar y almacenar | US-05-01-AC1 a AC12; US-05-02-AC1 a AC9; US-05-03-AC1 a AC8; US-05-04-AC1 a AC5; US-05-05-AC1 a AC12 | Normalizador y validador como funciones puras. `POST /api/internal/prices`. |
 | 5 | [CU-06](../requirements/user-stories/CU-06.md) · análisis | US-06-01-AC1 a AC16; US-06-02-AC1 a AC7; US-06-03 (AC5 y AC7 de backend); US-06-04-AC1 a AC8; US-06-05-AC1 a AC5 | `POST /api/alerts/{alert_id}/analysis` y `POST /api/internal/run-completed`. |
 | 6 | [CU-10](../requirements/user-stories/CU-10.md) · aviso desde `core` | US-10-01-AC1 a AC13 | Llamada a `notify`, después del commit del análisis. |
 | 7 | [CU-07](../requirements/user-stories/CU-07.md) · dashboard (lectura) | US-07-01-AC1 a AC7; US-07-02-AC1 a AC11 y AC14; US-07-03-AC1 a AC6; US-07-04-AC1 a AC6; US-07-05-AC1 a AC5; US-07-06-AC1 a AC14 (prototipo) | Solo lectura. Enmascarado de correos en el backend. |
@@ -44,9 +44,8 @@ Los criterios de presentación (la mayoría de `US-07-*`, `US-08-*`, `US-11-01`)
 | `GET /api/alerts/{alert_id}/price-history` | US-08-01, US-08-04 | Histórico. Cuerpo pendiente ([CU-08, pregunta 1](../requirements/user-stories/CU-08.md#preguntas-abiertas)). |
 | `POST /api/alerts/{alert_id}/analysis` | US-06-03 | Análisis manual. Respuesta pendiente ([CU-06, pregunta 1](../requirements/user-stories/CU-06.md#preguntas-abiertas)). |
 | `POST /api/subscriptions/{subscription_id}/unsubscribe` | US-11-02, US-11-03 | Dónde viaja el token: pendiente ([CU-11, pregunta 2](../requirements/user-stories/CU-11.md#preguntas-abiertas)). |
-| `POST /api/internal/prices` | US-05-01 a US-05-05 | Llamado por `schedule`. Cuerpo pendiente ([CU-05, pregunta 1](../requirements/user-stories/CU-05.md#preguntas-abiertas)). |
-| `POST /api/internal/run-completed` | US-06-02 | Llamado por `schedule`. Cuerpo: `job_id` y `run_id`. Respuesta pendiente. |
-| `GET /api/internal/job-detail` | US-04-01-AC1 | Llamado por `schedule`. Parámetros y cuerpo pendientes ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
+| `POST /api/internal/prices` | US-05-01 a US-05-05 | Llamado por `schedule`. Cuerpo en [CU-05, D5-1](../requirements/user-stories/CU-05.md#preguntas-abiertas), con `alert_id`; valida por `alert_url_id` y `alert_id` (D5-14). |
+| `POST /api/internal/run-completed` | US-06-02 | Llamado por `schedule`. Cuerpo: `job_id`, `run_id` y `payload` (CU-03, D21). Respuesta pendiente. |
 
 Ninguna ruta de escritura sobre `/api/alerts/{alert_id}`: la alerta es inmutable (US-02-03-AC4). Los endpoints `/api/internal/*` no tienen autenticación en esta versión; solo se publican en `127.0.0.1` ([`architecture.md`](../architecture/architecture.md#configuración)).
 
@@ -56,8 +55,8 @@ Health: la arquitectura pide `GET /<prefijo>/health` en cada pieza, pero ninguna
 
 | Destino | Ruta | Historia | Estado |
 |---|---|---|---|
-| `schedule` | `POST /schedule/internal/jobs` | US-03-01, US-03-02 | Cuerpo y respuesta `201 {job_id, next_run_at}` en [CU-03, D1](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24); falta conciliarlo con US-03-01-AC2 ([pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
-| `schedule` | `GET /schedule/internal/jobs/{job_id}` | US-03-03-AC8 | Qué consulta `core` con él: pendiente (CU-03, pregunta 1). |
+| `schedule` | `POST /schedule/internal/jobs` | US-03-01, US-03-02 | Definido: cuerpo mínimo con `payload.items`, en segundo plano, *timeout* 3 s ([CU-03, D13 a D17](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24)). |
+| `schedule` | `GET /schedule/internal/jobs/{job_id}` | US-03-03-AC8 | Definido en CU-03 D21; ninguna historia exige que `core` lo use. |
 | `notify` | `POST /notify/notifications` | US-10-01 | Cuerpo y códigos pendientes ([CU-10, preguntas 2 y 4](../requirements/user-stories/CU-10.md#preguntas-abiertas)). |
 
 ## Tablas que posee
@@ -88,7 +87,7 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 
 | Contrato | Con quién | Estado |
 |---|---|---|
-| Crear job de captura | `schedule` | Ruta y códigos definidos en criterios (201/200, 400, 5xx); cuerpo decidido en [CU-03, D1](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24), pendiente de conciliar con US-03-01-AC2 ([pregunta 1](../requirements/user-stories/CU-03.md#preguntas-abiertas)). |
+| Crear job de captura | `schedule` | Definido en [CU-03, D13 a D22](../requirements/user-stories/CU-03.md#decisiones-aprobadas-2026-11-24). |
 | Detalle del job para la captura | `schedule` → `core` | **Pendiente de decisión** ([CU-04, pregunta 1](../requirements/user-stories/CU-04.md#preguntas-abiertas)). |
 | Resultado por URL | `schedule` → `core` | **Pendiente de decisión** ([CU-05, pregunta 1](../requirements/user-stories/CU-05.md#preguntas-abiertas)). |
 | Corrida terminada | `schedule` → `core` | Ruta y cuerpo (`job_id`, `run_id`) definidos; respuesta **pendiente** ([CU-06, pregunta 1](../requirements/user-stories/CU-06.md#preguntas-abiertas)). |
@@ -100,9 +99,6 @@ Sin nombre definido (pendiente): URL base de `schedule`, UUID del usuario fijo y
 Las que impiden cerrar un criterio sin inventar. Ver cada historia para el detalle.
 
 - **Contratos:** cuerpo de las rutas internas (CU-03 p. 1; CU-04 p. 1; CU-05 p. 1; CU-06 p. 1).
-- **Carrera** entre el alta y el disparo del job: resuelta por D2 de CU-03 (`alert_id` en el `payload`, `core` busca por él). Falta decidir si `run-completed` incluye `alert_id` (CU-03 p. 2).
-- **Tope diario:** la primera corrida sale de inmediato y cuenta en el tope (D3 de CU-03); faltan las reglas de cómputo del tope (CU-03 p. 3).
-- **Zona horaria y minuto del cron:** `America/Bogota` (D5) y un hash determinista del `alert_id` (D6); faltan la fórmula exacta y si la zona es configurable (CU-03 pp. 7 y 8). `core` calcula el cron.
 - **Validación de datos del sitio:** formato del precio, moneda ausente, página de error (CU-05 pp. 8 a 10).
 - **Token de baja:** dependencia con el `id` al insertar (CU-11 p. 1) y respuesta uniforme (CU-11 p. 4).
 - **Mejor precio:** vista o último análisis (CU-07 p. 13). Pendiente de decisión antes del dashboard.

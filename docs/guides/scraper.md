@@ -23,7 +23,7 @@ Solo historias de [CU-04](../requirements/user-stories/CU-04.md). El orden es el
 | 2 | US-04-03 · recibir el trabajo y el callback | AC1 a AC14 | `POST /scraper/internal/jobs` con `202`. Trabajo en segundo plano. |
 | 3 | US-04-02 · cascada de estrategias | AC1 a AC14 | Se prueba con fixtures HTML guardados. Playwright solo en contenedor. |
 
-Cuando el scraper esté listo, `schedule` (US-04-01) y `core` (job-detail) pueden probarse contra él.
+Cuando el scraper esté listo, `schedule` (US-04-01) puede probarse contra él.
 
 ## Endpoints
 
