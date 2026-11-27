@@ -365,7 +365,7 @@ function renderView(){
   const notice = s.data_state === "stale" ? `<div class="notice">⏱ Sin datos recientes: el último precio tiene más de 24 h.</div>`
     : s.has_anomaly ? `<div class="notice">⚠ Caída anómala en un sitio: el precio es mucho menor que en los demás. Valida manualmente antes de comprar.</div>` : "";
   if (s.data_state === "pending_first_capture"){
-    view.innerHTML = `<div class="stack">${titleRow(a,lbl,cls)}<div class="card empty"><h2 style="font-size:20px;color:var(--fg)">Pendiente de primera captura</h2><p>Estamos capturando los primeros precios en segundo plano. Recarga la página en unos minutos para verlos. Después se actualizan solos en las franjas de 04:00–06:00 y 18:00–20:00 (hora de Bogotá).</p></div></div>`;
+    view.innerHTML = `<div class="stack">${titleRow(a,lbl,cls)}<div class="card empty"><h2 style="font-size:20px;color:var(--fg)">Pendiente de primera captura</h2><p>Estamos capturando los primeros precios en segundo plano. Recarga la página en unos minutos para verlos. Después se actualizan solos hasta dos veces al día.</p></div></div>`;
     return;
   }
   view.innerHTML = `<div class="stack">${titleRow(a,lbl,cls)}${notice}${kpis}
